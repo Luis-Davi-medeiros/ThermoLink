@@ -127,6 +127,12 @@
                 </div>
             </div>
         </div>
+        <!-- Modal Bloqueio de Usuário -->
+    <div id="modalBloqueio" class="modal hidden">
+        <div class="modal-content">
+            <p style="font-size:1.2rem; margin-bottom:1rem;">Plano não foi pago</p>
+            <button onclick="fecharModalBloqueio()" class="btn-close-modal">Fechar</button>
+        </div>
     </div>
 
     <!-- ========================================================
@@ -317,49 +323,37 @@
 
             <!-- CONTEÚDO SUB-ABA 2: GRÁFICO / CURVA TÉRMICA -->
             <div id="subAbaGrafico" class="sub-tab-content hidden">
-    <div class="card-dark chart-card">
-        <div class="chart-header-row">
-            <div>
-                <div class="chart-title">Curva de Temperatura</div>
-                <div class="chart-sub" id="chartPointCount">Carregando dados...</div>
+                <div class="card-dark chart-card">
+                    <div class="chart-header-row">
+                        <div>
+                            <div class="chart-title">Curva de Temperatura</div>
+                            <div class="chart-sub" id="chartPointCount">Carregando dados...</div>
+                        </div>
+
+                        <!-- Filtros do Gráfico -->
+                        <div class="chart-pill-group" id="chartChannelFilter">
+                            <button class="pill-btn active" onclick="filtrarCanaisGrafico('all')">Ambos</button>
+                            <button class="pill-btn" onclick="filtrarCanaisGrafico('c1')">C1</button>
+                            <button class="pill-btn" onclick="filtrarCanaisGrafico('c2')">C2</button>
+                        </div>
+                    </div>
+
+                    <div class="chart-canvas-box">
+                        <canvas id="detailChartCanvas"></canvas>
+                    </div>
+
+                    <div class="chart-legend-custom">
+                        <div class="legend-row">
+                            <span class="legend-color legend-c1"></span>
+                            <span>Canal 1 - Superior (Laranja)</span>
+                        </div>
+                        <div class="legend-row">
+                            <span class="legend-color legend-c2"></span>
+                            <span>Canal 2 - Inferior (Azul)</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="chart-controls">
-                <button class="btn-primary-admin" onclick="abrirFullScreenChart()" title="Expandir gráfico em tela cheia"><i class="fa-solid fa-maximize"></i></button>
-                <button class="btn-primary-admin" onclick="exportarCSV()" title="Exportar dados CSV"><i class="fa-solid fa-download"></i></button>
-                <button class="btn-primary-admin" onclick="resetZoom()" title="Resetar zoom"><i class="fa-solid fa-rotate-left"></i></button>
-            </div>
-        </div>
-        <div class="chart-pill-group" id="chartChannelFilter">
-            <button class="pill-btn active" onclick="filtrarCanaisGrafico('all')">Ambos</button>
-            <button class="pill-btn" onclick="filtrarCanaisGrafico('c1')">C1</button>
-            <button class="pill-btn" onclick="filtrarCanaisGrafico('c2')">C2</button>
-        </div>
-        <div class="chart-canvas-box">
-            <canvas id="detailChartCanvas"></canvas>
-        </div>
-        <div class="chart-legend-custom">
-            <div class="legend-row">
-                <span class="legend-color legend-c1"></span>
-                <span>Canal 1 - Superior (Laranja)</span>
-            </div>
-            <div class="legend-row">
-                <span class="legend-color legend-c2"></span>
-                <span>Canal 2 - Inferior (Azul)</span>
-            </div>
-        </div>
-    </div>
-    <!-- Fullscreen Modal -->
-    <div id="chartFullScreenModal" class="fullscreen-modal hidden">
-        <button class="btn-primary-admin modal-close" onclick="fecharFullScreenChart()" title="Fechar"><i class="fa-solid fa-xmark"></i></button>
-        <div class="chart-canvas-box" style="height: 80vh;">
-            <canvas id="fullScreenChartCanvas"></canvas>
-        </div>
-        <div class="chart-controls fullscreen-controls">
-            <button class="btn-primary-admin" onclick="resetZoomFullScreen()" title="Resetar zoom"><i class="fa-solid fa-rotate-left"></i></button>
-            <button class="btn-primary-admin" onclick="exportarCSVFullScreen()" title="Exportar CSV"><i class="fa-solid fa-download"></i></button>
-        </div>
-    </div>
-</div>
 
             <!-- CONTEÚDO SUB-ABA 3: LEITURAS / HISTÓRICO -->
             <div id="subAbaLeituras" class="sub-tab-content hidden">
@@ -468,7 +462,7 @@
                         <div class="chart-title">Curva Térmica Detalhada</div>
                         <div class="chart-sub" id="anChartSub">Análise multicanal contínua</div>
                     </div>
-                    <button class="btn-primary-admin" onclick="abrirFullScreenChart()" title="Expandir gráfico em tela cheia"><i class="fa-solid fa-maximize"></i></button>
+
                     <!-- Controles de Canais -->
                     <div class="chart-pill-group" id="anChannelFilter">
                         <button class="pill-btn active" onclick="filtrarCanaisAnalise('all')">Ambos</button>
@@ -479,10 +473,6 @@
 
                 <div class="chart-canvas-box" style="height: 280px;">
                     <canvas id="analysisChartCanvas"></canvas>
-                    <div id="chartFullScreenModal" class="fullscreen-modal hidden">
-                        <button class="btn-primary-admin modal-close" onclick="fecharFullScreenChart()" title="Fechar"><i class="fa-solid fa-xmark"></i></button>
-                        <canvas id="fullScreenChartCanvas"></canvas>
-                    </div>
                 </div>
 
                 <div class="chart-legend-custom">

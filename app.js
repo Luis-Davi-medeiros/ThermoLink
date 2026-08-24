@@ -49,8 +49,7 @@ const state = {
     currentDetailHistory: [],
     currentAnalysisRawHistory: [],
     currentAnalysisFilteredHistory: [],
-    isPolling: false,
-    fullScreenChart: null
+    isPolling: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -126,12 +125,13 @@ function iniciarPainelUsuario(user) {
         const clientsAdmin = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
         const clientRecord = clientsAdmin.find(c => c.username?.toLowerCase() === user.username?.toLowerCase());
         if (clientRecord && clientRecord.status === "Bloqueado") {
-            $("clientBlockedOverlay").classList.remove("hidden");
-            return;
+            // Usuário está em atraso, exibir aviso mas permitir acesso ao painel
+            exibirMensagemBloqueio();
+            // Não interrompe o fluxo, o usuário pode continuar usando a aplicação
         }
     }
 
-    $("clientBlockedOverlay").classList.add("hidden");
+    // hidden handled by modal logic
     $("splashScreen").classList.add("hidden");
     $("loginScreen").classList.add("hidden");
     $("mainApp").classList.remove("hidden");
@@ -164,11 +164,36 @@ function realizarLogout() {
     localStorage.removeItem("thermolink_active_session");
     state.currentUser = null;
     $("mainApp").classList.add("hidden");
-    $("clientBlockedOverlay").classList.add("hidden");
+    // Ensure modal is hidden on logout
     $("loginScreen").classList.remove("hidden");
     $("loginUser").value = "";
     $("loginPassword").value = "";
 }
+
+// ==========================================================================
+// 3. MODAL DE BLOQUEIO DE USUÁRIO
+// ==========================================================================
+
+/**
+ * Exibe o modal informando que o plano não foi pago / usuário bloqueado.
+ */
+function exibirMensagemBloqueio() {
+    const modal = $("modalBloqueio");
+    if (modal) {
+        modal.classList.remove("hidden");
+    }
+}
+
+/**
+ * Fecha o modal de bloqueio.
+ */
+function fecharModalBloqueio() {
+    const modal = $("modalBloqueio");
+    if (modal) {
+        modal.classList.add("hidden");
+    }
+}
+
 
 // ==========================================================================
 // 2. CONSULTAS AO BANCO SUPABASE
@@ -311,8 +336,6 @@ function renderListaFornos() {
                         <span class="module-badge-mini">MÓDULO ${String(mod).padStart(2, "0")}</span>
                         <div class="oven-card-name">${escapeHtml(o.nome || getNomeForno(mod))}</div>
                     </div>
-                    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
                     <div class="oven-card-status">
                         <span class="pulse-dot"></span>
                         ONLINE
@@ -876,10 +899,6 @@ function renderGraficoAnalise(rows) {
                     callbacks: {
                         label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + " °C" : "--"}`
                     }
-                },
-                zoom: {
-                    pan: { enabled: true, mode: "x" },
-                    zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" }
                 }
             },
             scales: {
@@ -894,110 +913,6 @@ function renderGraficoAnalise(rows) {
             }
         }
     });
-}
-
-// Fullscreen chart handling
-function abrirFullScreenChart() {
-    const modal = $("chartFullScreenModal");
-    if (!modal) return;
-    modal.classList.remove("hidden");
-    document.body.style.overflow = "hidden";
-    // Render using current filtered history
-    renderFullScreenChart(state.currentAnalysisFilteredHistory);
-}
-
-function fecharFullScreenChart() {
-    const modal = $("chartFullScreenModal");
-    if (!modal) return;
-    modal.classList.add("hidden");
-    document.body.style.overflow = "";
-    if (state.fullScreenChart) {
-        state.fullScreenChart.destroy();
-        state.fullScreenChart = null;
-    }
-}
-
-function renderFullScreenChart(rows) {
-    const canvas = $("fullScreenChartCanvas");
-    if (!canvas || !rows.length) return;
-    if (state.fullScreenChart) {
-        state.fullScreenChart.destroy();
-        state.fullScreenChart = null;
-    }
-    const labels = rows.map(r => {
-        const d = new Date(r.created_at);
-        return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    });
-    const c1Data = rows.map(r => numVal(r.canal_1));
-    const c2Data = rows.map(r => numVal(r.canal_2));
-    const ctx = canvas.getContext("2d");
-    const gradC1 = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradC1.addColorStop(0, "rgba(244, 123, 32, 0.4)");
-    gradC1.addColorStop(1, "rgba(244, 123, 32, 0.0)");
-    const gradC2 = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradC2.addColorStop(0, "rgba(59, 130, 182, 0.3)");
-    gradC2.addColorStop(1, "rgba(59, 130, 182, 0.0)");
-    const datasets = [];
-    if (state.analysisChannelFilter === "all" || state.analysisChannelFilter === "c1") {
-        datasets.push({ label: "Canal 1 (Superior)", data: c1Data, borderColor: "#f47b20", backgroundColor: gradC1, borderWidth: 2, pointRadius: 0, tension: 0.3, fill: true });
-    }
-    if (state.analysisChannelFilter === "all" || state.analysisChannelFilter === "c2") {
-        datasets.push({ label: "Canal 2 (Inferior)", data: c2Data, borderColor: "#5ba6d5", backgroundColor: gradC2, borderWidth: 1.8, pointRadius: 0, tension: 0.3, fill: true });
-    }
-    state.fullScreenChart = new Chart(canvas, {
-        type: "line",
-        data: { labels, datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-                legend: { display: false },
-                tooltip: { backgroundColor: "rgba(7, 27, 43, 0.95)", padding: 10, cornerRadius: 8 },
-                zoom: { pan: { enabled: true, mode: "xy" }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "xy" } }
-            },
-            scales: {
-                x: { ticks: { color: "#71899a", maxTicksLimit: 12, font: { size: 11 } }, grid: { color: "rgba(255,255,255,0.04)" } },
-                y: { ticks: { color: "#71899a", font: { size: 11 }, callback: v => `${v}°` }, grid: { color: "rgba(255,255,255,0.05)" } }
-            }
-        }
-    });
-}
-
-// Chart utility functions
-function resetZoom() {
-    if (state.analysisChart) state.analysisChart.resetZoom();
-}
-
-function resetZoomFullScreen() {
-    if (state.fullScreenChart) state.fullScreenChart.resetZoom();
-}
-
-function exportarCSV() {
-    const rows = state.currentAnalysisFilteredHistory;
-    if (!rows || !rows.length) return;
-    const headers = ['Horário', 'Canal 1', 'Canal 2', 'ΔT'];
-    const csvLines = [];
-    csvLines.push(headers.join(','));
-    rows.forEach(r => {
-        const time = new Date(r.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const c1 = r.canal_1 ?? '';
-        const c2 = r.canal_2 ?? '';
-        const dt = r.delta_t ?? '';
-        csvLines.push(`${time},${c1},${c2},${dt}`);
-    });
-    const csvContent = csvLines.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `curva_analise_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-}
-
-function exportarCSVFullScreen() {
-    exportarCSV();
 }
 
 // ==========================================================================
