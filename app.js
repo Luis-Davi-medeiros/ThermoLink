@@ -63,6 +63,8 @@ function verificarSessaoSalva() {
     if (session) {
         try {
             const user = JSON.parse(session);
+            // Hide splash screen immediately for logged‑in users
+            $("splashScreen").classList.add("hidden");
             iniciarPainelUsuario(user);
             return true;
         } catch {
