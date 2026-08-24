@@ -964,6 +964,42 @@ function renderFullScreenChart(rows) {
     });
 }
 
+// Chart utility functions
+function resetZoom() {
+    if (state.analysisChart) state.analysisChart.resetZoom();
+}
+
+function resetZoomFullScreen() {
+    if (state.fullScreenChart) state.fullScreenChart.resetZoom();
+}
+
+function exportarCSV() {
+    const rows = state.currentAnalysisFilteredHistory;
+    if (!rows || !rows.length) return;
+    const headers = ['Horário', 'Canal 1', 'Canal 2', 'ΔT'];
+    const csvLines = [];
+    csvLines.push(headers.join(','));
+    rows.forEach(r => {
+        const time = new Date(r.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const c1 = r.canal_1 ?? '';
+        const c2 = r.canal_2 ?? '';
+        const dt = r.delta_t ?? '';
+        csvLines.push(`${time},${c1},${c2},${dt}`);
+    });
+    const csvContent = csvLines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `curva_analise_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function exportarCSVFullScreen() {
+    exportarCSV();
+}
+
 // ==========================================================================
 // 6. NAVEGAÇÃO ENTRE ABAS DO MENU INFERIOR
 // ==========================================================================
