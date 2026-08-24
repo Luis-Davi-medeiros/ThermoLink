@@ -125,13 +125,12 @@ function iniciarPainelUsuario(user) {
         const clientsAdmin = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
         const clientRecord = clientsAdmin.find(c => c.username?.toLowerCase() === user.username?.toLowerCase());
         if (clientRecord && clientRecord.status === "Bloqueado") {
-            // Usuário está em atraso, exibir aviso mas permitir acesso ao painel
-            exibirMensagemBloqueio();
-            // Não interrompe o fluxo, o usuário pode continuar usando a aplicação
+            $("clientBlockedOverlay").classList.remove("hidden");
+            return;
         }
     }
 
-    // hidden handled by modal logic
+    $("clientBlockedOverlay").classList.add("hidden");
     $("splashScreen").classList.add("hidden");
     $("loginScreen").classList.add("hidden");
     $("mainApp").classList.remove("hidden");
@@ -164,36 +163,11 @@ function realizarLogout() {
     localStorage.removeItem("thermolink_active_session");
     state.currentUser = null;
     $("mainApp").classList.add("hidden");
-    // Ensure modal is hidden on logout
+    $("clientBlockedOverlay").classList.add("hidden");
     $("loginScreen").classList.remove("hidden");
     $("loginUser").value = "";
     $("loginPassword").value = "";
 }
-
-// ==========================================================================
-// 3. MODAL DE BLOQUEIO DE USUÁRIO
-// ==========================================================================
-
-/**
- * Exibe o modal informando que o plano não foi pago / usuário bloqueado.
- */
-function exibirMensagemBloqueio() {
-    const modal = $("modalBloqueio");
-    if (modal) {
-        modal.classList.remove("hidden");
-    }
-}
-
-/**
- * Fecha o modal de bloqueio.
- */
-function fecharModalBloqueio() {
-    const modal = $("modalBloqueio");
-    if (modal) {
-        modal.classList.add("hidden");
-    }
-}
-
 
 // ==========================================================================
 // 2. CONSULTAS AO BANCO SUPABASE
