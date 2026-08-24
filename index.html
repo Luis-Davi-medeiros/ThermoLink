@@ -456,7 +456,7 @@
                         <div class="chart-title">Curva Térmica Detalhada</div>
                         <div class="chart-sub" id="anChartSub">Análise multicanal contínua</div>
                     </div>
-
+                    <button class="btn-primary-admin" onclick="abrirFullScreenChart()" title="Expandir gráfico em tela cheia"><i class="fa-solid fa-maximize"></i></button>
                     <!-- Controles de Canais -->
                     <div class="chart-pill-group" id="anChannelFilter">
                         <button class="pill-btn active" onclick="filtrarCanaisAnalise('all')">Ambos</button>
@@ -467,6 +467,10 @@
 
                 <div class="chart-canvas-box" style="height: 280px;">
                     <canvas id="analysisChartCanvas"></canvas>
+                    <div id="chartFullScreenModal" class="fullscreen-modal hidden">
+                        <button class="btn-primary-admin modal-close" onclick="fecharFullScreenChart()" title="Fechar"><i class="fa-solid fa-xmark"></i></button>
+                        <canvas id="fullScreenChartCanvas"></canvas>
+                    </div>
                 </div>
 
                 <div class="chart-legend-custom">
