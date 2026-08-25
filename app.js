@@ -63,9 +63,10 @@ function verificarSessaoSalva() {
     if (session) {
         try {
             const user = JSON.parse(session);
-            // Hide splash screen immediately for logged‑in users
-            $("splashScreen").classList.add("hidden");
-            iniciarPainelUsuario(user);
+            // Show splash screen for logged‑in users, then transition after 2 s
+            setTimeout(() => {
+                iniciarPainelUsuario(user);
+            }, 2000);
             return true;
         } catch {
             localStorage.removeItem("thermolink_active_session");
@@ -75,8 +76,10 @@ function verificarSessaoSalva() {
 }
 
 function irParaLogin() {
-    $("splashScreen").classList.add("hidden");
+    // Se houver sessão válida, a splash será gerenciada por verificarSessaoSalva()
+    // Caso contrário, ocultamos a splash e exibimos a tela de login
     if (!verificarSessaoSalva()) {
+        $("splashScreen").classList.add("hidden");
         $("loginScreen").classList.remove("hidden");
     }
 }
@@ -103,16 +106,14 @@ function realizarLogin(e) {
     e.preventDefault();
     const userVal = $("loginUser").value.trim().toLowerCase();
     const passVal = $("loginPassword").value.trim();
-    const remember = $("rememberMe").checked;
+
 
     const users = getRegisteredUsers();
     const found = users.find(u => u.username.toLowerCase() === userVal && u.password === passVal);
 
     if (found) {
         $("loginError").classList.add("hidden");
-        if (remember) {
-            localStorage.setItem("thermolink_active_session", JSON.stringify(found));
-        }
+        localStorage.setItem("thermolink_active_session", JSON.stringify(found));
         iniciarPainelUsuario(found);
     } else {
         $("loginError").classList.remove("hidden");
@@ -990,6 +991,12 @@ function escapeHtml(str) {
 // ==========================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Verifica sessão salva e controla splash/login
+    if (!verificarSessaoSalva()) {
+        $("splashScreen").classList.add("hidden");
+        $("loginScreen").classList.remove("hidden");
+    }
+
     // Sincronização automática a cada 8 segundos
     setInterval(() => {
         if (state.currentUser) {
