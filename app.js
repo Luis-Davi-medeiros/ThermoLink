@@ -134,9 +134,14 @@ function iniciarPainelUsuario(user) {
     }
 
     $("clientBlockedOverlay").classList.add("hidden");
+    // Hide initial splash, show post-login vinheta for 2 s
     $("splashScreen").classList.add("hidden");
-    $("loginScreen").classList.add("hidden");
-    $("mainApp").classList.remove("hidden");
+    $("postLoginSplash").classList.remove("hidden");
+    // After 2 s, hide vinheta and show main app
+    setTimeout(() => {
+        $("postLoginSplash").classList.add("hidden");
+        $("mainApp").classList.remove("hidden");
+    }, 2000);
 
     // Banner de Impersonation (Modo Suporte do Administrador)
     const impBanner = $("impersonateBanner");
