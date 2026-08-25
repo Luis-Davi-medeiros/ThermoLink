@@ -139,27 +139,40 @@ button {
 }
 
 /* ==========================================================================
-   1. SPLASH SCREEN
+   1. SPLASH SCREEN (ABERTURA COM SESSÃO VÁLIDA)
    ========================================================================== */
 .splash-container {
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: radial-gradient(circle at 50% 30%, #0d2c42 0%, #071b2b 70%, #04121d 100%);
+    background: radial-gradient(circle at 50% 35%, #0d2c42 0%, #071b2b 65%, #04121d 100%);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
     text-align: center;
-    transition: opacity 0.35s ease, visibility 0.35s ease;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+
+.splash-container.splash-out {
+    opacity: 0;
+    visibility: hidden;
 }
 
 .splash-content {
     width: 100%;
-    max-width: 360px;
+    max-width: 320px;
     display: flex;
     flex-direction: column;
     align-items: center;
+    animation: splashFadeIn 0.6s ease-out;
+}
+
+@keyframes splashFadeIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
 }
 
 .logo-icon-box {
@@ -173,7 +186,7 @@ button {
     font-size: 52px;
     color: var(--orange);
     box-shadow: 0 0 35px var(--orange-glow), inset 0 0 20px rgba(244, 123, 32, 0.15);
-    margin-bottom: 24px;
+    margin-bottom: 22px;
     animation: pulseLogo 2.5s infinite ease-in-out;
 }
 
@@ -190,49 +203,27 @@ button {
     line-height: 1.1;
 }
 
-.splash-tagline {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--orange);
-    letter-spacing: 0.12em;
-    margin-top: 6px;
+.splash-loading-bar {
+    margin-top: 30px;
+    width: 140px;
+    height: 3px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
 }
 
-.splash-subtitle {
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--text-secondary);
-    margin: 18px 0 28px;
+.splash-loading-bar span {
+    display: block;
+    height: 100%;
+    width: 40%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--orange-dark), var(--orange-light));
+    animation: splashLoad 1.4s ease-in-out infinite;
 }
 
-.btn-splash-enter {
-    width: 100%;
-    height: 52px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--orange) 0%, var(--orange-dark) 100%);
-    color: #ffffff;
-    font-size: 15px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    box-shadow: 0 10px 25px var(--orange-glow);
-    transition: transform 0.15s ease, filter 0.15s ease;
-}
-
-.btn-splash-enter:hover {
-    filter: brightness(1.08);
-}
-
-.btn-splash-enter:active {
-    transform: scale(0.98);
-}
-
-.splash-footer-info {
-    margin-top: 24px;
-    font-size: 11px;
-    color: var(--text-muted);
+@keyframes splashLoad {
+    0% { transform: translateX(-110%); }
+    100% { transform: translateX(360%); }
 }
 
 /* ==========================================================================
