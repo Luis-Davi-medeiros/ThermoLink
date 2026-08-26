@@ -682,3 +682,452 @@
         abrirAlerta
     };
 })();
+
+// ==========================================================================
+// THERMOLINK - MOTOR DE ALERTAS EM TEMPO REAL (LOCAL)
+// --------------------------------------------------------------------------
+// • Interruptor geral + limites de temperatura máx/mín por forno (C1 e C2)
+// • Preferências persistidas no localStorage (sobrevivem ao fechar o app)
+// • Verificação injetada no ciclo de 8 segundos do app (carregarFornosELeituras)
+// • Estímulos: borda piscante vermelha + modal de emergência, bip industrial
+//   em loop enquanto o problema persistir e vibração nativa via ponte Kodular
+//     → window.AppInventor.setWebViewString("vibrar")  /  window.Kodular...
+// ==========================================================================
+
+(function () {
+    "use strict";
+
+    const LS_KEY = "thermolink_alertas_config_v1";
+    const TEXTO_PONTE_VIBRAR = "vibrar";
+
+    function padrao() {
+        return {
+            geralAtivo: false,
+            estimulos: { visual: true, sonoro: true, vibracao: true },
+            fornos: {} // "numero": { limiteMax: number|null, limiteMin: number|null }
+        };
+    }
+
+    let config = carregarConfig();
+    let selecaoAtual = "";          // número do forno em edição ou "todos"
+    let ultimoTotalOpcoes = -1;
+    const alarmes = new Map();      // chave "forno|canal|tipo" -> info da violação
+    let silenciado = false;
+    let dispensado = false;
+    let timerSom = null;
+    let timerVibra = null;
+    let flashEl = null;
+    let modalEl = null;
+
+    // ------------------------------------------------------------------
+    // HELPERS
+    // ------------------------------------------------------------------
+    function $id(id) { return document.getElementById(id); }
+
+    function carregarConfig() {
+        try {
+            const salvo = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+            const base = padrao();
+            return {
+                geralAtivo: Boolean(salvo.geralAtivo),
+                estimulos: Object.assign(base.estimulos, salvo.estimulos || {}),
+                fornos: salvo.fornos || {}
+            };
+        } catch {
+            return padrao();
+        }
+    }
+
+    function salvarConfig() {
+        try { localStorage.setItem(LS_KEY, JSON.stringify(config)); } catch { /* ignore */ }
+    }
+
+    function num(v) {
+        if (v === null || v === undefined || v === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function getOvens() {
+        try {
+            if (typeof state !== "undefined" && state && Array.isArray(state.ovens)) return state.ovens;
+        } catch { /* app.js ainda não pronto */ }
+        return [];
+    }
+
+    function nomeForno(mod) {
+        const o = getOvens().find(x => Number(x.numero) === Number(mod));
+        if (o && o.nome) return o.nome;
+        return "Forno " + String(mod).padStart(2, "0");
+    }
+
+    // ------------------------------------------------------------------
+    // ÁUDIO PRÓPRIO DO MOTOR (bip industrial em duas notas)
+    // ------------------------------------------------------------------
+    let audioMotor = null;
+
+    function garantirAudioMotor() {
+        try {
+            if (!audioMotor) {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (Ctx) audioMotor = new Ctx();
+            }
+            if (audioMotor && audioMotor.state === "suspended") audioMotor.resume();
+        } catch { /* sem áudio */ }
+        return audioMotor;
+    }
+
+    function bip(freq, inicio, duracao) {
+        const ctx = garantirAudioMotor();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "square"; // timbre mais agressivo, estilo alarme industrial
+        osc.frequency.value = freq;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const t0 = ctx.currentTime + inicio;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duracao);
+        osc.start(t0);
+        osc.stop(t0 + duracao + 0.05);
+    }
+
+    function tocarBipAlarme() {
+        bip(740, 0, 0.16);
+        bip(520, 0.22, 0.22);
+    }
+
+    function iniciarLoopSonoro() {
+        if (timerSom) return;
+        garantirAudioMotor();
+        tocarBipAlarme();
+        timerSom = setInterval(tocarBipAlarme, 1600);
+    }
+
+    function pararLoopSonoro() {
+        if (timerSom) { clearInterval(timerSom); timerSom = null; }
+    }
+
+    // ------------------------------------------------------------------
+    // VIBRAÇÃO: API nativa do navegador + PONTE KODULAR (WebViewString)
+    // ------------------------------------------------------------------
+    function vibrarAgora() {
+        try { if (navigator.vibrate) navigator.vibrate(500); } catch { /* sem suporte */ }
+        // Ponte JavaScript ➡️ Kodular/App Inventor:
+        // No Kodular, o bloco "When WebViewer.WebViewStringChange" recebe "vibrar"
+        // e aciona o componente nativo de vibração.
+        try {
+            if (window.AppInventor && typeof window.AppInventor.setWebViewString === "function") {
+                window.AppInventor.setWebViewString(TEXTO_PONTE_VIBRAR);
+            }
+        } catch { /* fora do WebView */ }
+        try {
+            if (window.Kodular && typeof window.Kodular.setWebViewString === "function") {
+                window.Kodular.setWebViewString(TEXTO_PONTE_VIBRAR);
+            }
+        } catch { /* fora do WebView */ }
+    }
+
+    function iniciarLoopVibracao() {
+        if (timerVibra) return;
+        vibrarAgora();
+        timerVibra = setInterval(vibrarAgora, 3000);
+    }
+
+    function pararLoopVibracao() {
+        if (timerVibra) { clearInterval(timerVibra); timerVibra = null; }
+    }
+
+    // ------------------------------------------------------------------
+    // ESTÍMULO VISUAL: borda piscante vermelha + modal flutuante de emergência
+    // ------------------------------------------------------------------
+    function garantirFlash() {
+        if (flashEl) return;
+        flashEl = document.createElement("div");
+        flashEl.className = "tl-flash-overlay";
+        document.body.appendChild(flashEl);
+    }
+
+    function removerFlash() {
+        if (flashEl) { flashEl.remove(); flashEl = null; }
+    }
+
+    function garantirModalEmergencia() {
+        if (modalEl) return;
+        modalEl = document.createElement("div");
+        modalEl.className = "tl-emergencia";
+        document.body.appendChild(modalEl);
+    }
+
+    function fecharModalEmergencia() {
+        if (modalEl) { modalEl.remove(); modalEl = null; }
+    }
+
+    function atualizarModalEmergencia() {
+        if (!alarmes.size) { fecharModalEmergencia(); return; }
+        garantirModalEmergencia();
+
+        const itens = Array.from(alarmes.values()).map(a => {
+            const acima = a.tipo === "max";
+            const cor = acima ? "var(--red)" : "var(--blue-light)";
+            const rotulo = acima ? "acima do limite" : "abaixo do limite";
+            const iconeCanal = a.canal === 1 ? "Canal 1 • Superior" : "Canal 2 • Inferior";
+            return '<div class="tl-emerg-item">' +
+                       '<i class="fa-solid fa-triangle-exclamation" style="color:' + cor + '; margin-top:2px;"></i>' +
+                       '<span><b>' + escapeHtml(nomeForno(a.mod)) + '</b> — ' + iconeCanal + ': ' +
+                       '<b style="color:' + cor + ';">' + Math.round(a.valor).toLocaleString("pt-BR") + ' °C</b> ' +
+                       '(' + rotulo + ': ' + Math.round(a.limite).toLocaleString("pt-BR") + ' °C)</span>' +
+                   '</div>';
+        }).join("");
+
+        modalEl.innerHTML =
+            '<div class="tl-emergencia-card">' +
+                '<div class="tl-emergencia-head"><i class="fa-solid fa-radiation"></i><span>ALERTA CRÍTICO DE TEMPERATURA</span></div>' +
+                '<div class="tl-emergencia-lista">' + itens + '</div>' +
+                '<div class="tl-emergencia-foot">' +
+                    '<button type="button" class="btn-silenciar">' +
+                        '<i class="fa-solid fa-bell-slash"></i><span>Silenciar som e vibração</span>' +
+                    '</button>' +
+                    '<button type="button" class="btn-fechar-alerta">' +
+                        '<i class="fa-solid fa-xmark"></i><span>Fechar alerta e usar o aplicativo</span>' +
+                    '</button>' +
+                    '<p class="tl-emerg-dica">Fecha apenas este aviso — a temperatura continua sendo monitorada. Se romper de novo, o alerta reaparece.</p>' +
+                '</div>' +
+            '</div>';
+
+        // Handlers únicos (após recriar o innerHTML)
+        const btnSilenciar = modalEl.querySelector(".btn-silenciar");
+        if (btnSilenciar) btnSilenciar.addEventListener("click", () => window.ThermoAlertas.silenciar());
+        const btnFechar = modalEl.querySelector(".btn-fechar-alerta");
+        if (btnFechar) btnFechar.addEventListener("click", () => window.ThermoAlertas.fechar());
+    }
+
+    // ------------------------------------------------------------------
+    // SINCRONIA DOS ESTÍMULOS COM O ESTADO ATUAL DOS ALARMES
+    // ------------------------------------------------------------------
+    function sincronizarEstimulos() {
+        const ativo = config.geralAtivo && alarmes.size > 0;
+
+        // VISUAL (pisca até normalizar; some se o usuário fechar o alerta)
+        if (ativo && config.estimulos.visual && !dispensado) {
+            garantirFlash();
+            atualizarModalEmergencia();
+        } else {
+            removerFlash();
+            fecharModalEmergencia();
+        }
+
+        // SONORO E VIBRAÇÃO (em loop enquanto o problema persistir)
+        if (ativo && config.estimulos.sonoro && !silenciado && !dispensado) iniciarLoopSonoro();
+        else pararLoopSonoro();
+
+        if (ativo && config.estimulos.vibracao && !silenciado && !dispensado) iniciarLoopVibracao();
+        else pararLoopVibracao();
+
+        // Tudo normalizou → limpa os estados de silêncio/fechamento
+        if (!ativo) { silenciado = false; dispensado = false; }
+    }
+
+    function pararTudo() {
+        alarmes.clear();
+        silenciado = false;
+        dispensado = false;
+        pararLoopSonoro();
+        pararLoopVibracao();
+        removerFlash();
+        fecharModalEmergencia();
+    }
+
+    // ------------------------------------------------------------------
+    // VERIFICAÇÃO EM TEMPO REAL (chamada pelo app.js a cada 8 segundos)
+    // Compara canal_1 e canal_2 com os limites salvos no localStorage.
+    // ------------------------------------------------------------------
+    function verificarLeituras() {
+        popularSeletor(false);
+
+        if (!config.geralAtivo) return;
+
+        let leituras = null;
+        try { leituras = (typeof state !== "undefined") ? state.readings : null; } catch { /* ignore */ }
+
+        const violacoes = new Map();
+
+        Object.keys(config.fornos).forEach(chave => {
+            const mod = Number(chave);
+            const cfg = config.fornos[chave] || {};
+            const limMax = num(cfg.limiteMax);
+            const limMin = num(cfg.limiteMin);
+            if (limMax === null && limMin === null) return;
+
+            // Sem leitura não gera alerta aqui (equipamento offline é tratado pelo Push)
+            const r = leituras ? leituras.get(mod) : null;
+            if (!r) return;
+
+            [["canal_1", 1], ["canal_2", 2]].forEach(([campo, canal]) => {
+                const valor = num(r[campo]);
+                if (valor === null) return;
+                if (limMax !== null && valor > limMax) {
+                    violacoes.set(mod + "|" + canal + "|max", { mod, canal, tipo: "max", valor, limite: limMax });
+                }
+                if (limMin !== null && valor < limMin) {
+                    violacoes.set(mod + "|" + canal + "|min", { mod, canal, tipo: "min", valor, limite: limMin });
+                }
+            });
+        });
+
+        // Transições: novo alerta dispara estímulos; normalização encerra tudo
+        let iniciouNovo = false;
+        violacoes.forEach((info, chave) => {
+            if (!alarmes.has(chave)) { alarmes.set(chave, info); iniciouNovo = true; }
+        });
+        Array.from(alarmes.keys()).forEach(chave => {
+            if (!violacoes.has(chave)) alarmes.delete(chave);
+        });
+
+        if (iniciouNovo) {
+            silenciado = false;
+            dispensado = false; // nova violação reabre o aviso, mesmo se antes foi fechado
+            if (config.estimulos.vibracao) vibrarAgora(); // pulso imediato
+        }
+
+        sincronizarEstimulos();
+    }
+
+    // ------------------------------------------------------------------
+    // UI: INTERRUPTOR GERAL + PAINEL RETRÁTIL + AUTO-SAVE
+    // ------------------------------------------------------------------
+    function alternarGeral(ativo) {
+        config.geralAtivo = Boolean(ativo);
+        salvarConfig();
+        const painel = $id("painelAlertas");
+        if (painel) painel.classList.toggle("hidden", !config.geralAtivo);
+        if (!config.geralAtivo) pararTudo();
+        feedbackSalvo();
+    }
+
+    function resolverAlvos() {
+        if (selecaoAtual === "todos") return getOvens().map(o => String(Number(o.numero)));
+        return selecaoAtual ? [selecaoAtual] : [];
+    }
+
+    function preencherCampos() {
+        const inpMax = $id("inpLimiteMax");
+        const inpMin = $id("inpLimiteMin");
+        if (!inpMax || !inpMin) return;
+
+        const alvos = resolverAlvos();
+        if (!alvos.length) { inpMax.value = ""; inpMin.value = ""; return; }
+
+        const primeiro = config.fornos[alvos[0]] || {};
+        const todosIguais = alvos.every(m => {
+            const c = config.fornos[m] || {};
+            return num(c.limiteMax) === num(primeiro.limiteMax) && num(c.limiteMin) === num(primeiro.limiteMin);
+        });
+
+        inpMax.value = todosIguais && primeiro.limiteMax != null ? primeiro.limiteMax : "";
+        inpMin.value = todosIguais && primeiro.limiteMin != null ? primeiro.limiteMin : "";
+    }
+
+    function selecionarForno(valor) {
+        selecaoAtual = valor || "";
+        preencherCampos();
+    }
+
+    function salvarLimites() {
+        const inpMax = $id("inpLimiteMax");
+        const inpMin = $id("inpLimiteMin");
+        if (!inpMax || !inpMin) return;
+
+        const mx = inpMax.value.trim() === "" ? null : Number(inpMax.value);
+        const mn = inpMin.value.trim() === "" ? null : Number(inpMin.value);
+        if (mx !== null && (!Number.isFinite(mx) || mx < 0 || mx > 2000)) return;
+        if (mn !== null && (!Number.isFinite(mn) || mn < 0 || mn > 2000)) return;
+
+        resolverAlvos().forEach(m => {
+            config.fornos[m] = config.fornos[m] || {};
+            config.fornos[m].limiteMax = mx;
+            config.fornos[m].limiteMin = mn;
+        });
+        salvarConfig();
+        feedbackSalvo();
+    }
+
+    function salvarEstimulos() {
+        config.estimulos = {
+            visual: Boolean($id("chkEstVisual") && $id("chkEstVisual").checked),
+            sonoro: Boolean($id("chkEstSonoro") && $id("chkEstSonoro").checked),
+            vibracao: Boolean($id("chkEstVibracao") && $id("chkEstVibracao").checked)
+        };
+        salvarConfig();
+        feedbackSalvo();
+        sincronizarEstimulos(); // aplica na hora (ex.: desligou o sonoro, para o loop)
+    }
+
+    let fbTimer = null;
+    function feedbackSalvo() {
+        const el = $id("alertasSalvoFeedback");
+        if (!el) return;
+        el.classList.add("visivel");
+        clearTimeout(fbTimer);
+        fbTimer = setTimeout(() => el.classList.remove("visivel"), 1500);
+    }
+
+    function popularSeletor(forcar) {
+        const sel = $id("selFornoAlerta");
+        if (!sel) return;
+
+        const fornos = getOvens();
+        if (!fornos.length) return;
+        if (!forcar && fornos.length === ultimoTotalOpcoes) return;
+        ultimoTotalOpcoes = fornos.length;
+
+        const anterior = selecaoAtual;
+        sel.innerHTML =
+            '<option value="todos">Todos os fornos</option>' +
+            fornos.map(o => {
+                const m = Number(o.numero);
+                return '<option value="' + m + '">' + escapeHtml(o.nome || nomeForno(m)) + '</option>';
+            }).join("");
+
+        const opcoes = Array.from(sel.options).map(op => op.value);
+        selecaoAtual = opcoes.includes(String(anterior)) ? String(anterior) : String(Number(fornos[0].numero));
+        sel.value = selecaoAtual;
+        preencherCampos();
+    }
+
+    // ------------------------------------------------------------------
+    // INICIALIZAÇÃO
+    // ------------------------------------------------------------------
+    document.addEventListener("DOMContentLoaded", () => {
+        const chk = $id("chkAlertasGeral");
+        if (chk) chk.checked = Boolean(config.geralAtivo);
+
+        const painel = $id("painelAlertas");
+        if (painel) painel.classList.toggle("hidden", !config.geralAtivo);
+
+        const ev = $id("chkEstVisual"), es = $id("chkEstSonoro"), eb = $id("chkEstVibracao");
+        if (ev) ev.checked = Boolean(config.estimulos.visual);
+        if (es) es.checked = Boolean(config.estimulos.sonoro);
+        if (eb) eb.checked = Boolean(config.estimulos.vibracao);
+
+        popularSeletor(true);
+    });
+
+    // API pública (usada pelo HTML e pelo hook no app.js)
+    window.ThermoAlertas = {
+        alternarGeral,
+        selecionarForno,
+        salvarLimites,
+        salvarEstimulos,
+        verificarLeituras,
+        silenciar: () => { silenciado = true; sincronizarEstimulos(); },
+        fechar: () => { dispensado = true; sincronizarEstimulos(); }
+    };
+})();

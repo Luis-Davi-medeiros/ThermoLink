@@ -534,52 +534,71 @@
                 </div>
             </div>
 
-            <!-- NOTIFICAÇÕES PUSH -->
+            <!-- ========================================================
+                 CONFIGURAÇÃO DE ALERTAS (TEMPO REAL + PONTE KODULAR)
+            ========================================================= -->
             <div class="card-dark">
-                <div class="card-dark-header" onclick="ThermoPush.abrirConfig()" style="cursor: pointer;" title="Configurar tipos e parâmetros dos alertas">
-                    <i class="fa-solid fa-bell text-orange"></i>
-                    <span>Notificações</span>
-                    <i class="fa-solid fa-sliders" style="margin-left:auto; font-size: 12px; color: var(--text-muted);"></i>
+                <div class="alertas-header">
+                    <div class="alertas-header-titulo">
+                        <i class="fa-solid fa-bell text-orange"></i>
+                        <span>Configuração de Alertas</span>
+                    </div>
+                    <!-- INTERRUPTOR GERAL (MASTER TOGGLE) -->
+                    <label class="tl-switch" title="Ativar ou desativar todos os alertas">
+                        <input type="checkbox" id="chkAlertasGeral" onchange="ThermoAlertas.alternarGeral(this.checked)">
+                        <span class="tl-switch-slider"></span>
+                    </label>
                 </div>
 
-                <div class="info-row">
-                    <span>Notificações Push</span>
-                    <b id="pushStateBadge" class="push-state-badge push-off">--</b>
+                <p class="alertas-descricao">Monitora as temperaturas dos Canais 1 e 2 em tempo real e dispara alerta visual, sonoro e vibração quando algum limite for rompido.</p>
+
+                <!-- PAINEL RETRÁTIL: visível apenas com o interruptor geral ativado -->
+                <div id="painelAlertas" class="hidden">
+
+                    <!-- SELETOR DE FORNO (individual ou aplicar a todos) -->
+                    <label class="cfg-label">Forno</label>
+                    <select id="selFornoAlerta" class="cfg-input" onchange="ThermoAlertas.selecionarForno(this.value)">
+                        <option value="">Carregando fornos...</option>
+                    </select>
+
+                    <!-- LIMITES DE TEMPERATURA -->
+                    <div class="cfg-limite-grid">
+                        <div>
+                            <label class="cfg-label"><i class="fa-solid fa-arrow-trend-up" style="color: var(--red);"></i> Limite Máximo</label>
+                            <input type="number" id="inpLimiteMax" class="cfg-input" placeholder="Ex: 950" min="0" max="2000" inputmode="numeric" oninput="ThermoAlertas.salvarLimites()">
+                        </div>
+                        <div>
+                            <label class="cfg-label"><i class="fa-solid fa-arrow-trend-down text-blue"></i> Limite Mínimo</label>
+                            <input type="number" id="inpLimiteMin" class="cfg-input" placeholder="Ex: 700" min="0" max="2000" inputmode="numeric" oninput="ThermoAlertas.salvarLimites()">
+                        </div>
+                    </div>
+
+                    <!-- SELEÇÃO DE ESTÍMULOS -->
+                    <label class="cfg-label">Estímulos do Alerta</label>
+                    <label class="estimulo-check">
+                        <input type="checkbox" id="chkEstVisual" onchange="ThermoAlertas.salvarEstimulos()">
+                        <i class="fa-solid fa-eye" style="color: var(--red); width: 16px; text-align: center;"></i>
+                        <span>Alerta visual (mensagem piscante na tela)</span>
+                    </label>
+                    <label class="estimulo-check">
+                        <input type="checkbox" id="chkEstSonoro" onchange="ThermoAlertas.salvarEstimulos()">
+                        <i class="fa-solid fa-volume-high text-orange" style="width: 16px; text-align: center;"></i>
+                        <span>Alerta sonoro (bip de alarme repetitivo)</span>
+                    </label>
+                    <label class="estimulo-check">
+                        <input type="checkbox" id="chkEstVibracao" onchange="ThermoAlertas.salvarEstimulos()">
+                        <i class="fa-solid fa-mobile-screen-button text-blue" style="width: 16px; text-align: center;"></i>
+                        <span>Vibração do celular</span>
+                    </label>
+
+                    <!-- FEEDBACK DE SALVAMENTO AUTOMÁTICO -->
+                    <div class="alertas-salvo" id="alertasSalvoFeedback"><i class="fa-solid fa-circle-check"></i> Configuração salva automaticamente</div>
                 </div>
 
-                <p id="pushHint" class="push-hint hidden"></p>
-
-                <button type="button" id="btnTogglePush" class="btn-push-toggle" onclick="ThermoPush.toggleFromUi()">
-                    <i class="fa-solid fa-bell" id="btnTogglePushIcon"></i>
-                    <span id="btnTogglePushLabel">Ativar notificações</span>
-                </button>
-
-                <div class="info-row" style="margin-top: 14px;">
-                    <span>Alertas nas últimas 24h</span>
-                    <b id="pushNaoLidas" class="text-orange">0</b>
-                </div>
-
-                <div id="pushListaAlertas" class="push-alerta-lista">
-                    <div class="push-alerta-vazio">Carregando alertas...</div>
-                </div>
-
-                <button type="button" class="btn-push-secondary" onclick="ThermoPush.abrirConfig()">
-                    <i class="fa-solid fa-sliders"></i>
-                    <span>Configurar tipos e parâmetros dos alertas</span>
-                </button>
-                <button type="button" class="btn-push-secondary" onclick="ThermoPush.testarAlerta()">
+                <button type="button" id="btnTestarAlerta" class="btn-push-secondary" onclick="ThermoPush.testarAlerta()">
                     <i class="fa-solid fa-volume-high"></i>
                     <span>Testar alerta (visual + som + vibração)</span>
                 </button>
-
-                <!-- Tipos de alerta monitorados pelo sistema -->
-                <div class="push-types-box">
-                    <div class="push-types-title">TIPOS DE ALERTA MONITORADOS</div>
-                    <div class="push-type-row"><i class="fa-solid fa-circle" style="color: var(--red);"></i><span>Equipamento offline</span></div>
-                    <div class="push-type-row"><i class="fa-solid fa-circle text-orange"></i><span>Temperatura acima do limite</span></div>
-                    <div class="push-type-row"><i class="fa-solid fa-circle text-green"></i><span>Equipamento voltou online</span></div>
-                    <div class="push-type-row"><i class="fa-solid fa-fire text-orange"></i><span>Eventos importantes da queima (em breve)</span></div>
-                </div>
             </div>
 
             <!-- SOBRE & LOGOUT -->
@@ -647,80 +666,6 @@
             Entre em contato com o suporte técnico da <b>ThermoLink</b> para regularizar sua assinatura e reativar seus aparelhos.
         </div>
         <button class="btn-logout" onclick="realizarLogout()" style="width: 100%;">Voltar à Tela de Login</button>
-    </div>
-</div>
-
-<!-- ========================================================
-     MODAL: CONFIGURAR TIPOS E PARÂMETROS DOS ALERTAS
-======================================================== -->
-<div id="modalConfigAlertas" class="tl-modal-overlay hidden">
-    <div class="tl-modal">
-        <div class="tl-modal-header">
-            <i class="fa-solid fa-sliders text-orange"></i>
-            <span>Configurar Alertas</span>
-            <button type="button" class="tl-modal-fechar" onclick="ThermoPush.fecharConfig()">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
-        </div>
-
-        <div class="tl-modal-corpo">
-            <!-- FORNO -->
-            <label class="cfg-label">Forno</label>
-            <select id="cfgFornoSelect" class="cfg-input" onchange="ThermoPush.selecionarFornoConfig(this.value)">
-                <option value="">Carregando fornos...</option>
-            </select>
-
-            <!-- TIPO: EQUIPAMENTO OFFLINE -->
-            <div class="cfg-bloco">
-                <label class="cfg-check-row">
-                    <input type="checkbox" id="cfgOfflineChk" checked>
-                    <i class="fa-solid fa-circle" style="color: var(--red); font-size: 8px;"></i>
-                    <span>Notificar equipamento offline</span>
-                </label>
-                <div class="cfg-param-linha">
-                    <span>Minutos sem comunicação:</span>
-                    <input type="number" id="cfgOfflineMin" class="cfg-input cfg-input-num" min="1" max="120" value="5">
-                </div>
-            </div>
-
-            <!-- TIPO: VOLTOU ONLINE -->
-            <label class="cfg-check-row">
-                <input type="checkbox" id="cfgOnlineChk" checked>
-                <i class="fa-solid fa-circle text-green" style="font-size: 8px;"></i>
-                <span>Notificar quando voltar online</span>
-            </label>
-
-            <!-- TIPO: TEMPERATURA -->
-            <div class="cfg-bloco">
-                <label class="cfg-check-row">
-                    <input type="checkbox" id="cfgTempChk" checked>
-                    <i class="fa-solid fa-circle text-orange" style="font-size: 8px;"></i>
-                    <span>Notificar temperatura acima do limite</span>
-                </label>
-                <div class="cfg-param-linha">
-                    <span>Limite (°C):</span>
-                    <input type="number" id="cfgTempLimite" class="cfg-input cfg-input-num" placeholder="Ex: 1150" min="30" max="2000">
-                </div>
-                <p class="cfg-dica">Deixe o limite vazio para desativar o alerta de temperatura deste forno.</p>
-            </div>
-
-            <!-- ISOLAMENTO POR EMPRESA -->
-            <label class="cfg-label">Empresa destinatária (opcional)</label>
-            <input type="text" id="cfgEmpresa" class="cfg-input" placeholder="Vazio = todas as cerâmicas veem este alerta">
-
-            <label class="cfg-check-row" style="margin-top: 14px;">
-                <input type="checkbox" id="cfgAplicarTodos">
-                <i class="fa-solid fa-fire-flame-curved text-orange" style="font-size: 10px;"></i>
-                <span><b>Aplicar para todos os fornos</b></span>
-            </label>
-
-            <p id="cfgMsg" class="push-hint hidden"></p>
-
-            <button type="button" class="btn-push-toggle" onclick="ThermoPush.salvarConfig()" style="margin-top: 16px;">
-                <i class="fa-solid fa-floppy-disk"></i>
-                <span>Salvar configuração</span>
-            </button>
-        </div>
     </div>
 </div>
 

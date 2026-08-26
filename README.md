@@ -50,34 +50,39 @@ Clique na notificação abre o ThermoLink diretamente no forno relacionado.
 
 Cada alerta também é gravado na tabela `notificacoes` (outbox), que alimenta os **alertas dentro do app**.
 
-### Alertas dentro do app (visual + som + vibração)
+### Alertas em tempo real no aparelho (Configuração de Alertas)
 
-Independente do Web Push, o app faz *polling* na tabela `notificacoes` (30s) e dispara:
+Na aba **Acesso**, abaixo do perfil do cliente, ficou o card **"Configuração de Alertas"**:
 
-- banner visual colorido no topo (clique → abre o forno relacionado);
-- alerta sonoro via WebAudio (sem arquivos externos);
-- vibração via Vibration API;
-- central com as últimas 24h em **Configurações → Notificações**.
+- **Interruptor geral** (toggle) para ativar/desativar todos os alertas;
+- Com ele ativado, abre o painel com:
+  - **Seletor de forno** (individual ou "Todos os fornos");
+  - **Limite Máximo (°C)** — ex.: alerta se passar de 950;
+  - **Limite Mínimo (°C)** — ex.: alerta se cair de 700;
+  - **Estímulos**: visual (borda piscante vermelha + modal de emergência), sonoro (bip industrial repetitivo) e vibração.
+- Tudo é salvo **automaticamente no localStorage** do aparelho ("Configuração salva automaticamente");
+- A checagem roda dentro da sincronização de 8 segundos (`carregarFornosELeituras`), comparando **canal_1 e canal_2** de cada leitura com os limites salvos;
+- Enquanto o problema persistir: borda pisca, bip toca em loop e o celular vibra; ao normalizar, tudo cessa sozinho. O modal oferece **"Silenciar som e vibração"** (mantém o aviso visual) e **"Fechar alerta e usar o aplicativo"** (fecha tudo na hora — se romper de novo, o alerta reaparece);
+- O botão **"Testar alerta (visual + som + vibração)"** dispara uma amostra dos três estímulos na hora.
 
-Em **Configurações → Notificações** também é possível:
-
-- **Configurar tipos e parâmetros dos alertas** por forno (offline em X minutos, limite de temperatura, volta online, empresa destinatária, "aplicar para todos");
-- **Testar alerta** (banner + som + vibração na hora).
-
-> O som só toca após o primeiro toque na tela (política dos navegadores). A vibração exige navegador/WebView com suporte à Vibration API.
+> O som só toca após o primeiro toque na tela (política dos navegadores).
 
 ### Uso no APK (Kodular.io)
 
-O WebView do Kodular **não suporta Web Push** (Service Worker push). O ThermoLink funciona assim no APK:
+O WebView do Kodular **não suporta Web Push** (Service Worker push), mas o motor de alertas em tempo real funciona normalmente, pois é 100% HTML/JS rodando na página:
 
-1. **Dentro do app (funciona sem extensão):** carregue a URL do site num componente `WebView`. A central de alertas detecta o modo APK automaticamente (`pushStateBadge` mostra "Modo App") e dispara banner + som + vibração normalmente.
-   - No Kodular, ative a permissão **Vibrate** nas configurações do projeto para a vibração funcionar.
-2. **Barra de notificação do Android (com PWA fechada):** adicione a extensão **OneSignal** no seu projeto Kodular. Depois cadastre os secrets na função:
+1. Carregue a URL do site num componente `WebViewer` do Kodular.
+2. No painel de **Blocos** do Kodular:
+   - Adicione o evento `When WebViewer.WebViewStringChange`;
+   - Se o valor recebido for exatamente `vibrar`, chame o componente nativo **Vibration** (Device → Vibration) por **500 milissegundos**.
+
+   O ThermoLink envia `"vibrar"` via `window.AppInventor.setWebViewString("vibrar")` (e também tenta `window.Kodular.setWebViewString`) sempre que um alarme estiver ativo — a API `navigator.vibrate()` continua sendo usada como reforço onde estiver disponível.
+3. Ative a permissão **Vibrate** nas configurações do projeto Kodular.
+4. **Barra de notificação do Android com o app fechado (opcional):** adicione a extensão **OneSignal** e cadastre os secrets:
    ```bash
    supabase secrets set ONESIGNAL_APP_ID=xxxxxxxx ONESIGNAL_REST_KEY=yyyyyy
    ```
-   Com isso, todo alerta gerado também é enviado pela OneSignal e chega na barra do sistema, mesmo com o app fechado.
-3. Isolamento por empresa: preencha o campo **Empresa destinatária** ao configurar um forno — o alerta fica visível apenas para a sessão dessa cerâmica.
+   Todo alerta gerado pelo backend também será entregue pela OneSignal.
 
 ### Testes
 
