@@ -48,6 +48,37 @@ Descomente o bloco final do SQL do Passo 1, preenchendo `<PUSH_SECRET>` (valor d
 
 Clique na notificação abre o ThermoLink diretamente no forno relacionado.
 
+Cada alerta também é gravado na tabela `notificacoes` (outbox), que alimenta os **alertas dentro do app**.
+
+### Alertas dentro do app (visual + som + vibração)
+
+Independente do Web Push, o app faz *polling* na tabela `notificacoes` (30s) e dispara:
+
+- banner visual colorido no topo (clique → abre o forno relacionado);
+- alerta sonoro via WebAudio (sem arquivos externos);
+- vibração via Vibration API;
+- central com as últimas 24h em **Configurações → Notificações**.
+
+Em **Configurações → Notificações** também é possível:
+
+- **Configurar tipos e parâmetros dos alertas** por forno (offline em X minutos, limite de temperatura, volta online, empresa destinatária, "aplicar para todos");
+- **Testar alerta** (banner + som + vibração na hora).
+
+> O som só toca após o primeiro toque na tela (política dos navegadores). A vibração exige navegador/WebView com suporte à Vibration API.
+
+### Uso no APK (Kodular.io)
+
+O WebView do Kodular **não suporta Web Push** (Service Worker push). O ThermoLink funciona assim no APK:
+
+1. **Dentro do app (funciona sem extensão):** carregue a URL do site num componente `WebView`. A central de alertas detecta o modo APK automaticamente (`pushStateBadge` mostra "Modo App") e dispara banner + som + vibração normalmente.
+   - No Kodular, ative a permissão **Vibrate** nas configurações do projeto para a vibração funcionar.
+2. **Barra de notificação do Android (com PWA fechada):** adicione a extensão **OneSignal** no seu projeto Kodular. Depois cadastre os secrets na função:
+   ```bash
+   supabase secrets set ONESIGNAL_APP_ID=xxxxxxxx ONESIGNAL_REST_KEY=yyyyyy
+   ```
+   Com isso, todo alerta gerado também é enviado pela OneSignal e chega na barra do sistema, mesmo com o app fechado.
+3. Isolamento por empresa: preencha o campo **Empresa destinatária** ao configurar um forno — o alerta fica visível apenas para a sessão dessa cerâmica.
+
 ### Testes
 
 1. Abrir o app logado → Configurações → **Ativar notificações** → aceitar permissão.
