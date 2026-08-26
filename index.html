@@ -19,12 +19,6 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
 
-    <!-- Hammer.js for touch gestures -->
-    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-
-    <!-- chartjs-plugin-zoom for pan/zoom -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
-
     <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -36,7 +30,7 @@
 <div class="mobile-wrapper">
 
     <!-- ========================================================
-         1. SPLASH SCREEN (ABERTURA COM SESSÃO VÁLIDA)
+         1. SPLASH / APRESENTAÇÃO
     ========================================================= -->
     <div id="splashScreen" class="splash-container">
         <div class="splash-content">
@@ -44,7 +38,17 @@
                 <i class="fa-solid fa-fire-flame-curved"></i>
             </div>
             <div class="splash-brand">ThermoLink</div>
-            <div class="splash-loading-bar"><span></span></div>
+            <div class="splash-tagline">MONITOR DE FORNOS CERÂMICOS</div>
+            <p class="splash-subtitle">
+                Acompanhe a curva térmica e a queima dos seus fornos em tempo real direto do seu smartphone.
+            </p>
+            <button class="btn-splash-enter" onclick="irParaLogin()">
+                <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                Acessar Meus Fornos
+            </button>
+            <div class="splash-footer-info">
+                <span>Versão 2.4 Mobile • Telemetria Industrial</span>
+            </div>
         </div>
     </div>
 
@@ -320,18 +324,15 @@
                             <div class="chart-sub" id="chartPointCount">Carregando dados...</div>
                         </div>
 
-                        <!-- Filtros do Gráfico + Botão Expandir -->
+                        <!-- Filtros do Gráfico -->
                         <div class="chart-pill-group" id="chartChannelFilter">
                             <button class="pill-btn active" onclick="filtrarCanaisGrafico('all')">Ambos</button>
                             <button class="pill-btn" onclick="filtrarCanaisGrafico('c1')">C1</button>
                             <button class="pill-btn" onclick="filtrarCanaisGrafico('c2')">C2</button>
-                            <button class="pill-btn expand-chart-btn" onclick="abrirModoExpandido(state.currentDetailHistory)" title="Expandir para modo paisagem interativo">
-                                <i class="fa-solid fa-expand"></i>
-                            </button>
                         </div>
                     </div>
 
-                    <div class="chart-canvas-box" id="detailChartWrapper">
+                    <div class="chart-canvas-box">
                         <canvas id="detailChartCanvas"></canvas>
                     </div>
 
@@ -456,18 +457,15 @@
                         <div class="chart-sub" id="anChartSub">Análise multicanal contínua</div>
                     </div>
 
-                    <!-- Controles de Canais + Botão Expandir -->
+                    <!-- Controles de Canais -->
                     <div class="chart-pill-group" id="anChannelFilter">
                         <button class="pill-btn active" onclick="filtrarCanaisAnalise('all')">Ambos</button>
                         <button class="pill-btn" onclick="filtrarCanaisAnalise('c1')">C1</button>
                         <button class="pill-btn" onclick="filtrarCanaisAnalise('c2')">C2</button>
-                        <button class="pill-btn expand-chart-btn" onclick="abrirModoExpandido(state.currentAnalysisFilteredHistory)" title="Expandir para modo paisagem interativo">
-                            <i class="fa-solid fa-expand"></i>
-                        </button>
                     </div>
                 </div>
 
-                <div class="chart-canvas-box" id="analysisChartWrapper" style="height: 280px;">
+                <div class="chart-canvas-box" style="height: 280px;">
                     <canvas id="analysisChartCanvas"></canvas>
                 </div>
 
@@ -590,55 +588,9 @@
 
 </div>
 
-    <!-- ========================================================
-         FULLSCREEN INTERACTIVE CHART MODAL (LANDSCAPE MODE)
-    ========================================================= -->
-    <div id="chartFullscreenModal" class="fullscreen-modal hidden" role="dialog" aria-modal="true" aria-label="Curva Térmica Interativa - Modo Paisagem">
-        <div class="fullscreen-modal-backdrop" onclick="fecharModoExpandido()"></div>
-        <div class="fullscreen-modal-content">
-            <!-- Header Compacto -->
-            <div class="fullscreen-header">
-                <div class="fullscreen-legend">
-                    <span class="legend-item">
-                        <span class="legend-color legend-c1"></span>
-                        <span>Canal 1 - Superior</span>
-                    </span>
-                    <span class="legend-item">
-                        <span class="legend-color legend-c2"></span>
-                        <span>Canal 2 - Inferior</span>
-                    </span>
-                </div>
-                <button class="fullscreen-close-btn" onclick="fecharModoExpandido()" aria-label="Fechar modo expandido">
-                    <i class="fa-solid fa-compress"></i>
-                </button>
-            </div>
-
-            <!-- Canvas Area -->
-            <div class="fullscreen-chart-wrapper">
-                <canvas id="fullscreenChartCanvas"></canvas>
-                <!-- Crosshair Tooltip Overlay -->
-                <div id="fullscreenCrosshair" class="crosshair-overlay hidden">
-                    <div class="crosshair-line"></div>
-                    <div class="crosshair-tooltip">
-                        <div class="tooltip-row tooltip-time"><i class="fa-regular fa-clock"></i> <span id="crosshairTime">--:--:--</span></div>
-                        <div class="tooltip-row tooltip-c1"><span class="sensor-dot c1"></span> Canal 1: <strong id="crosshairC1">-- °C</strong></div>
-                        <div class="tooltip-row tooltip-c2"><span class="sensor-dot c2"></span> Canal 2: <strong id="crosshairC2">-- °C</strong></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Dicas de gesto sutis -->
-            <div class="fullscreen-hints">
-                <span class="hint-item"><i class="fa-solid fa-hand"></i> Arraste para navegar no tempo</span>
-                <span class="hint-item"><i class="fa-solid fa-magnifying-glass"></i> Pinça para zoom no eixo X</span>
-                <span class="hint-item"><i class="fa-solid fa-mouse-pointer"></i> Toque duplo para resetar zoom</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- ========================================================
-         OVERLAY DE BLOQUEIO POR INADIMPLÊNCIA / SUSPENSÃO
-    ========================================================= -->
+<!-- ========================================================
+     OVERLAY DE BLOQUEIO POR INADIMPLÊNCIA / SUSPENSÃO
+========================================================= -->
 <div id="clientBlockedOverlay" class="modal-overlay hidden" style="z-index: 99999;">
     <div class="modal-card" style="text-align: center; align-items: center; padding: 32px 24px;">
         <div style="width: 64px; height: 64px; border-radius: 20px; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--red); color: var(--red); display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 12px;">

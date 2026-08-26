@@ -43,19 +43,13 @@ const state = {
     readings: new Map(),
     mainChart: null,
     analysisChart: null,
-    fullscreenChart: null,
     miniCharts: new Map(),
     chartChannelFilter: "all",
     analysisChannelFilter: "all",
     currentDetailHistory: [],
     currentAnalysisRawHistory: [],
     currentAnalysisFilteredHistory: [],
-    isPolling: false,
-    // Fullscreen chart state
-    fullscreenData: null,
-    fullscreenHammer: null,
-    crosshairActive: false,
-    lastTapTime: 0
+    isPolling: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -66,19 +60,22 @@ const $ = (id) => document.getElementById(id);
 
 function verificarSessaoSalva() {
     const session = localStorage.getItem("thermolink_active_session");
-    if (!session) return null;
-    try {
-        const dados = JSON.parse(session);
-        if (!dados || !dados.username) throw new Error("Sessão inválida");
-        // Migração de segurança: sessões antigas podiam conter a senha — remove
-        if (dados.password !== undefined) {
-            delete dados.password;
-            localStorage.setItem("thermolink_active_session", JSON.stringify(dados));
+    if (session) {
+        try {
+            const user = JSON.parse(session);
+            iniciarPainelUsuario(user);
+            return true;
+        } catch {
+            localStorage.removeItem("thermolink_active_session");
         }
-        return dados;
-    } catch {
-        localStorage.removeItem("thermolink_active_session");
-        return null;
+    }
+    return false;
+}
+
+function irParaLogin() {
+    $("splashScreen").classList.add("hidden");
+    if (!verificarSessaoSalva()) {
+        $("loginScreen").classList.remove("hidden");
     }
 }
 
@@ -104,33 +101,23 @@ function realizarLogin(e) {
     e.preventDefault();
     const userVal = $("loginUser").value.trim().toLowerCase();
     const passVal = $("loginPassword").value.trim();
+    const remember = $("rememberMe").checked;
 
     const users = getRegisteredUsers();
     const found = users.find(u => u.username.toLowerCase() === userVal && u.password === passVal);
 
     if (found) {
         $("loginError").classList.add("hidden");
-
-        // Sessão persistida SEM a senha (apenas dados de identificação)
-        const sessao = {
-            username: found.username,
-            name: found.name,
-            role: found.role,
-            loginAt: new Date().toISOString()
-        };
-
-        // Só persiste se "Lembrar neste celular" estiver marcado
-        if ($("rememberMe").checked) {
-            localStorage.setItem("thermolink_active_session", JSON.stringify(sessao));
+        if (remember) {
+            localStorage.setItem("thermolink_active_session", JSON.stringify(found));
         }
-
-        iniciarPainelUsuario(sessao, false);
+        iniciarPainelUsuario(found);
     } else {
         $("loginError").classList.remove("hidden");
     }
 }
 
-function iniciarPainelUsuario(user, usarSplash = false) {
+function iniciarPainelUsuario(user) {
     state.currentUser = user;
 
     // Checagem se a conta foi bloqueada pelo Master Admin
@@ -138,31 +125,15 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         const clientsAdmin = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
         const clientRecord = clientsAdmin.find(c => c.username?.toLowerCase() === user.username?.toLowerCase());
         if (clientRecord && clientRecord.status === "Bloqueado") {
-            $("splashScreen").classList.add("hidden");
             $("clientBlockedOverlay").classList.remove("hidden");
             return;
         }
     }
 
     $("clientBlockedOverlay").classList.add("hidden");
+    $("splashScreen").classList.add("hidden");
     $("loginScreen").classList.add("hidden");
-
-    // Entrada: splash com a logo (2,5s + fade suave) ou direto após o login
-    const abrirApp = () => {
-        $("splashScreen").classList.add("hidden");
-        $("mainApp").classList.remove("hidden");
-    };
-
-    if (usarSplash) {
-        $("splashScreen").classList.remove("hidden");
-        $("splashScreen").classList.remove("splash-out");
-        setTimeout(() => {
-            $("splashScreen").classList.add("splash-out");
-            setTimeout(abrirApp, 500);
-        }, 2500);
-    } else {
-        abrirApp();
-    }
+    $("mainApp").classList.remove("hidden");
 
     // Banner de Impersonation (Modo Suporte do Administrador)
     const impBanner = $("impersonateBanner");
@@ -192,7 +163,6 @@ function realizarLogout() {
     localStorage.removeItem("thermolink_active_session");
     state.currentUser = null;
     $("mainApp").classList.add("hidden");
-    $("splashScreen").classList.add("hidden");
     $("clientBlockedOverlay").classList.add("hidden");
     $("loginScreen").classList.remove("hidden");
     $("loginUser").value = "";
@@ -567,7 +537,6 @@ function filtrarCanaisGrafico(canal) {
 
 function renderGraficoPrincipal(rows) {
     const canvas = $("detailChartCanvas");
-    const wrapper = $("detailChartWrapper");
     if (!canvas || !rows.length) return;
 
     if (state.mainChart) {
@@ -650,25 +619,9 @@ function renderGraficoPrincipal(rows) {
                     ticks: { color: "#71899a", font: { size: 10 }, callback: (v) => `${v}°` },
                     grid: { color: "rgba(255, 255, 255, 0.05)" }
                 }
-            },
-            onClick: (e, elements) => {
-                // Clique no gráfico abre modo expandido (exceto se clicou em elementos de tooltip)
-                if (elements.length === 0) {
-                    abrirModoExpandido(rows);
-                }
             }
         }
     });
-
-    // Adiciona handler de clique no wrapper para abrir fullscreen
-    if (wrapper) {
-        wrapper.style.cursor = 'zoom-in';
-        wrapper.onclick = (e) => {
-            // Evita abrir se clicou no botão expandir
-            if (e.target.closest('.expand-chart-btn')) return;
-            abrirModoExpandido(rows);
-        };
-    }
 }
 
 // ==========================================================================
@@ -849,7 +802,6 @@ function renderTabelaAnalise(rows) {
 
 function renderGraficoAnalise(rows) {
     const canvas = $("analysisChartCanvas");
-    const wrapper = $("analysisChartWrapper");
     if (!canvas || !rows.length) return;
 
     if (state.analysisChart) {
@@ -932,439 +884,13 @@ function renderGraficoAnalise(rows) {
                     ticks: { color: "#71899a", font: { size: 10 }, callback: (v) => `${v}°` },
                     grid: { color: "rgba(255, 255, 255, 0.05)" }
                 }
-            },
-            onClick: (e, elements) => {
-                if (elements.length === 0) {
-                    abrirModoExpandido(rows);
-                }
             }
         }
     });
-
-    // Adiciona handler de clique no wrapper para abrir fullscreen
-    if (wrapper) {
-        wrapper.style.cursor = 'zoom-in';
-        wrapper.onclick = (e) => {
-            if (e.target.closest('.expand-chart-btn')) return;
-            abrirModoExpandido(rows);
-        };
-    }
 }
 
 // ==========================================================================
-// 6. FULLSCREEN INTERACTIVE CHART (MODO PAISAGEM FORÇADO)
-// ==========================================================================
-
-function abrirModoExpandido(rows) {
-    if (!rows || !rows.length) return;
-
-    state.fullscreenData = rows;
-    const modal = $("chartFullscreenModal");
-    modal.classList.remove("hidden");
-
-    // Tenta travar orientação nativa se suportado
-    if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape-primary').catch(() => {
-            // Ignora erro se não suportado ou usuário negou
-        });
-    }
-
-    // Pequeno delay para garantir que o modal está visível antes de criar o chart
-    requestAnimationFrame(() => {
-        renderGraficoFullscreen(rows);
-    });
-
-    // Previne scroll do body
-    document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
-}
-
-function fecharModoExpandido() {
-    const modal = $("chartFullscreenModal");
-    modal.classList.add("hidden");
-
-    // Destrava orientação nativa
-    if (screen.orientation && screen.orientation.unlock) {
-        screen.orientation.unlock().catch(() => {});
-    }
-
-    // Destrói chart e hammer
-    if (state.fullscreenChart) {
-        state.fullscreenChart.destroy();
-        state.fullscreenChart = null;
-    }
-    if (state.fullscreenHammer) {
-        state.fullscreenHammer.destroy();
-        state.fullscreenHammer = null;
-    }
-
-    // Restaura scroll
-    document.body.style.overflow = '';
-    document.body.style.touchAction = '';
-    state.fullscreenData = null;
-    state.crosshairActive = false;
-}
-
-// ESC key para fechar modal
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        const modal = $("chartFullscreenModal");
-        if (modal && !modal.classList.contains('hidden')) {
-            fecharModoExpandido();
-        }
-    }
-});
-
-// Detecta mudança de orientação para ajustar layout
-window.addEventListener('orientationchange', () => {
-    const modal = $("chartFullscreenModal");
-    if (modal && !modal.classList.contains('hidden')) {
-        // Força reflow do chart
-        setTimeout(() => {
-            if (state.fullscreenChart) {
-                state.fullscreenChart.resize();
-            }
-        }, 300);
-    }
-});
-
-function renderGraficoFullscreen(rows) {
-    const canvas = $("fullscreenChartCanvas");
-    if (!canvas || !rows.length) return;
-
-    if (state.fullscreenChart) {
-        state.fullscreenChart.destroy();
-        state.fullscreenChart = null;
-    }
-
-    // Prepara dados
-    const labels = rows.map(r => {
-        const d = new Date(r.created_at);
-        return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    });
-
-    const c1Data = rows.map(r => numVal(r.canal_1));
-    const c2Data = rows.map(r => numVal(r.canal_2));
-
-    const ctx = canvas.getContext("2d");
-
-    const gradC1 = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradC1.addColorStop(0, "rgba(244, 123, 32, 0.35)");
-    gradC1.addColorStop(1, "rgba(244, 123, 32, 0.0)");
-
-    const gradC2 = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradC2.addColorStop(0, "rgba(59, 130, 182, 0.25)");
-    gradC2.addColorStop(1, "rgba(59, 130, 182, 0.0)");
-
-    const datasets = [];
-
-    if (state.chartChannelFilter === "all" || state.chartChannelFilter === "c1") {
-        datasets.push({
-            label: "Canal 1 (Superior)",
-            data: c1Data,
-            borderColor: "#f47b20",
-            backgroundColor: gradC1,
-            borderWidth: 2.5,
-            pointRadius: 0,
-            pointHoverRadius: 5,
-            tension: 0.35,
-            fill: true,
-            spanGaps: true
-        });
-    }
-
-    if (state.chartChannelFilter === "all" || state.chartChannelFilter === "c2") {
-        datasets.push({
-            label: "Canal 2 (Inferior)",
-            data: c2Data,
-            borderColor: "#5ba6d5",
-            backgroundColor: gradC2,
-            borderWidth: 2,
-            pointRadius: 0,
-            pointHoverRadius: 5,
-            tension: 0.35,
-            fill: true,
-            spanGaps: true
-        });
-    }
-
-    // Configuração do chart com zoom/pan plugin
-    state.fullscreenChart = new Chart(canvas, {
-        type: "line",
-        data: { labels, datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            parsing: false,
-            normalized: true,
-            interaction: {
-                mode: "index",
-                intersect: false,
-                axis: "x"
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: { enabled: false }, // Usamos crosshair customizado
-                zoom: {
-                    zoom: {
-                        wheel: { enabled: false },
-                        pinch: { enabled: true },
-                        mode: 'x',
-                        onZoom: ({chart}) => updateZoomIndicator(chart)
-                    },
-                    pan: {
-                        enabled: true,
-                        mode: 'x',
-                        modifierKey: null,
-                        onPan: ({chart}) => updatePanLimits(chart)
-                    }
-                },
-                decimation: {
-                    algorithm: 'lttb',
-                    enabled: true,
-                    samples: 300
-                }
-            },
-            scales: {
-                x: {
-                    type: 'category',
-                    ticks: {
-                        color: "#71899a",
-                        maxTicksLimit: 10,
-                        font: { size: 11 },
-                        autoSkip: true,
-                        autoSkipPadding: 40
-                    },
-                    grid: { color: "rgba(255, 255, 255, 0.04)", drawBorder: false },
-                    offset: true
-                },
-                y: {
-                    ticks: { color: "#71899a", font: { size: 11 }, callback: (v) => `${v}°` },
-                    grid: { color: "rgba(255, 255, 255, 0.03)", drawBorder: false }
-                }
-            }
-        }
-    });
-
-    // Inicializa Hammer.js para gestos customizados (double-tap, crosshair)
-    initHammerGestures(canvas);
-
-    // Mostra indicador de performance se muitos pontos
-    if (rows.length > 500) {
-        showDecimationNotice(canvas.parentElement);
-    }
-}
-
-function initHammerGestures(canvas) {
-    const wrapper = canvas.parentElement;
-    if (!wrapper) return;
-
-    // Destrói hammer anterior se existir
-    if (state.fullscreenHammer) {
-        state.fullscreenHammer.destroy();
-    }
-
-    state.fullscreenHammer = new Hammer(wrapper, {
-        touchAction: 'pan-x pan-y pinch-zoom',
-        recognizers: [
-            [Hammer.Pan, { direction: Hammer.DIRECTION_HORIZONTAL, threshold: 5 }],
-            [Hammer.Pinch, { threshold: 0 }],
-            [Hammer.Tap, { event: 'doubletap', taps: 2 }],
-            [Hammer.Tap, { event: 'singletap', taps: 1 }],
-            [Hammer.Press, { time: 150 }]
-        ]
-    });
-
-    const hammer = state.fullscreenHammer;
-
-    // Pan horizontal para navegar no tempo
-    hammer.on('panstart panmove panend', (e) => {
-        if (!state.fullscreenChart) return;
-        if (e.type === 'panstart') {
-            wrapper.style.cursor = 'grabbing';
-        } else if (e.type === 'panend') {
-            wrapper.style.cursor = 'grab';
-        }
-    });
-
-    // Double-tap para resetar zoom
-    hammer.on('doubletap', (e) => {
-        resetFullscreenZoom();
-        showZoomFeedback('Zoom restaurado', wrapper);
-    });
-
-    // Press (long press) para ativar crosshair
-    hammer.on('press', (e) => {
-        activateCrosshair(e.center, wrapper);
-    });
-
-    hammer.on('pressup', (e) => {
-        deactivateCrosshair();
-    });
-
-    // Pan enquanto crosshair ativo para mover tooltip
-    hammer.on('panmove', (e) => {
-        if (state.crosshairActive) {
-            updateCrosshairPosition(e.center, wrapper);
-        }
-    });
-
-    // Singletap para desativar crosshair se ativo
-    hammer.on('singletap', (e) => {
-        if (state.crosshairActive) {
-            deactivateCrosshair();
-        }
-    });
-}
-
-function activateCrosshair(clientPoint, wrapper) {
-    if (!state.fullscreenChart) return;
-
-    state.crosshairActive = true;
-    const crosshair = $("fullscreenCrosshair");
-    crosshair.classList.remove("hidden");
-    updateCrosshairPosition(clientPoint, wrapper);
-}
-
-function deactivateCrosshair() {
-    state.crosshairActive = false;
-    const crosshair = $("fullscreenCrosshair");
-    crosshair.classList.add("hidden");
-}
-
-function updateCrosshairPosition(clientPoint, wrapper) {
-    if (!state.fullscreenChart) return;
-
-    const chart = state.fullscreenChart;
-    const canvas = chart.canvas;
-    const rect = canvas.getBoundingClientRect();
-
-    // Converte coordenadas do cliente para coordenadas do canvas
-    const canvasX = clientPoint.x - rect.left;
-    const canvasY = clientPoint.y - rect.top;
-
-    // Verifica se está dentro da área do gráfico
-    const chartArea = chart.chartArea;
-    if (!chartArea) return;
-
-    if (canvasX < chartArea.left || canvasX > chartArea.right ||
-        canvasY < chartArea.top || canvasY > chartArea.bottom) {
-        deactivateCrosshair();
-        return;
-    }
-
-    // Posiciona linha vertical
-    const crosshairLine = crosshair.querySelector('.crosshair-line');
-    const crosshairTooltip = crosshair.querySelector('.crosshair-tooltip');
-    const relX = canvasX - chartArea.left;
-    const relY = canvasY - chartArea.top;
-
-    crosshairLine.style.left = `${chartArea.left + relX}px`;
-
-    // Posiciona tooltip acima do ponto
-    const tooltipX = chartArea.left + relX;
-    const tooltipY = chartArea.top - 10;
-
-    crosshairTooltip.style.left = `${tooltipX}px`;
-    crosshairTooltip.style.top = `${tooltipY}px`;
-    crosshairTooltip.style.transform = 'translateX(-50%) translateY(-100%)';
-
-    // Obtém valores dos dados no índice mais próximo
-    const xScale = chart.scales.x;
-    const index = Math.round(xScale.getValueForPixel(canvasX));
-    const clampedIndex = Math.max(0, Math.min(index, state.fullscreenData.length - 1));
-
-    const row = state.fullscreenData[clampedIndex];
-    if (!row) return;
-
-    const c1 = numVal(row.canal_1);
-    const c2 = numVal(row.canal_2);
-    const time = new Date(row.created_at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit", minute: "2-digit", second: "2-digit"
-    });
-
-    $("crosshairTime").textContent = time;
-    $("crosshairC1").textContent = c1 !== null ? `${c1.toFixed(1)} °C` : "-- °C";
-    $("crosshairC2").textContent = c2 !== null ? `${c2.toFixed(1)} °C` : "-- °C";
-}
-
-function resetFullscreenZoom() {
-    if (!state.fullscreenChart) return;
-
-    const chart = state.fullscreenChart;
-    chart.resetZoom('x');
-
-    // Reseta também os limites de pan para o início dos dados
-    const xScale = chart.scales.x;
-    if (xScale) {
-        xScale.min = undefined;
-        xScale.max = undefined;
-    }
-    chart.update('none');
-}
-
-function updateZoomIndicator(chart) {
-    const xScale = chart.scales.x;
-    if (!xScale) return;
-
-    const range = xScale.max - xScale.min;
-    const totalRange = chart.data.labels.length - 1;
-    const zoomLevel = totalRange / range;
-
-    // Mostra feedback visual de nível de zoom
-    const indicator = document.querySelector('.zoom-indicator');
-    if (indicator) {
-        indicator.textContent = `${zoomLevel.toFixed(1)}x`;
-        indicator.classList.add('visible');
-        setTimeout(() => indicator.classList.remove('visible'), 1500);
-    }
-}
-
-function updatePanLimits(chart) {
-    // Impede pan além dos limites dos dados
-    const xScale = chart.scales.x;
-    if (!xScale) return;
-
-    const minIndex = 0;
-    const maxIndex = chart.data.labels.length - 1;
-
-    if (xScale.min < minIndex) {
-        xScale.min = minIndex;
-    }
-    if (xScale.max > maxIndex) {
-        xScale.max = maxIndex;
-    }
-}
-
-function showZoomFeedback(message, wrapper) {
-    const feedback = document.createElement('div');
-    feedback.className = 'zoom-indicator visible';
-    feedback.textContent = message;
-    feedback.style.top = '20%';
-    feedback.style.left = '50%';
-    feedback.style.transform = 'translate(-50%, -50%)';
-    wrapper.appendChild(feedback);
-    setTimeout(() => {
-        feedback.classList.remove('visible');
-        setTimeout(() => feedback.remove(), 200);
-    }, 1500);
-}
-
-function showDecimationNotice(container) {
-    const notice = document.createElement('div');
-    notice.className = 'chart-decimation-notice';
-    notice.textContent = `Modo performance: ${state.fullscreenData.length} pts → 300 amostras (LTTB)`;
-    container.appendChild(notice);
-    setTimeout(() => {
-        notice.style.opacity = '0';
-        notice.style.transition = 'opacity 0.5s ease';
-        setTimeout(() => notice.remove(), 500);
-    }, 5000);
-}
-
-// ==========================================================================
-// 7. NAVEGAÇÃO ENTRE ABAS DO MENU INFERIOR
+// 6. NAVEGAÇÃO ENTRE ABAS DO MENU INFERIOR
 // ==========================================================================
 
 function navegarAba(aba) {
@@ -1462,16 +988,6 @@ function escapeHtml(str) {
 // ==========================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Sessão válida → Splash ThermoLink (2,5s) → app principal
-    // Sem sessão / sessão inválida → tela de login direto
-    const sessao = verificarSessaoSalva();
-    if (sessao) {
-        iniciarPainelUsuario(sessao, true);
-    } else {
-        $("splashScreen").classList.add("hidden");
-        $("loginScreen").classList.remove("hidden");
-    }
-
     // Sincronização automática a cada 8 segundos
     setInterval(() => {
         if (state.currentUser) {
