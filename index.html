@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#071b2b">
-
-    <!-- PWA + Ícones (necessários para Web Push) -->
-    <link rel="manifest" href="manifest.webmanifest">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-    <link rel="apple-touch-icon" href="icon-192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>ThermoLink • Monitor de Fornos</title>
@@ -23,6 +18,12 @@
 
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+
+    <!-- Hammer.js for touch gestures -->
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+
+    <!-- chartjs-plugin-zoom for pan/zoom -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
 
     <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -319,15 +320,18 @@
                             <div class="chart-sub" id="chartPointCount">Carregando dados...</div>
                         </div>
 
-                        <!-- Filtros do Gráfico -->
+                        <!-- Filtros do Gráfico + Botão Expandir -->
                         <div class="chart-pill-group" id="chartChannelFilter">
                             <button class="pill-btn active" onclick="filtrarCanaisGrafico('all')">Ambos</button>
                             <button class="pill-btn" onclick="filtrarCanaisGrafico('c1')">C1</button>
                             <button class="pill-btn" onclick="filtrarCanaisGrafico('c2')">C2</button>
+                            <button class="pill-btn expand-chart-btn" onclick="abrirModoExpandido(state.currentDetailHistory)" title="Expandir para modo paisagem interativo">
+                                <i class="fa-solid fa-expand"></i>
+                            </button>
                         </div>
                     </div>
 
-                    <div class="chart-canvas-box">
+                    <div class="chart-canvas-box" id="detailChartWrapper">
                         <canvas id="detailChartCanvas"></canvas>
                     </div>
 
@@ -452,15 +456,18 @@
                         <div class="chart-sub" id="anChartSub">Análise multicanal contínua</div>
                     </div>
 
-                    <!-- Controles de Canais -->
+                    <!-- Controles de Canais + Botão Expandir -->
                     <div class="chart-pill-group" id="anChannelFilter">
                         <button class="pill-btn active" onclick="filtrarCanaisAnalise('all')">Ambos</button>
                         <button class="pill-btn" onclick="filtrarCanaisAnalise('c1')">C1</button>
                         <button class="pill-btn" onclick="filtrarCanaisAnalise('c2')">C2</button>
+                        <button class="pill-btn expand-chart-btn" onclick="abrirModoExpandido(state.currentAnalysisFilteredHistory)" title="Expandir para modo paisagem interativo">
+                            <i class="fa-solid fa-expand"></i>
+                        </button>
                     </div>
                 </div>
 
-                <div class="chart-canvas-box" style="height: 280px;">
+                <div class="chart-canvas-box" id="analysisChartWrapper" style="height: 280px;">
                     <canvas id="analysisChartCanvas"></canvas>
                 </div>
 
@@ -534,68 +541,6 @@
                 </div>
             </div>
 
-            <!-- ========================================================
-                 CONFIGURAÇÃO DE ALERTAS (TEMPO REAL + PONTE KODULAR)
-            ========================================================= -->
-            <div class="card-dark">
-                <div class="alertas-header">
-                    <div class="alertas-header-titulo">
-                        <i class="fa-solid fa-bell text-orange"></i>
-                        <span>Configuração de Alertas</span>
-                    </div>
-                    <!-- INTERRUPTOR GERAL (MASTER TOGGLE) -->
-                    <label class="tl-switch" title="Ativar ou desativar todos os alertas">
-                        <input type="checkbox" id="chkAlertasGeral" onchange="ThermoAlertas.alternarGeral(this.checked)">
-                        <span class="tl-switch-slider"></span>
-                    </label>
-                </div>
-
-                <p class="alertas-descricao">Monitora as temperaturas dos Canais 1 e 2 em tempo real e dispara alerta visual, sonoro e vibração quando algum limite for rompido.</p>
-
-                <!-- PAINEL RETRÁTIL: visível apenas com o interruptor geral ativado -->
-                <div id="painelAlertas" class="hidden">
-
-                    <!-- SELETOR DE FORNO (individual ou aplicar a todos) -->
-                    <label class="cfg-label">Forno</label>
-                    <select id="selFornoAlerta" class="cfg-input" onchange="ThermoAlertas.selecionarForno(this.value)">
-                        <option value="">Carregando fornos...</option>
-                    </select>
-
-                    <!-- LIMITES DE TEMPERATURA -->
-                    <div class="cfg-limite-grid">
-                        <div>
-                            <label class="cfg-label"><i class="fa-solid fa-arrow-trend-up" style="color: var(--red);"></i> Limite Máximo</label>
-                            <input type="number" id="inpLimiteMax" class="cfg-input" placeholder="Ex: 950" min="0" max="2000" inputmode="numeric" oninput="ThermoAlertas.salvarLimites()">
-                        </div>
-                        <div>
-                            <label class="cfg-label"><i class="fa-solid fa-arrow-trend-down text-blue"></i> Limite Mínimo</label>
-                            <input type="number" id="inpLimiteMin" class="cfg-input" placeholder="Ex: 700" min="0" max="2000" inputmode="numeric" oninput="ThermoAlertas.salvarLimites()">
-                        </div>
-                    </div>
-
-                    <!-- SELEÇÃO DE ESTÍMULOS -->
-                    <label class="cfg-label">Estímulos do Alerta</label>
-                    <label class="estimulo-check">
-                        <input type="checkbox" id="chkEstVisual" onchange="ThermoAlertas.salvarEstimulos()">
-                        <i class="fa-solid fa-eye" style="color: var(--red); width: 16px; text-align: center;"></i>
-                        <span>Alerta visual (mensagem piscante na tela)</span>
-                    </label>
-                    <label class="estimulo-check">
-                        <input type="checkbox" id="chkEstSonoro" onchange="ThermoAlertas.salvarEstimulos()">
-                        <i class="fa-solid fa-volume-high text-orange" style="width: 16px; text-align: center;"></i>
-                        <span>Alerta sonoro (bip de alarme repetitivo)</span>
-                    </label>
-                    <label class="estimulo-check">
-                        <input type="checkbox" id="chkEstVibracao" onchange="ThermoAlertas.salvarEstimulos()">
-                        <i class="fa-solid fa-mobile-screen-button text-blue" style="width: 16px; text-align: center;"></i>
-                        <span>Vibração do celular</span>
-                    </label>
-
-                    <!-- FEEDBACK DE SALVAMENTO AUTOMÁTICO -->
-                    <div class="alertas-salvo" id="alertasSalvoFeedback"><i class="fa-solid fa-circle-check"></i> Configuração salva automaticamente</div>
-                </div>
-            </div>
-
             <!-- SOBRE & LOGOUT -->
             <div class="card-dark">
                 <div class="card-dark-header">
@@ -645,9 +590,55 @@
 
 </div>
 
-<!-- ========================================================
-     OVERLAY DE BLOQUEIO POR INADIMPLÊNCIA / SUSPENSÃO
-========================================================= -->
+    <!-- ========================================================
+         FULLSCREEN INTERACTIVE CHART MODAL (LANDSCAPE MODE)
+    ========================================================= -->
+    <div id="chartFullscreenModal" class="fullscreen-modal hidden" role="dialog" aria-modal="true" aria-label="Curva Térmica Interativa - Modo Paisagem">
+        <div class="fullscreen-modal-backdrop" onclick="fecharModoExpandido()"></div>
+        <div class="fullscreen-modal-content">
+            <!-- Header Compacto -->
+            <div class="fullscreen-header">
+                <div class="fullscreen-legend">
+                    <span class="legend-item">
+                        <span class="legend-color legend-c1"></span>
+                        <span>Canal 1 - Superior</span>
+                    </span>
+                    <span class="legend-item">
+                        <span class="legend-color legend-c2"></span>
+                        <span>Canal 2 - Inferior</span>
+                    </span>
+                </div>
+                <button class="fullscreen-close-btn" onclick="fecharModoExpandido()" aria-label="Fechar modo expandido">
+                    <i class="fa-solid fa-compress"></i>
+                </button>
+            </div>
+
+            <!-- Canvas Area -->
+            <div class="fullscreen-chart-wrapper">
+                <canvas id="fullscreenChartCanvas"></canvas>
+                <!-- Crosshair Tooltip Overlay -->
+                <div id="fullscreenCrosshair" class="crosshair-overlay hidden">
+                    <div class="crosshair-line"></div>
+                    <div class="crosshair-tooltip">
+                        <div class="tooltip-row tooltip-time"><i class="fa-regular fa-clock"></i> <span id="crosshairTime">--:--:--</span></div>
+                        <div class="tooltip-row tooltip-c1"><span class="sensor-dot c1"></span> Canal 1: <strong id="crosshairC1">-- °C</strong></div>
+                        <div class="tooltip-row tooltip-c2"><span class="sensor-dot c2"></span> Canal 2: <strong id="crosshairC2">-- °C</strong></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dicas de gesto sutis -->
+            <div class="fullscreen-hints">
+                <span class="hint-item"><i class="fa-solid fa-hand"></i> Arraste para navegar no tempo</span>
+                <span class="hint-item"><i class="fa-solid fa-magnifying-glass"></i> Pinça para zoom no eixo X</span>
+                <span class="hint-item"><i class="fa-solid fa-mouse-pointer"></i> Toque duplo para resetar zoom</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================
+         OVERLAY DE BLOQUEIO POR INADIMPLÊNCIA / SUSPENSÃO
+    ========================================================= -->
 <div id="clientBlockedOverlay" class="modal-overlay hidden" style="z-index: 99999;">
     <div class="modal-card" style="text-align: center; align-items: center; padding: 32px 24px;">
         <div style="width: 64px; height: 64px; border-radius: 20px; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--red); color: var(--red); display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 12px;">
@@ -666,7 +657,6 @@
 
 <!-- Scripts da Aplicação -->
 <script src="app.js"></script>
-<script src="push-notifications.js"></script>
 
 </body>
 </html>
