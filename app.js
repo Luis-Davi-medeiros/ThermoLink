@@ -60,22 +60,19 @@ const $ = (id) => document.getElementById(id);
 
 function verificarSessaoSalva() {
     const session = localStorage.getItem("thermolink_active_session");
-    if (session) {
-        try {
-            const user = JSON.parse(session);
-            iniciarPainelUsuario(user);
-            return true;
-        } catch {
-            localStorage.removeItem("thermolink_active_session");
+    if (!session) return null;
+    try {
+        const dados = JSON.parse(session);
+        if (!dados || !dados.username) throw new Error("Sessão inválida");
+        // Migração de segurança: sessões antigas podiam conter a senha — remove
+        if (dados.password !== undefined) {
+            delete dados.password;
+            localStorage.setItem("thermolink_active_session", JSON.stringify(dados));
         }
-    }
-    return false;
-}
-
-function irParaLogin() {
-    $("splashScreen").classList.add("hidden");
-    if (!verificarSessaoSalva()) {
-        $("loginScreen").classList.remove("hidden");
+        return dados;
+    } catch {
+        localStorage.removeItem("thermolink_active_session");
+        return null;
     }
 }
 
@@ -101,23 +98,33 @@ function realizarLogin(e) {
     e.preventDefault();
     const userVal = $("loginUser").value.trim().toLowerCase();
     const passVal = $("loginPassword").value.trim();
-    const remember = $("rememberMe").checked;
 
     const users = getRegisteredUsers();
     const found = users.find(u => u.username.toLowerCase() === userVal && u.password === passVal);
 
     if (found) {
         $("loginError").classList.add("hidden");
-        if (remember) {
-            localStorage.setItem("thermolink_active_session", JSON.stringify(found));
+
+        // Sessão persistida SEM a senha (apenas dados de identificação)
+        const sessao = {
+            username: found.username,
+            name: found.name,
+            role: found.role,
+            loginAt: new Date().toISOString()
+        };
+
+        // Só persiste se "Lembrar neste celular" estiver marcado
+        if ($("rememberMe").checked) {
+            localStorage.setItem("thermolink_active_session", JSON.stringify(sessao));
         }
-        iniciarPainelUsuario(found);
+
+        iniciarPainelUsuario(sessao, false);
     } else {
         $("loginError").classList.remove("hidden");
     }
 }
 
-function iniciarPainelUsuario(user) {
+function iniciarPainelUsuario(user, usarSplash = false) {
     state.currentUser = user;
 
     // Checagem se a conta foi bloqueada pelo Master Admin
@@ -125,15 +132,31 @@ function iniciarPainelUsuario(user) {
         const clientsAdmin = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
         const clientRecord = clientsAdmin.find(c => c.username?.toLowerCase() === user.username?.toLowerCase());
         if (clientRecord && clientRecord.status === "Bloqueado") {
+            $("splashScreen").classList.add("hidden");
             $("clientBlockedOverlay").classList.remove("hidden");
             return;
         }
     }
 
     $("clientBlockedOverlay").classList.add("hidden");
-    $("splashScreen").classList.add("hidden");
     $("loginScreen").classList.add("hidden");
-    $("mainApp").classList.remove("hidden");
+
+    // Entrada: splash com a logo (2,5s + fade suave) ou direto após o login
+    const abrirApp = () => {
+        $("splashScreen").classList.add("hidden");
+        $("mainApp").classList.remove("hidden");
+    };
+
+    if (usarSplash) {
+        $("splashScreen").classList.remove("hidden");
+        $("splashScreen").classList.remove("splash-out");
+        setTimeout(() => {
+            $("splashScreen").classList.add("splash-out");
+            setTimeout(abrirApp, 500);
+        }, 2500);
+    } else {
+        abrirApp();
+    }
 
     // Banner de Impersonation (Modo Suporte do Administrador)
     const impBanner = $("impersonateBanner");
@@ -152,6 +175,9 @@ function iniciarPainelUsuario(user) {
     $("profileRole").textContent = user.role === "admin" ? "Administrador Master" : "Acesso Cliente Cerâmica";
 
     carregarFornosELeituras();
+
+    // Hook: sincroniza o painel de notificações push com o usuário autenticado
+    if (window.ThermoPush) window.ThermoPush.onAuthChanged();
 }
 
 function sairModoSuporte() {
@@ -163,10 +189,14 @@ function realizarLogout() {
     localStorage.removeItem("thermolink_active_session");
     state.currentUser = null;
     $("mainApp").classList.add("hidden");
+    $("splashScreen").classList.add("hidden");
     $("clientBlockedOverlay").classList.add("hidden");
     $("loginScreen").classList.remove("hidden");
     $("loginUser").value = "";
     $("loginPassword").value = "";
+
+    // Hook: atualiza o painel de notificações push após sair da conta
+    if (window.ThermoPush) window.ThermoPush.onAuthChanged();
 }
 
 // ==========================================================================
@@ -988,6 +1018,16 @@ function escapeHtml(str) {
 // ==========================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Sessão válida → Splash ThermoLink (2,5s) → app principal
+    // Sem sessão / sessão inválida → tela de login direto
+    const sessao = verificarSessaoSalva();
+    if (sessao) {
+        iniciarPainelUsuario(sessao, true);
+    } else {
+        $("splashScreen").classList.add("hidden");
+        $("loginScreen").classList.remove("hidden");
+    }
+
     // Sincronização automática a cada 8 segundos
     setInterval(() => {
         if (state.currentUser) {

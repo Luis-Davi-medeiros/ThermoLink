@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#071b2b">
+
+    <!-- PWA + Ícones (necessários para Web Push) -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>ThermoLink • Monitor de Fornos</title>
@@ -30,7 +35,7 @@
 <div class="mobile-wrapper">
 
     <!-- ========================================================
-         1. SPLASH / APRESENTAÇÃO
+         1. SPLASH SCREEN (ABERTURA COM SESSÃO VÁLIDA)
     ========================================================= -->
     <div id="splashScreen" class="splash-container">
         <div class="splash-content">
@@ -38,17 +43,7 @@
                 <i class="fa-solid fa-fire-flame-curved"></i>
             </div>
             <div class="splash-brand">ThermoLink</div>
-            <div class="splash-tagline">MONITOR DE FORNOS CERÂMICOS</div>
-            <p class="splash-subtitle">
-                Acompanhe a curva térmica e a queima dos seus fornos em tempo real direto do seu smartphone.
-            </p>
-            <button class="btn-splash-enter" onclick="irParaLogin()">
-                <i class="fa-solid fa-arrow-right-to-bracket"></i>
-                Acessar Meus Fornos
-            </button>
-            <div class="splash-footer-info">
-                <span>Versão 2.4 Mobile • Telemetria Industrial</span>
-            </div>
+            <div class="splash-loading-bar"><span></span></div>
         </div>
     </div>
 
@@ -539,6 +534,35 @@
                 </div>
             </div>
 
+            <!-- NOTIFICAÇÕES PUSH -->
+            <div class="card-dark">
+                <div class="card-dark-header">
+                    <i class="fa-solid fa-bell text-orange"></i>
+                    <span>Notificações</span>
+                </div>
+
+                <div class="info-row">
+                    <span>Notificações Push</span>
+                    <b id="pushStateBadge" class="push-state-badge push-off">--</b>
+                </div>
+
+                <p id="pushHint" class="push-hint hidden"></p>
+
+                <button type="button" id="btnTogglePush" class="btn-push-toggle" onclick="ThermoPush.toggleFromUi()">
+                    <i class="fa-solid fa-bell" id="btnTogglePushIcon"></i>
+                    <span id="btnTogglePushLabel">Ativar notificações</span>
+                </button>
+
+                <!-- Tipos de alerta: estrutura preparada para ativação futura -->
+                <div class="push-types-box">
+                    <div class="push-types-title">TIPOS DE ALERTA (EM BREVE)</div>
+                    <div class="push-type-row"><i class="fa-solid fa-circle" style="color: var(--red);"></i><span>Equipamento offline</span></div>
+                    <div class="push-type-row"><i class="fa-solid fa-circle text-orange"></i><span>Temperatura acima do limite</span></div>
+                    <div class="push-type-row"><i class="fa-solid fa-circle text-green"></i><span>Equipamento voltou online</span></div>
+                    <div class="push-type-row"><i class="fa-solid fa-fire text-orange"></i><span>Eventos importantes da queima</span></div>
+                </div>
+            </div>
+
             <!-- SOBRE & LOGOUT -->
             <div class="card-dark">
                 <div class="card-dark-header">
@@ -609,6 +633,7 @@
 
 <!-- Scripts da Aplicação -->
 <script src="app.js"></script>
+<script src="push-notifications.js"></script>
 
 </body>
 </html>
