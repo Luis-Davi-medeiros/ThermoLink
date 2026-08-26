@@ -525,13 +525,6 @@
         }
     }
 
-    function testarAlerta() {
-        garantirAudio(); // desbloqueia o áudio com o gesto do usuário
-        tocarAlertaSonoro();
-        vibrar();
-        mostrarBanner("evento", "🔔 ThermoLink", "Alerta de teste — visual, som e vibração funcionando!", null);
-    }
-
     // ------------------------------------------------------------------
     // UI: SEÇÃO NOTIFICAÇÕES (CONFIGURAÇÕES)
     // ------------------------------------------------------------------
@@ -678,7 +671,6 @@
         fecharConfig,
         selecionarFornoConfig,
         salvarConfig,
-        testarAlerta,
         abrirAlerta
     };
 })();
@@ -787,21 +779,23 @@
         if (!ctx) return;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = "square"; // timbre mais agressivo, estilo alarme industrial
+        osc.type = "sine";
         osc.frequency.value = freq;
         osc.connect(gain);
         gain.connect(ctx.destination);
         const t0 = ctx.currentTime + inicio;
         gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
         gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duracao);
         osc.start(t0);
         osc.stop(t0 + duracao + 0.05);
     }
 
+    // Mesmo som do antigo "Testar alerta": três bips ascendentes
     function tocarBipAlarme() {
-        bip(740, 0, 0.16);
-        bip(520, 0.22, 0.22);
+        bip(880, 0, 0.14);
+        bip(1100, 0.18, 0.14);
+        bip(1320, 0.36, 0.2);
     }
 
     function iniciarLoopSonoro() {

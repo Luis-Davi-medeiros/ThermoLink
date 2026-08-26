@@ -63,7 +63,7 @@ Na aba **Acesso**, abaixo do perfil do cliente, ficou o card **"Configuração d
 - Tudo é salvo **automaticamente no localStorage** do aparelho ("Configuração salva automaticamente");
 - A checagem roda dentro da sincronização de 8 segundos (`carregarFornosELeituras`), comparando **canal_1 e canal_2** de cada leitura com os limites salvos;
 - Enquanto o problema persistir: borda pisca, bip toca em loop e o celular vibra; ao normalizar, tudo cessa sozinho. O modal oferece **"Silenciar som e vibração"** (mantém o aviso visual) e **"Fechar alerta e usar o aplicativo"** (fecha tudo na hora — se romper de novo, o alerta reaparece);
-- O botão **"Testar alerta (visual + som + vibração)"** dispara uma amostra dos três estímulos na hora.
+- O alarme sonoro usa três bips ascendentes, o mesmo som que antes podia ser testado pelo botão de teste (removido após ajuste).
 
 > O som só toca após o primeiro toque na tela (política dos navegadores).
 
