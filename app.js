@@ -175,6 +175,9 @@ function iniciarPainelUsuario(user, usarSplash = false) {
     $("profileRole").textContent = user.role === "admin" ? "Administrador Master" : "Acesso Cliente Cerâmica";
 
     carregarFornosELeituras();
+
+    // Hook: sincroniza o painel de notificações push com o usuário autenticado
+    if (window.ThermoPush) window.ThermoPush.onAuthChanged();
 }
 
 function sairModoSuporte() {
@@ -191,6 +194,9 @@ function realizarLogout() {
     $("loginScreen").classList.remove("hidden");
     $("loginUser").value = "";
     $("loginPassword").value = "";
+
+    // Hook: atualiza o painel de notificações push após sair da conta
+    if (window.ThermoPush) window.ThermoPush.onAuthChanged();
 }
 
 // ==========================================================================

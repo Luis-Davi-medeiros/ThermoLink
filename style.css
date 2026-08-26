@@ -1536,3 +1536,79 @@ button {
 @keyframes appSpin {
     to { transform: rotate(360deg); }
 }
+
+/* ==========================================================================
+   NOTIFICAÇÕES PUSH (SEÇÃO CONFIGURAÇÕES)
+========================================================================== */
+.push-state-badge {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 4px 12px;
+    border-radius: 20px;
+    letter-spacing: 0.3px;
+}
+.push-state-badge.push-on {
+    color: var(--green);
+    background: var(--green-bg);
+}
+.push-state-badge.push-off {
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+}
+.btn-push-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    margin-top: 14px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, var(--orange), var(--orange-dark));
+    color: #ffffff;
+    font-family: var(--font-sans);
+    font-weight: 800;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 6px 18px var(--orange-glow);
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.btn-push-toggle:active {
+    transform: scale(0.98);
+}
+.btn-push-toggle:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+.push-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-top: 10px;
+}
+.push-types-box {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+}
+.push-types-title {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+.push-type-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.65;
+}
+.push-type-row i {
+    font-size: 7px;
+}
