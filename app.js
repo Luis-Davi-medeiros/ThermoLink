@@ -251,6 +251,9 @@ async function carregarFornosELeituras() {
 
         state.readings = latestMap;
 
+        // Hook: motor de alertas em tempo real (limites de temperatura salvos no aparelho)
+        if (window.ThermoAlertas) window.ThermoAlertas.verificarLeituras();
+
         // Renderiza telas
         renderListaFornos();
 
