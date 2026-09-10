@@ -10,8 +10,10 @@ const { createClient } = window.supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const DEFAULT_USERS = [
     { username: "admin", password: "thermolink2026", name: "Administrador ThermoLink", role: "admin" },
-    { username: "ceramica", password: "forno2026", name: "Cerâmica São José", role: "client" },
-    { username: "demo", password: "123456", name: "Cerâmica Modelo Demo", role: "client" }
+    { username: "ceramica", password: "forno2026", name: "Cerâmica São José", role: "client", ceramicaId: "cli_1" },
+    { username: "santarita", password: "cer8492", name: "Cerâmica Santa Rita", role: "client", ceramicaId: "cli_2" },
+    { username: "paulista", password: "cer3910", name: "Cerâmica Paulista", role: "client", ceramicaId: "cli_3" },
+    { username: "demo", password: "123456", name: "Cerâmica Modelo Demo", role: "client", ceramicaId: "cli_demo" }
 ];
 
 function getRegisteredUsers() {
@@ -94,15 +96,70 @@ function toggleSenha(inputId) {
     }
 }
 
-function realizarLogin(e) {
+async function realizarLogin(e) {
     e.preventDefault();
     const userVal = $("loginUser").value.trim().toLowerCase();
     const passVal = $("loginPassword").value.trim();
 
+    // 1. Usuários locais/pré-definidos
     const users = getRegisteredUsers();
-    const found = users.find(u => u.username.toLowerCase() === userVal && u.password === passVal);
+    let found = users.find(u => u.username.toLowerCase() === userVal && u.password === passVal);
+
+    // 2. Se não encontrou, busca diretamente no Supabase na tabela 'ceramicas'
+    if (!found) {
+        try {
+            const { data: ceramicaData } = await sb
+                .from("ceramicas")
+                .select("*")
+                .ilike("username", userVal)
+                .eq("senha", passVal)
+                .maybeSingle();
+
+            if (ceramicaData) {
+                found = {
+                    username: ceramicaData.username,
+                    name: ceramicaData.nome,
+                    role: "client",
+                    status: ceramicaData.status,
+                    ceramicaId: ceramicaData.id
+                };
+            }
+        } catch (err) {
+            console.warn("[Login] Erro ao consultar ceramicas no Supabase:", err);
+        }
+    }
 
     if (found) {
+        // Garante o ID da Cerâmica vinculada ao usuário
+        if (found.role === "client" && !found.ceramicaId) {
+            try {
+                const { data: cData } = await sb
+                    .from("ceramicas")
+                    .select("id, status")
+                    .ilike("username", found.username)
+                    .maybeSingle();
+                if (cData) {
+                    found.ceramicaId = cData.id;
+                    if (cData.status) found.status = cData.status;
+                }
+            } catch (e) {}
+
+            if (!found.ceramicaId) {
+                const localClients = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
+                const matched = localClients.find(c => c.username?.toLowerCase() === found.username?.toLowerCase());
+                if (matched) found.ceramicaId = matched.id;
+            }
+            if (!found.ceramicaId && found.username === "ceramica") {
+                found.ceramicaId = "cli_1";
+            }
+        }
+
+        if (found.status === "Bloqueado") {
+            $("loginError").textContent = "Acesso bloqueado pela administração.";
+            $("loginError").classList.remove("hidden");
+            return;
+        }
+
         $("loginError").classList.add("hidden");
 
         // Sessão persistida SEM a senha (apenas dados de identificação)
@@ -110,6 +167,7 @@ function realizarLogin(e) {
             username: found.username,
             name: found.name,
             role: found.role,
+            ceramicaId: found.ceramicaId || null,
             loginAt: new Date().toISOString()
         };
 
@@ -120,6 +178,7 @@ function realizarLogin(e) {
 
         iniciarPainelUsuario(sessao, false);
     } else {
+        $("loginError").textContent = "Usuário ou senha incorretos.";
         $("loginError").classList.remove("hidden");
     }
 }
@@ -200,7 +259,7 @@ function realizarLogout() {
 }
 
 // ==========================================================================
-// 2. CONSULTAS AO BANCO SUPABASE
+// 2. CONSULTAS AO BANCO SUPABASE (ISOLAMENTO MULTI-TENANT POR CERÂMICA)
 // ==========================================================================
 
 async function carregarFornosELeituras() {
@@ -208,28 +267,71 @@ async function carregarFornosELeituras() {
     state.isPolling = true;
 
     try {
-        // Carrega Fornos
-        const { data: fornosData } = await sb
-            .from("fornos")
-            .select("id, dispositivo_id, numero, nome, ativo")
-            .eq("ativo", true)
-            .order("numero", { ascending: true });
+        let clientDevices = [];
+        let allowedSerials = [];
+        let allowedDeviceIds = [];
 
-        if (fornosData && fornosData.length) {
-            state.ovens = fornosData;
-        } else {
-            state.ovens = Array.from({ length: 31 }, (_, i) => ({
-                id: i + 1,
-                numero: i + 1,
-                nome: `Forno ${String(i + 1).padStart(2, "0")}`,
-                ativo: true
-            }));
+        // 1. IDENTIFICAÇÃO DOS APARELHOS VINCULADOS AO CLIENTE LOGADO
+        if (state.currentUser && state.currentUser.role !== "admin") {
+            const cid = state.currentUser.ceramicaId;
+
+            // Busca no Supabase apenas os dispositivos vinculados a esta cerâmica
+            try {
+                const { data: devs, error: errDevs } = await sb
+                    .from("dispositivos")
+                    .select("id, serial, numero_serie, modelo, modulo_num, forno_id, status, ceramica_id")
+                    .eq("ceramica_id", cid)
+                    .eq("status", "Vinculado");
+
+                if (!errDevs && devs && devs.length > 0) {
+                    clientDevices = devs;
+                }
+            } catch (errDev) {
+                console.warn("[ThermoLink] Falha ao consultar dispositivos no Supabase:", errDev);
+            }
+
+            // Fallback no localStorage
+            if (!clientDevices.length) {
+                const localDevs = JSON.parse(localStorage.getItem("thermolink_devices_admin") || "[]");
+                clientDevices = localDevs.filter(d => (d.ceramicaId === cid || d.ceramica_id === cid) && d.status === "Vinculado");
+            }
+
+            allowedSerials = clientDevices.map(d => d.serial || d.numero_serie).filter(Boolean);
+            allowedDeviceIds = clientDevices.map(d => Number(d.id)).filter(n => !isNaN(n) && n > 0);
+
+            state.allowedSerials = allowedSerials;
+            state.allowedDeviceIds = allowedDeviceIds;
+            state.clientDevices = clientDevices;
+
+            // SE A CERÂMICA NÃO POSSUI DISPOSITIVO VINCULADO:
+            // Não carrega dados de outros aparelhos nem exibe fornos de terceiros!
+            if (clientDevices.length === 0) {
+                state.ovens = [];
+                state.readings = new Map();
+                updateLivePill(false);
+                renderListaFornos();
+                return;
+            }
         }
 
-        // Carrega últimas 1000 leituras
-        const { data: leiturasData, error } = await sb
+        // 2. CARREGA APENAS AS LEITURAS DESTA CERÂMICA / APARELHOS
+        let leiturasQuery = sb
             .from("leituras")
-            .select("id, dispositivo_id, forno_id, modulo_alutal, canal_1, canal_2, created_at")
+            .select("id, dispositivo_id, forno_id, modulo_alutal, canal_1, canal_2, numero_serie, ceramica_id, created_at, data_hora");
+
+        if (state.currentUser && state.currentUser.role !== "admin") {
+            const cid = state.currentUser.ceramicaId;
+            const orFilters = [`ceramica_id.eq.${cid}`];
+            if (allowedSerials.length > 0) {
+                orFilters.push(`numero_serie.in.(${allowedSerials.join(',')})`);
+            }
+            if (allowedDeviceIds.length > 0) {
+                orFilters.push(`dispositivo_id.in.(${allowedDeviceIds.join(',')})`);
+            }
+            leiturasQuery = leiturasQuery.or(orFilters.join(','));
+        }
+
+        const { data: leiturasData, error } = await leiturasQuery
             .order("created_at", { ascending: false })
             .limit(1000);
 
@@ -241,17 +343,58 @@ async function carregarFornosELeituras() {
 
         updateLivePill(true);
 
+        // 3. MAPEIA AS LEITURAS RECENTES (MÓDULO = FORNO!)
         const latestMap = new Map();
+        const detectedModules = new Set();
+
         for (const r of leiturasData || []) {
-            const mod = Number(r.modulo_alutal);
-            if (Number.isFinite(mod) && !latestMap.has(mod)) {
-                latestMap.set(mod, r);
+            const mod = Number(r.modulo_alutal || r.forno_id || 1);
+            if (Number.isFinite(mod)) {
+                detectedModules.add(mod);
+                if (!latestMap.has(mod)) {
+                    latestMap.set(mod, r);
+                }
             }
         }
 
         state.readings = latestMap;
 
-        // Hook: motor de alertas em tempo real (limites de temperatura salvos no aparelho)
+        // 4. CONSTRÓI A LISTA DE FORNOS PARA O CLIENTE
+        if (state.currentUser && state.currentUser.role !== "admin") {
+            const primaryDev = clientDevices[0];
+            const serialLabel = primaryDev ? (primaryDev.serial || primaryDev.numero_serie) : "THX";
+
+            // Se o ESP enviou leituras de módulos, usamos os módulos ativos
+            let mods = Array.from(detectedModules).sort((a, b) => a - b);
+            if (mods.length === 0) {
+                // Caso o aparelho esteja recém-vinculado sem envio ainda, exibe fornos iniciais
+                const defaultCount = primaryDev?.modulo_num ? Math.max(primaryDev.modulo_num, 4) : 4;
+                mods = Array.from({ length: defaultCount }, (_, i) => i + 1);
+            }
+
+            state.ovens = mods.map(m => ({
+                id: m,
+                numero: m,
+                nome: `Forno ${String(m).padStart(2, '0')}`,
+                dispositivo_serial: serialLabel,
+                modelo: primaryDev?.modelo || "TLK-ESP8266-ALUTAL",
+                ativo: true
+            }));
+        } else {
+            // Modo Master Admin: exibe os módulos detectados ou de 1 a 31
+            const allMods = detectedModules.size > 0
+                ? Array.from(detectedModules).sort((a, b) => a - b)
+                : Array.from({ length: 31 }, (_, i) => i + 1);
+
+            state.ovens = allMods.map(m => ({
+                id: m,
+                numero: m,
+                nome: `Forno ${String(m).padStart(2, '0')}`,
+                ativo: true
+            }));
+        }
+
+        // Hook: motor de alertas em tempo real
         if (window.ThermoAlertas) window.ThermoAlertas.verificarLeituras();
 
         // Renderiza telas
@@ -261,7 +404,7 @@ async function carregarFornosELeituras() {
             carregarDadosAnalise();
         }
 
-        // Se estiver dentro de um forno, atualiza os dados em tempo real
+        // Atualiza forno em detalhe se estiver aberto
         if (state.selectedModule !== null) {
             atualizarFornoDetalhe(state.selectedModule);
         }
@@ -275,10 +418,24 @@ async function carregarFornosELeituras() {
 
 async function getHistoricoModulo(modulo, limit = 1000) {
     try {
-        const { data, error } = await sb
+        let q = sb
             .from("leituras")
-            .select("canal_1, canal_2, modulo_alutal, created_at")
-            .eq("modulo_alutal", modulo)
+            .select("canal_1, canal_2, modulo_alutal, created_at, data_hora, numero_serie, dispositivo_id, ceramica_id")
+            .eq("modulo_alutal", modulo);
+
+        if (state.currentUser && state.currentUser.role !== "admin") {
+            const cid = state.currentUser.ceramicaId;
+            const orList = [`ceramica_id.eq.${cid}`];
+            if (state.allowedSerials && state.allowedSerials.length > 0) {
+                orList.push(`numero_serie.in.(${state.allowedSerials.join(',')})`);
+            }
+            if (state.allowedDeviceIds && state.allowedDeviceIds.length > 0) {
+                orList.push(`dispositivo_id.in.(${state.allowedDeviceIds.join(',')})`);
+            }
+            q = q.or(orList.join(','));
+        }
+
+        const { data, error } = await q
             .order("created_at", { ascending: false })
             .limit(limit);
 
@@ -302,50 +459,60 @@ function isFornoOnline(reading) {
 
 function getNomeForno(modulo) {
     const oven = state.ovens.find(o => Number(o.numero) === Number(modulo));
-    if (oven && oven.nome) return oven.nome;
+    if (oven && oven.nome) {
+        if (oven.dispositivo_serial) {
+            return `${oven.nome} • ${oven.dispositivo_serial}`;
+        }
+        return oven.nome;
+    }
     return `Forno ${String(modulo).padStart(2, "0")}`;
 }
 
 function renderListaFornos() {
     if (state.selectedModule !== null) return;
 
-    // Limpa sparklines anteriores
     state.miniCharts.forEach(c => c.destroy());
     state.miniCharts.clear();
 
-    const onlineOvens = state.ovens.filter(o => isFornoOnline(state.readings.get(Number(o.numero))));
-
-    // Atualiza contador de fornos ativos
-    $("statOnlineCount").textContent = `${onlineOvens.length} ${onlineOvens.length === 1 ? 'Forno Ativo' : 'Fornos Ativos'}`;
-
     const container = $("listaFornos");
-    if (!onlineOvens.length) {
+
+    // Se o cliente não tem nenhum aparelho vinculado ainda
+    if (!state.ovens || !state.ovens.length) {
+        $("statOnlineCount").textContent = "0 Fornos";
         container.innerHTML = `
-            <div class="loading-box">
-                <i class="fa-solid fa-wifi-slash" style="font-size: 32px; color: var(--text-muted);"></i>
-                <p><strong>Nenhum forno transmitindo no momento.</strong><br>Assim que o aparelho ThermoLink enviar dados na cerâmica, ele aparecerá aqui automaticamente.</p>
+            <div class="loading-box" style="padding: 40px 20px; text-align: center;">
+                <i class="fa-solid fa-microchip" style="font-size: 40px; color: #f97316; margin-bottom: 14px;"></i>
+                <h4 style="color: #ffffff; margin-bottom: 6px; font-size: 16px;">Nenhum Aparelho Vinculado</h4>
+                <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; max-width: 320px; margin: 0 auto;">
+                    Sua cerâmica ainda não possui aparelhos ThermoX (ex: <b>THX-00003</b>) vinculados.<br>
+                    Solicite ao administrador a vinculação do seu hardware para visualizar seus fornos.
+                </p>
             </div>
         `;
         return;
     }
 
-    container.innerHTML = onlineOvens.map(o => {
+    const onlineOvens = state.ovens.filter(o => isFornoOnline(state.readings.get(Number(o.numero))));
+    $("statOnlineCount").textContent = `${onlineOvens.length} de ${state.ovens.length} ${state.ovens.length === 1 ? 'Forno' : 'Fornos'}`;
+
+    container.innerHTML = state.ovens.map(o => {
         const mod = Number(o.numero);
         const r = state.readings.get(mod);
+        const online = isFornoOnline(r);
         const c1Val = numVal(r?.canal_1);
         const c2Val = numVal(r?.canal_2);
-        const relTime = formatRelativo(r?.created_at);
+        const relTime = r ? formatRelativo(r.created_at) : "Sem leituras recentes";
 
         return `
             <article class="oven-item-card" onclick="abrirDetalheForno(${mod})">
                 <div class="oven-card-head">
                     <div class="oven-card-title-group">
-                        <span class="module-badge-mini">MÓDULO ${String(mod).padStart(2, "0")}</span>
+                        <span class="module-badge-mini">${escapeHtml(o.dispositivo_serial || `MÓDULO ${String(mod).padStart(2, "0")}`)}</span>
                         <div class="oven-card-name">${escapeHtml(o.nome || getNomeForno(mod))}</div>
                     </div>
-                    <div class="oven-card-status">
-                        <span class="pulse-dot"></span>
-                        ONLINE
+                    <div class="oven-card-status" style="${online ? '' : 'color: #94a3b8; border-color: rgba(148,163,184,0.3); background: rgba(148,163,184,0.1);'}">
+                        <span class="pulse-dot" style="${online ? '' : 'background: #94a3b8; box-shadow: none;'}"></span>
+                        ${online ? 'ONLINE' : 'STANDBY'}
                     </div>
                 </div>
 
@@ -369,9 +536,11 @@ function renderListaFornos() {
         `;
     }).join("");
 
-    // Desenha sparklines
-    onlineOvens.forEach(o => {
-        desenharMiniSparkline(Number(o.numero));
+    // Desenha sparklines apenas para fornos que possuem histórico recente
+    state.ovens.forEach(o => {
+        if (state.readings.has(Number(o.numero))) {
+            desenharMiniSparkline(Number(o.numero));
+        }
     });
 }
 
@@ -665,23 +834,27 @@ async function carregarDadosAnalise() {
     const select = $("analysisKilnSelect");
     if (!select) return;
 
-    const onlineOvens = state.ovens.filter(o => isFornoOnline(state.readings.get(Number(o.numero))));
+    const availableOvens = state.ovens && state.ovens.length > 0 ? state.ovens : [];
 
-    if (!onlineOvens.length) {
-        select.innerHTML = `<option value="">Nenhum forno online</option>`;
+    if (!availableOvens.length) {
+        select.innerHTML = `<option value="">Nenhum forno disponível</option>`;
         limparEstatisticasAnalise();
         return;
     }
 
-    // Se o forno atualmente selecionado na análise não estiver online, pega o primeiro online
-    if (!state.analysisModule || !onlineOvens.some(o => Number(o.numero) === Number(state.analysisModule))) {
-        state.analysisModule = Number(onlineOvens[0].numero);
+    // Se o forno atualmente selecionado na análise não estiver na lista, seleciona o primeiro
+    if (!state.analysisModule || !availableOvens.some(o => Number(o.numero) === Number(state.analysisModule))) {
+        state.analysisModule = Number(availableOvens[0].numero);
     }
 
-    // Popula o select com todos os fornos
-    select.innerHTML = onlineOvens.map(o => {
+    // Popula o select com todos os fornos desta cerâmica
+    select.innerHTML = availableOvens.map(o => {
         const mod = Number(o.numero);
-        return `<option value="${mod}" ${mod === state.analysisModule ? "selected" : ""}>${escapeHtml(o.nome || getNomeForno(mod))} (Módulo ${String(mod).padStart(2, "0")})</option>`;
+        const r = state.readings.get(mod);
+        const online = isFornoOnline(r);
+        return `<option value="${mod}" ${mod === state.analysisModule ? "selected" : ""}>
+            ${escapeHtml(o.nome || getNomeForno(mod))} ${online ? '🟢 (Ao vivo)' : '⚪ (Standby)'}
+        </option>`;
     }).join("");
 
     // Carrega a quantidade de amostras selecionada (até 1000)

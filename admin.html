@@ -99,20 +99,11 @@
                 <i class="fa-solid fa-microchip"></i>
                 <span>Fábrica & QR Codes</span>
             </button>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('telemetria')">
-                <i class="fa-solid fa-tower-broadcast"></i>
-                <span>NOC & Telemetria</span>
-                <span class="nav-badge badge-green" id="sidebarBadgeOnline">Online</span>
-            </button>
 
             <div class="nav-section-label">GESTÃO & SISTEMA</div>
             <button class="nav-btn" onclick="trocarSecaoAdmin('planos')">
                 <i class="fa-solid fa-sliders"></i>
                 <span>Planos & Retenção</span>
-            </button>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('ota')">
-                <i class="fa-solid fa-cloud-arrow-up"></i>
-                <span>Central OTA & Firmware</span>
             </button>
         </nav>
 
@@ -372,29 +363,7 @@
 
             </section>
 
-            <!-- ========================================================
-                 SEÇÃO 4: MONITORAMENTO TÉCNICO & TELEMETRIA (NOC)
-            ========================================================= -->
-            <section id="secTelemetria" class="admin-section hidden">
-                
-                <div class="panel-box">
-                    <div class="panel-header">
-                        <div>
-                            <h3>Centro de Operações de Rede (NOC) - Telemetria de Hardware</h3>
-                            <p>Diagnóstico de sinal Wi-Fi/GPRS (RSSI), integridade dos termopares e alertas de falha física</p>
-                        </div>
-                        <div class="noc-status-badge">
-                            <span class="pulse-indicator"></span>
-                            <span>DIAGNÓSTICO AUTOMÁTICO ATIVO</span>
-                        </div>
-                    </div>
 
-                    <div class="telemetry-grid" id="telemetryGrid">
-                        <!-- Gerado dinamicamente com os módulos ativos -->
-                    </div>
-                </div>
-
-            </section>
 
             <!-- ========================================================
                  SEÇÃO 5: CONFIGURAÇÕES DE PLANOS, LIMITES E FATURAMENTO
@@ -466,72 +435,7 @@
 
             </section>
 
-            <!-- ========================================================
-                 SEÇÃO 6: CENTRAL DE ATUALIZAÇÕES (OTA - OVER THE AIR)
-            ========================================================= -->
-            <section id="secOta" class="admin-section hidden">
-                
-                <div class="panel-box">
-                    <div class="panel-header">
-                        <div>
-                            <h3>Central de Atualizações de Firmware Remoto (OTA)</h3>
-                            <p>Envie novas versões de software para os dispositivos ESP32/ESP8266 sem precisar ir presencialmente à cerâmica</p>
-                        </div>
-                        <button class="btn-primary-admin" onclick="abrirModalDeployOTA()">
-                            <i class="fa-solid fa-rocket"></i>
-                            <span>Disparar Nova Versão OTA</span>
-                        </button>
-                    </div>
 
-                    <div class="ota-status-overview">
-                        <div class="ota-version-card">
-                            <span class="ota-lbl">Versão Atual de Produção</span>
-                            <div class="ota-val text-orange">v2.4.1 (ESP32-Industrial)</div>
-                            <span class="ota-sub">Liberada em 18/08/2026 • 98.4% dos aparelhos atualizados</span>
-                        </div>
-                        <div class="ota-version-card">
-                            <span class="ota-lbl">Versão Web / PWA</span>
-                            <div class="ota-val text-green">v2.4.0 Live Cloud</div>
-                            <span class="ota-sub">Sincronização em tempo real ativa com Supabase</span>
-                        </div>
-                    </div>
-
-                    <div class="admin-table-wrapper" style="margin-top: 18px;">
-                        <h4 style="margin-bottom: 12px; font-size: 14px;">Histórico de Firmware Lançados</h4>
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>Versão</th>
-                                    <th>Data de Liberação</th>
-                                    <th>Dispositivos Alvo</th>
-                                    <th>Descrição / Changelog</th>
-                                    <th>Taxa de Sucesso</th>
-                                    <th style="text-align: right;">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><b>v2.4.1</b></td>
-                                    <td>18/08/2026</td>
-                                    <td>Todos os módulos (ESP32)</td>
-                                    <td>Filtro de ruído em alta temperatura e reconexão automática Wi-Fi.</td>
-                                    <td><span class="text-green">100% (Concluído)</span></td>
-                                    <td style="text-align: right;"><span class="badge-status-ativo">Estável</span></td>
-                                </tr>
-                                <tr>
-                                    <td><b>v2.4.0</b></td>
-                                    <td>10/08/2026</td>
-                                    <td>Módulos Alutal 01 a 31</td>
-                                    <td>Suporte a telemetria dual-channel para termopares Tipo K/S.</td>
-                                    <td><span class="text-green">100% (Concluído)</span></td>
-                                    <td style="text-align: right;"><span class="badge-status-ativo">Estável</span></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-            </section>
 
         </div>
 
@@ -609,15 +513,17 @@
         <form onsubmit="salvarNovoDispositivo(event)">
             <div class="form-row-duo">
                 <div class="form-group">
-                    <label>Número de Série (Gerado)</label>
+                    <label>Número de Série do Aparelho (Serial)</label>
                     <div class="pass-gen-box">
-                        <input type="text" id="devSerial" placeholder="TLK-2026-XXXX" required>
-                        <button type="button" class="btn-gen-code" onclick="gerarSerialHardware()">Gerar</button>
+                        <input type="text" id="devSerial" placeholder="Ex: THX-00001 ou TLK-2026-0001" required>
+                        <button type="button" class="btn-gen-code" onclick="gerarSerialTHX()" title="Gerar Serial padrão ThermoX ESP (THX-XXXXX)">THX</button>
+                        <button type="button" class="btn-gen-code" onclick="gerarSerialHardware()" title="Gerar Serial padrão TLK">TLK</button>
                     </div>
                 </div>
                 <div class="form-group">
                     <label>Modelo do Hardware</label>
                     <select id="devModelo">
+                        <option value="TLK-ESP8266-ALUTAL">ThermoLink ESP8266 + Alutal RS485 (ThermoX V4)</option>
                         <option value="TLK-ESP32-DUAL">ThermoLink ESP32 Dual-Channel Industrial</option>
                         <option value="TLK-ESP32-PRO">ThermoLink ESP32 Pro MAX6675</option>
                     </select>
@@ -641,6 +547,53 @@
             <div class="modal-dialog-actions">
                 <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalFabricarDispositivo', null)">Cancelar</button>
                 <button type="submit" class="btn-admin-submit">Salvar e Gerar QR Code</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL: VINCULAR DISPOSITIVO EXISTENTE À CERÂMICA -->
+<div id="modalVincularDispositivo" class="modal-overlay hidden" onclick="fecharModalAdmin('modalVincularDispositivo', event)">
+    <div class="modal-dialog" onclick="event.stopPropagation()">
+        <div class="modal-dialog-header">
+            <h3><i class="fa-solid fa-link text-orange"></i> Vincular Dispositivo à Cerâmica</h3>
+            <button class="btn-close-modal" onclick="fecharModalAdmin('modalVincularDispositivo', null)"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form onsubmit="salvarVinculoDispositivo(event)">
+            <input type="hidden" id="vincSerialOriginal">
+            <div class="form-group">
+                <label>Dispositivo Selecionado (Serial / Identidade)</label>
+                <input type="text" id="vincSerial" readonly style="background:rgba(255,255,255,0.06); font-family:var(--font-mono); color:#f97316; font-weight:700; font-size:15px; border-color:rgba(249,115,22,0.4);">
+            </div>
+
+            <div class="form-row-duo">
+                <div class="form-group">
+                    <label>Cerâmica que Usará este Aparelho</label>
+                    <select id="vincCeramica" required>
+                        <!-- Popula dinamicamente com as cerâmicas cadastradas -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Associar ao Forno / Módulo nº</label>
+                    <input type="number" id="vincModuloNum" min="1" max="31" placeholder="Ex: 1" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Status Operacional</label>
+                <select id="vincStatus">
+                    <option value="Vinculado">Vinculado & Operando no Forno</option>
+                    <option value="Disponível">Em Estoque (Desvincular)</option>
+                    <option value="Manutenção">Em Manutenção Técnica</option>
+                </select>
+            </div>
+
+            <div class="modal-dialog-actions">
+                <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalVincularDispositivo', null)">Cancelar</button>
+                <button type="submit" class="btn-admin-submit">
+                    <i class="fa-solid fa-check"></i>
+                    <span>Salvar Vínculo no Banco</span>
+                </button>
             </div>
         </form>
     </div>

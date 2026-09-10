@@ -1,6 +1,6 @@
 // ==========================================================================
-// THERMOLINK MASTER ADMIN - PORTAL ENGINE
-// Gestão de Clientes, Fábrica de Hardware, Telemetria e Central OTA
+// THERMOLINK MASTER ADMIN - PORTAL ENGINE (INTEGRADO AO SUPABASE)
+// Gestão de Cerâmicas, Fábrica de Hardware, Telemetria e Central OTA
 // ==========================================================================
 
 const SUPABASE_URL = "https://zawnluboujbovpgrgdcx.supabase.co";
@@ -10,7 +10,7 @@ const { createClient } = window.supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ==========================================================================
-// BASE DE DADOS LOCAL (PERSISTÊNCIA ADMIN)
+// BASE DE DADOS INICIAL (FALLBACK E DADOS PADRÃO)
 // ==========================================================================
 const DEFAULT_CLIENTS = [
     {
@@ -23,6 +23,7 @@ const DEFAULT_CLIENTS = [
         fornosCount: 4,
         status: "Ativo",
         username: "ceramica",
+        senha: "forno2026",
         ultimoAcesso: "Hoje, 14:22"
     },
     {
@@ -35,6 +36,7 @@ const DEFAULT_CLIENTS = [
         fornosCount: 2,
         status: "Ativo",
         username: "santarita",
+        senha: "cer8492",
         ultimoAcesso: "Hoje, 11:05"
     },
     {
@@ -47,26 +49,57 @@ const DEFAULT_CLIENTS = [
         fornosCount: 8,
         status: "Ativo",
         username: "paulista",
+        senha: "cer3910",
         ultimoAcesso: "Ontem, 19:40"
-    },
-    {
-        id: "cli_4",
-        nome: "Cerâmica União do Sul",
-        responsavel: "Fernando Lima",
-        cidade: "Criciúma - SC",
-        plano: "Básico",
-        valorMensal: 149,
-        fornosCount: 1,
-        status: "Bloqueado",
-        username: "uniao",
-        ultimoAcesso: "12/08/2026"
     }
 ];
 
 const DEFAULT_DEVICES = [
     {
+        serial: "THX-00003",
+        modelo: "TLK-ESP8266-ALUTAL",
+        status: "Vinculado",
+        ceramicaId: "cli_1",
+        ceramicaNome: "Cerâmica São José",
+        moduloNum: 3,
+        dataFabricacao: "08/09/2026",
+        rssi: -62,
+        voltage: 5.04,
+        sensorC1: "OK",
+        sensorC2: "OK",
+        uptime: "03 dias 12h"
+    },
+    {
+        serial: "THX-00001",
+        modelo: "TLK-ESP8266-ALUTAL",
+        status: "Vinculado",
+        ceramicaId: "cli_1",
+        ceramicaNome: "Cerâmica São José",
+        moduloNum: 1,
+        dataFabricacao: "08/09/2026",
+        rssi: -58,
+        voltage: 5.08,
+        sensorC1: "OK",
+        sensorC2: "OK",
+        uptime: "02 dias 04h"
+    },
+    {
+        serial: "THX-00002",
+        modelo: "TLK-ESP8266-ALUTAL",
+        status: "Disponível",
+        ceramicaId: null,
+        ceramicaNome: "Em Estoque",
+        moduloNum: null,
+        dataFabricacao: "08/09/2026",
+        rssi: null,
+        voltage: 5.00,
+        sensorC1: "Teste OK",
+        sensorC2: "Teste OK",
+        uptime: "--"
+    },
+    {
         serial: "TLK-2026-0401",
-        modelo: "TLK-ESP32-DUAL",
+        modelo: "TLK-ESP8266-ALUTAL",
         status: "Vinculado",
         ceramicaId: "cli_1",
         ceramicaNome: "Cerâmica São José",
@@ -80,7 +113,7 @@ const DEFAULT_DEVICES = [
     },
     {
         serial: "TLK-2026-0402",
-        modelo: "TLK-ESP32-DUAL",
+        modelo: "TLK-ESP8266-ALUTAL",
         status: "Vinculado",
         ceramicaId: "cli_1",
         ceramicaNome: "Cerâmica São José",
@@ -94,7 +127,7 @@ const DEFAULT_DEVICES = [
     },
     {
         serial: "TLK-2026-0849",
-        modelo: "TLK-ESP32-PRO",
+        modelo: "TLK-ESP8266-ALUTAL",
         status: "Vinculado",
         ceramicaId: "cli_2",
         ceramicaNome: "Cerâmica Santa Rita",
@@ -108,28 +141,28 @@ const DEFAULT_DEVICES = [
     },
     {
         serial: "TLK-2026-1020",
-        modelo: "TLK-ESP32-DUAL",
+        modelo: "TLK-ESP8266-ALUTAL",
         status: "Disponível",
         ceramicaId: null,
         ceramicaNome: "Em Estoque",
         moduloNum: null,
         dataFabricacao: "18/08/2026",
         rssi: null,
-        voltage: null,
+        voltage: 5.00,
         sensorC1: "Teste OK",
         sensorC2: "Teste OK",
         uptime: "--"
     },
     {
         serial: "TLK-2026-1021",
-        modelo: "TLK-ESP32-DUAL",
+        modelo: "TLK-ESP8266-ALUTAL",
         status: "Disponível",
         ceramicaId: null,
         ceramicaNome: "Em Estoque",
         moduloNum: null,
         dataFabricacao: "19/08/2026",
         rssi: null,
-        voltage: null,
+        voltage: 5.00,
         sensorC1: "Teste OK",
         sensorC2: "Teste OK",
         uptime: "--"
@@ -137,6 +170,7 @@ const DEFAULT_DEVICES = [
 ];
 
 function getClients() {
+    if (adminState.clients && adminState.clients.length) return adminState.clients;
     const saved = localStorage.getItem("thermolink_clients_admin");
     if (!saved) {
         localStorage.setItem("thermolink_clients_admin", JSON.stringify(DEFAULT_CLIENTS));
@@ -146,10 +180,12 @@ function getClients() {
 }
 
 function saveClients(clients) {
+    adminState.clients = clients;
     localStorage.setItem("thermolink_clients_admin", JSON.stringify(clients));
 }
 
 function getDevices() {
+    if (adminState.devices && adminState.devices.length) return adminState.devices;
     const saved = localStorage.getItem("thermolink_devices_admin");
     if (!saved) {
         localStorage.setItem("thermolink_devices_admin", JSON.stringify(DEFAULT_DEVICES));
@@ -159,6 +195,7 @@ function getDevices() {
 }
 
 function saveDevices(devices) {
+    adminState.devices = devices;
     localStorage.setItem("thermolink_devices_admin", JSON.stringify(devices));
 }
 
@@ -173,13 +210,100 @@ const adminState = {
     trafficChart: null,
     clientFilterStatus: "all",
     clientSearchQuery: "",
-    liveReadings: []
+    liveReadings: [],
+    syncInterval: null
 };
 
 const $ = (id) => document.getElementById(id);
 
 // ==========================================================================
-// 1. AUTENTICAÇÃO MASTER ADMIN
+// 1. SINCRONIZAÇÃO COMPLETA COM O SUPABASE
+// ==========================================================================
+
+async function carregarDadosSupabase() {
+    try {
+        const statusEl = document.querySelector(".server-status-card b");
+        if (statusEl) statusEl.textContent = "SINCRONIZANDO...";
+
+        // 1. Carrega Cerâmicas
+        const { data: dbClients, error: errClients } = await sb
+            .from("ceramicas")
+            .select("*")
+            .order("created_at", { ascending: false });
+
+        if (!errClients && dbClients && dbClients.length > 0) {
+            adminState.clients = dbClients.map(c => ({
+                id: c.id,
+                nome: c.nome,
+                responsavel: c.responsavel || "--",
+                cidade: c.cidade || "--",
+                plano: c.plano || "Profissional",
+                valorMensal: Number(c.valor_mensal) || 299,
+                fornosCount: Number(c.fornos_count) || 4,
+                status: c.status || "Ativo",
+                username: c.username,
+                senha: c.senha,
+                ultimoAcesso: c.ultimo_acesso ? new Date(c.ultimo_acesso).toLocaleDateString("pt-BR") : "Nunca"
+            }));
+            saveClients(adminState.clients);
+        } else {
+            // Se tabela estiver vazia, carrega do localStorage / fallback
+            adminState.clients = getClients();
+        }
+
+        // 2. Carrega Dispositivos
+        const { data: dbDevs, error: errDevs } = await sb
+            .from("dispositivos")
+            .select("*")
+            .order("id", { ascending: true });
+
+        if (!errDevs && dbDevs && dbDevs.length > 0) {
+            adminState.devices = dbDevs.map(d => {
+                const s = d.serial || d.numero_serie || (d.id ? 'THX-' + String(d.id).padStart(5, '0') : '--');
+                const c = adminState.clients.find(cli => cli.id === d.ceramica_id);
+                return {
+                    id: d.id,
+                    serial: s,
+                    numeroSerie: s,
+                    modelo: d.modelo || "TLK-ESP8266-ALUTAL",
+                    status: d.status || (d.ceramica_id ? "Vinculado" : "Disponível"),
+                    ceramicaId: d.ceramica_id || null,
+                    ceramicaNome: c ? c.nome : (d.ceramica_id ? "Vinculado" : "Em Estoque"),
+                    moduloNum: d.modulo_num,
+                    fornoId: d.forno_id,
+                    dataFabricacao: d.data_fabricacao || new Date(d.created_at).toLocaleDateString("pt-BR"),
+                    rssi: d.rssi,
+                    voltage: d.voltage || 5.05,
+                    sensorC1: "OK",
+                    sensorC2: "OK",
+                    uptime: d.uptime || "--",
+                    ultimoAcesso: d.ultimo_acesso
+                };
+            });
+            saveDevices(adminState.devices);
+        } else {
+            adminState.devices = getDevices();
+        }
+
+        if (statusEl) statusEl.textContent = "ATIVO";
+
+        // Renderiza as telas atualizadas
+        renderDashboardGeral();
+        renderTabelaClientes();
+        renderTabelaDispositivos();
+
+    } catch (err) {
+        console.warn("[Admin Supabase] Falha ao carregar dados do Supabase:", err);
+        adminState.clients = getClients();
+        adminState.devices = getDevices();
+        renderDashboardGeral();
+        renderTabelaClientes();
+        renderTabelaDispositivos();
+    }
+}
+
+// ==========================================================================
+// 2. AUTENTICAÇÃO MASTER ADMIN
 // ==========================================================================
 
 function verificarAuthMaster() {
@@ -215,7 +339,7 @@ function logoutAdmin() {
 }
 
 // ==========================================================================
-// 2. NAVEGAÇÃO ENTRE SEÇÕES DO ADMIN
+// 3. NAVEGAÇÃO ENTRE SEÇÕES DO ADMIN
 // ==========================================================================
 
 function trocarSecaoAdmin(secao) {
@@ -226,21 +350,17 @@ function trocarSecaoAdmin(secao) {
     event?.currentTarget?.classList?.add("active");
 
     // Oculta todas as seções
-    $("secDashboard").classList.add("hidden");
-    $("secClientes").classList.add("hidden");
-    $("secDispositivos").classList.add("hidden");
-    $("secTelemetria").classList.add("hidden");
-    $("secPlanos").classList.add("hidden");
-    $("secOta").classList.add("hidden");
+    $("secDashboard")?.classList.add("hidden");
+    $("secClientes")?.classList.add("hidden");
+    $("secDispositivos")?.classList.add("hidden");
+    $("secPlanos")?.classList.add("hidden");
 
     // Atualiza cabeçalho
     const titulos = {
         dashboard: { h1: "Dashboard Geral", sub: "Visão executiva, custos de infraestrutura e tráfego em tempo real" },
         clientes: { h1: "Gestão de Cerâmicas", sub: "Controle de clientes, bloqueio por inadimplência e modo suporte" },
         dispositivos: { h1: "Fábrica & Hardware", sub: "Cadastro de números de série, geração de etiquetas adesivas e inventário" },
-        telemetria: { h1: "NOC & Telemetria", sub: "Monitoramento de sinal Wi-Fi (RSSI), integridade dos sensores e diagnóstico físico" },
-        planos: { h1: "Planos & Faturamento", sub: "Configuração de limites de fornos e tempo de retenção do banco de dados" },
-        ota: { h1: "Central OTA & Firmware", sub: "Atualização remota de firmware para os módulos ESP32 instalados nas cerâmicas" }
+        planos: { h1: "Planos & Faturamento", sub: "Configuração de limites de fornos e tempo de retenção do banco de dados" }
     };
 
     if (titulos[secao]) {
@@ -249,21 +369,16 @@ function trocarSecaoAdmin(secao) {
     }
 
     if (secao === "dashboard") {
-        $("secDashboard").classList.remove("hidden");
+        $("secDashboard")?.classList.remove("hidden");
         renderDashboardGeral();
     } else if (secao === "clientes") {
-        $("secClientes").classList.remove("hidden");
+        $("secClientes")?.classList.remove("hidden");
         renderTabelaClientes();
     } else if (secao === "dispositivos") {
-        $("secDispositivos").classList.remove("hidden");
+        $("secDispositivos")?.classList.remove("hidden");
         renderTabelaDispositivos();
-    } else if (secao === "telemetria") {
-        $("secTelemetria").classList.remove("hidden");
-        renderNocTelemetria();
     } else if (secao === "planos") {
-        $("secPlanos").classList.remove("hidden");
-    } else if (secao === "ota") {
-        $("secOta").classList.remove("hidden");
+        $("secPlanos")?.classList.remove("hidden");
     }
 
     // Fecha sidebar no mobile
@@ -277,7 +392,7 @@ function toggleSidebarMobile() {
 }
 
 // ==========================================================================
-// 3. RENDERIZAÇÃO DO DASHBOARD GERAL
+// 4. RENDERIZAÇÃO DO DASHBOARD GERAL
 // ==========================================================================
 
 function renderDashboardGeral() {
@@ -325,7 +440,6 @@ function renderTrafficChart() {
         adminState.trafficChart = null;
     }
 
-    // Gera dados simulados das últimas 24h de tráfego de leituras
     const hours = ["00h", "02h", "04h", "06h", "08h", "10h", "12h", "14h", "16h", "18h", "20h", "22h", "Agora"];
     const trafficData = [420, 310, 290, 480, 890, 1450, 1680, 1820, 1750, 1620, 1340, 980, 1150];
 
@@ -379,7 +493,7 @@ function renderTrafficChart() {
 }
 
 // ==========================================================================
-// 4. GESTÃO DE CLIENTES & MODO IMPERSONATE
+// 5. GESTÃO DE CLIENTES & MODO IMPERSONATE
 // ==========================================================================
 
 function renderTabelaClientes() {
@@ -399,7 +513,8 @@ function renderTabelaClientes() {
         clients = clients.filter(c => 
             c.nome.toLowerCase().includes(q) || 
             c.responsavel.toLowerCase().includes(q) || 
-            c.cidade.toLowerCase().includes(q)
+            c.cidade.toLowerCase().includes(q) ||
+            c.username.toLowerCase().includes(q)
         );
     }
 
@@ -436,6 +551,9 @@ function renderTabelaClientes() {
                             <i class="fa-solid ${isBloqueado ? 'fa-lock-open' : 'fa-lock'}"></i>
                             <span>${isBloqueado ? 'Liberar' : 'Bloquear'}</span>
                         </button>
+                        <button class="btn-tbl-action btn-delete-action" onclick="excluirCeramica('${c.id}')" title="Excluir Cerâmica">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
                     </div>
                 </td>
             </tr>
@@ -455,25 +573,64 @@ function filtrarTabelaClientes(texto) {
     renderTabelaClientes();
 }
 
-function alternarBloqueioCliente(clienteId) {
+async function alternarBloqueioCliente(clienteId) {
     const clients = getClients();
     const target = clients.find(c => c.id === clienteId);
     if (!target) return;
 
+    const novoStatus = target.status === "Ativo" ? "Bloqueado" : "Ativo";
+
     if (target.status === "Ativo") {
-        if (confirm(`Deseja realmente BLOQUEAR o acesso da ${target.nome}?\nO cliente não conseguirá visualizar os fornos até ser desbloqueado.`)) {
-            target.status = "Bloqueado";
+        if (!confirm(`Deseja realmente BLOQUEAR o acesso da ${target.nome}?\nO cliente não conseguirá visualizar os fornos até ser desbloqueado.`)) {
+            return;
         }
-    } else {
-        target.status = "Ativo";
     }
 
+    target.status = novoStatus;
     saveClients(clients);
     renderTabelaClientes();
     renderDashboardGeral();
+
+    // Persiste atualização no Supabase
+    try {
+        const { error } = await sb
+            .from("ceramicas")
+            .update({ status: novoStatus })
+            .eq("id", clienteId);
+
+        if (error) console.warn("[Supabase] Aviso ao atualizar status da cerâmica:", error);
+    } catch (err) {
+        console.error("[Supabase] Erro de rede ao atualizar status:", err);
+    }
 }
 
-// MODO IMPERSONATE: Abre o app móvel simulando o login direto daquela cerâmica
+async function excluirCeramica(clienteId) {
+    const clients = getClients();
+    const target = clients.find(c => c.id === clienteId);
+    if (!target) return;
+
+    if (!confirm(`ATENÇÃO: Deseja realmente excluir a cerâmica "${target.nome}"?\nTodos os fornos e vínculos associados serão desvinculados.`)) {
+        return;
+    }
+
+    // Remove do Supabase
+    try {
+        const { error } = await sb.from("ceramicas").delete().eq("id", clienteId);
+        if (error) {
+            alert(`Erro ao excluir no banco de dados: ${error.message}`);
+            return;
+        }
+    } catch (err) {
+        console.error("[Supabase] Falha ao deletar:", err);
+    }
+
+    adminState.clients = clients.filter(c => c.id !== clienteId);
+    saveClients(adminState.clients);
+    renderTabelaClientes();
+    renderDashboardGeral();
+    alert(`Cerâmica "${target.nome}" excluída com sucesso.`);
+}
+
 function impersonateCeramica(clienteId) {
     const clients = getClients();
     const target = clients.find(c => c.id === clienteId);
@@ -488,8 +645,6 @@ function impersonateCeramica(clienteId) {
     };
 
     localStorage.setItem("thermolink_active_session", JSON.stringify(impersonateSession));
-    
-    // Abre a aplicação cliente
     window.open("index.html", "_blank");
 }
 
@@ -507,7 +662,7 @@ function gerarSenhaAleatoriaCliente() {
     $("ncPass").value = `cer${num}`;
 }
 
-function salvarNovaCeramica(e) {
+async function salvarNovaCeramica(e) {
     e.preventDefault();
     const nome = $("ncNome").value.trim();
     const resp = $("ncResp").value.trim();
@@ -518,40 +673,89 @@ function salvarNovaCeramica(e) {
 
     if (!nome || !user || !pass) return;
 
-    const clients = getClients();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn ? submitBtn.textContent : "";
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Salvando no Banco Supabase...";
+    }
+
     const newId = `cli_${Date.now()}`;
-
     const precoPorPlano = { "Básico": 149, "Profissional": 299, "Enterprise": 599 };
+    const fornosPorPlano = { "Básico": 2, "Profissional": 6, "Enterprise": 12 };
 
-    clients.push({
+    const novoRegistro = {
+        id: newId,
+        nome: nome,
+        responsavel: resp,
+        cidade: cidade,
+        plano: plano,
+        valor_mensal: precoPorPlano[plano] || 299,
+        fornos_count: fornosPorPlano[plano] || 6,
+        status: "Ativo",
+        username: user,
+        senha: pass
+    };
+
+    // 1. Grava diretamente no Supabase na tabela 'ceramicas'
+    try {
+        const { error } = await sb.from("ceramicas").insert([novoRegistro]);
+        if (error) {
+            console.warn("[Supabase] Erro ao cadastrar cerâmica no banco:", error);
+            alert(`Aviso ao gravar no banco de dados: ${error.message}\nO cadastro será mantido localmente.`);
+        } else {
+            // Cria os fornos iniciais para a nova cerâmica no Supabase
+            const fornos = [];
+            for (let i = 1; i <= novoRegistro.fornos_count; i++) {
+                fornos.push({
+                    ceramica_id: newId,
+                    numero: i,
+                    nome: `Forno ${String(i).padStart(2, '0')}`,
+                    ativo: true
+                });
+            }
+            await sb.from("fornos").insert(fornos);
+        }
+    } catch (err) {
+        console.error("[Supabase] Falha ao enviar para o Supabase:", err);
+    }
+
+    // 2. Atualiza estado local
+    const clients = getClients();
+    clients.unshift({
         id: newId,
         nome: nome,
         responsavel: resp,
         cidade: cidade,
         plano: plano,
         valorMensal: precoPorPlano[plano] || 299,
-        fornosCount: plano === "Básico" ? 2 : (plano === "Profissional" ? 6 : 12),
+        fornosCount: fornosPorPlano[plano] || 6,
         status: "Ativo",
         username: user,
+        senha: pass,
         ultimoAcesso: "Nunca"
     });
-
     saveClients(clients);
 
-    // Salva também na lista de usuários de autenticação
+    // Salva na lista de usuários para autenticação direta
     const users = JSON.parse(localStorage.getItem("thermolink_users") || "[]");
     users.push({ username: user, password: pass, name: nome, role: "client" });
     localStorage.setItem("thermolink_users", JSON.stringify(users));
+
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+    }
 
     fecharModalAdmin("modalNovaCeramica", null);
     renderTabelaClientes();
     renderDashboardGeral();
 
-    alert(`Cerâmica cadastrada com sucesso!\n\nNome: ${nome}\nUsuário: ${user}\nSenha: ${pass}\n\nVocê já pode entregar o acesso ao cliente.`);
+    alert(`Cerâmica cadastrada e salva com sucesso no Banco de Dados!\n\nNome: ${nome}\nUsuário: ${user}\nSenha: ${pass}\n\nVocê já pode entregar o acesso ao cliente.`);
 }
 
 // ==========================================================================
-// 5. FÁBRICA DE DISPOSITIVOS & GERADOR DE QR CODE
+// 6. FÁBRICA DE DISPOSITIVOS & GERADOR DE QR CODE
 // ==========================================================================
 
 function renderTabelaDispositivos() {
@@ -573,23 +777,30 @@ function renderTabelaDispositivos() {
 
         return `
             <tr>
-                <td><b style="font-family:var(--font-mono); color:#f97316;">${d.serial}</b></td>
+                <td><b style="font-family:var(--font-mono); color:#f97316; font-size:14px;">${d.serial}</b></td>
                 <td><span style="font-size:12px; color:#94a3b8;">${d.modelo}</span></td>
                 <td>${statusBadge}</td>
-                <td>${d.ceramicaNome || "--"}</td>
-                <td>${d.moduloNum ? `Forno ${String(d.moduloNum).padStart(2, '0')}` : "--"}</td>
+                <td><b>${escapeHtml(d.ceramicaNome || "--")}</b></td>
+                <td>${d.moduloNum ? `<span style="color:#38bdf8; font-weight:700;">Forno ${String(d.moduloNum).padStart(2, '0')}</span>` : "--"}</td>
                 <td style="font-size:12px; color:#64748b;">${d.dataFabricacao}</td>
                 <td style="text-align: right;">
                     <div class="actions-cell">
+                        <button class="btn-tbl-action ${isDisponivel ? 'btn-vincular-novo' : 'btn-vincular-edit'}" onclick="abrirModalVincularDispositivo('${d.serial}')" title="${isDisponivel ? 'Vincular este aparelho a uma Cerâmica' : 'Alterar Cerâmica / Forno Vinculado'}">
+                            <i class="fa-solid fa-link"></i>
+                            <span>${isDisponivel ? 'Vincular' : 'Alterar'}</span>
+                        </button>
                         <button class="btn-tbl-action btn-qrcode-view" onclick="abrirModalEtiquetaQRCode('${d.serial}')" title="Gerar e Imprimir Etiqueta QR Code">
                             <i class="fa-solid fa-qrcode"></i>
-                            <span>Etiqueta QR</span>
+                            <span>QR</span>
                         </button>
                         ${!isDisponivel ? `
                             <button class="btn-tbl-action btn-block-toggle" onclick="desvincularDispositivo('${d.serial}')" title="Liberar e Desvincular Aparelho">
                                 <i class="fa-solid fa-unlink"></i>
                             </button>
                         ` : ''}
+                        <button class="btn-tbl-action btn-delete-action" onclick="excluirDispositivo('${d.serial}')" title="Excluir Dispositivo">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
                     </div>
                 </td>
             </tr>
@@ -598,7 +809,7 @@ function renderTabelaDispositivos() {
 }
 
 function abrirModalFabricarDispositivo() {
-    gerarSerialHardware();
+    gerarSerialTHX(); // Inicia com o próximo padrão ThermoX (ex: THX-00003)
     
     // Popula select de cerâmicas
     const sel = $("devCeramicaVinculo");
@@ -616,35 +827,199 @@ function gerarSerialHardware() {
     $("devSerial").value = `TLK-2026-${rnd}`;
 }
 
-function salvarNovoDispositivo(e) {
+function gerarSerialTHX() {
+    const devices = getDevices();
+    let maxNum = 0;
+    devices.forEach(d => {
+        if (d.serial && d.serial.startsWith("THX-")) {
+            const numPart = d.serial.replace("THX-", "");
+            const n = parseInt(numPart, 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+        }
+    });
+    const nextNum = String(maxNum + 1).padStart(5, "0");
+    $("devSerial").value = `THX-${nextNum}`;
+}
+
+function abrirModalVincularDispositivo(serial) {
+    const devices = getDevices();
+    const target = devices.find(d => d.serial === serial);
+    if (!target) return;
+
+    $("vincSerialOriginal").value = serial;
+    $("vincSerial").value = serial;
+    $("vincModuloNum").value = target.moduloNum || 1;
+    $("vincStatus").value = target.status === "Disponível" ? "Vinculado" : target.status;
+
+    const sel = $("vincCeramica");
+    if (sel) {
+        const clients = getClients();
+        sel.innerHTML = clients.map(c => `
+            <option value="${c.id}" ${c.id === target.ceramicaId ? "selected" : ""}>
+                ${escapeHtml(c.nome)} (${escapeHtml(c.cidade)})
+            </option>
+        `).join("");
+    }
+
+    $("modalVincularDispositivo").classList.remove("hidden");
+}
+
+async function salvarVinculoDispositivo(e) {
+    e.preventDefault();
+    const serial = $("vincSerialOriginal").value;
+    const ceramicaId = $("vincCeramica").value;
+    const moduloNum = Number($("vincModuloNum").value) || 1;
+    const status = $("vincStatus").value;
+
+    const clients = getClients();
+    const selectedClient = clients.find(c => c.id === ceramicaId);
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const origText = submitBtn ? submitBtn.textContent : "";
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Salvando Vínculo no Supabase...";
+    }
+
+    const isVinculado = status === "Vinculado";
+    const atualizacao = {
+        status: status,
+        ceramica_id: isVinculado ? ceramicaId : null,
+        modulo_num: isVinculado ? moduloNum : null,
+        forno_id: isVinculado ? moduloNum : null,
+        serial: serial,
+        numero_serie: serial
+    };
+
+    try {
+        const { error } = await sb
+            .from("dispositivos")
+            .update(atualizacao)
+            .or(`serial.eq.${serial},numero_serie.eq.${serial}`);
+
+        if (error) {
+            console.warn("[Supabase] Erro ao vincular dispositivo:", error);
+            alert(`Aviso ao salvar vínculo no banco: ${error.message}`);
+        } else if (isVinculado && ceramicaId) {
+            // Retroalimenta as leituras deste dispositivo para a Cerâmica dona!
+            try {
+                await sb.from("leituras")
+                    .update({ ceramica_id: ceramicaId })
+                    .or(`numero_serie.eq.${serial},serial.eq.${serial}`);
+            } catch (errLeit) {
+                console.warn("[Supabase] Aviso ao atualizar leituras existentes:", errLeit);
+            }
+        }
+    } catch (err) {
+        console.error("[Supabase] Falha ao atualizar vínculo:", err);
+    }
+
+    // Atualiza estado local
+    const devices = getDevices();
+    const target = devices.find(d => d.serial === serial || d.numeroSerie === serial);
+    if (target) {
+        target.status = status;
+        target.ceramicaId = isVinculado ? ceramicaId : null;
+        target.ceramicaNome = isVinculado && selectedClient ? selectedClient.nome : "Em Estoque";
+        target.moduloNum = isVinculado ? moduloNum : null;
+        target.fornoId = isVinculado ? moduloNum : null;
+        saveDevices(devices);
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = origText;
+    }
+
+    fecharModalAdmin("modalVincularDispositivo", null);
+    renderTabelaDispositivos();
+    renderDashboardGeral();
+
+    if (isVinculado && selectedClient) {
+        alert(`Dispositivo ${serial} associado com sucesso!\n\nCerâmica: ${selectedClient.nome}\nForno: ${moduloNum}\n\nAgora todas as leituras térmicas deste aparelho pertencem exclusivamente a esta Cerâmica.`);
+    } else {
+        alert(`Dispositivo ${serial} atualizado.`);
+    }
+}
+
+async function salvarNovoDispositivo(e) {
     e.preventDefault();
     const serial = $("devSerial").value.trim().toUpperCase();
     const modelo = $("devModelo").value;
-    const ceramicaId = $("devCeramicaVinculo").value;
+    const ceramicaId = $("devCeramicaVinculo").value || null;
     const moduloNum = $("devModuloNum").value ? Number($("devModuloNum").value) : null;
 
     if (!serial) return;
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn ? submitBtn.textContent : "";
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Gravando Hardware no Supabase...";
+    }
 
     const devices = getDevices();
     const clients = getClients();
     const selectedClient = clients.find(c => c.id === ceramicaId);
 
-    devices.push({
+    // Extrai o ID numérico a partir do serial (ex: THX-00003 -> ID 3)
+    let numId = null;
+    if (serial.startsWith("THX-")) {
+        const parsed = parseInt(serial.replace("THX-", ""), 10);
+        if (!isNaN(parsed)) numId = parsed;
+    }
+
+    const novoDev = {
         serial: serial,
+        numero_serie: serial,
         modelo: modelo,
         status: ceramicaId ? "Vinculado" : "Disponível",
-        ceramicaId: ceramicaId || null,
-        ceramicaNome: selectedClient ? selectedClient.nome : "Em Estoque",
-        moduloNum: moduloNum,
-        dataFabricacao: new Date().toLocaleDateString("pt-BR"),
+        ceramica_id: ceramicaId,
+        modulo_num: moduloNum || 1,
+        forno_id: moduloNum || 1,
+        data_fabricacao: new Date().toLocaleDateString("pt-BR"),
         rssi: ceramicaId ? -65 : null,
+        voltage: 5.05,
+        uptime: ceramicaId ? "0h" : "--"
+    };
+    if (numId) novoDev.id = numId;
+
+    // 1. Grava no banco Supabase na tabela 'dispositivos'
+    try {
+        const { error } = await sb.from("dispositivos").insert([novoDev]);
+        if (error) {
+            console.warn("[Supabase] Erro ao gravar dispositivo no banco:", error);
+            alert(`Aviso ao gravar dispositivo no banco de dados: ${error.message}`);
+        }
+    } catch (err) {
+        console.error("[Supabase] Erro de rede:", err);
+    }
+
+    // 2. Atualiza estado local
+    devices.unshift({
+        id: numId,
+        serial: serial,
+        numeroSerie: serial,
+        modelo: modelo,
+        status: ceramicaId ? "Vinculado" : "Disponível",
+        ceramicaId: ceramicaId,
+        ceramicaNome: selectedClient ? selectedClient.nome : "Em Estoque",
+        moduloNum: moduloNum || 1,
+        dataFabricacao: novoDev.data_fabricacao,
+        rssi: novoDev.rssi,
         voltage: 5.05,
         sensorC1: "Teste OK",
         sensorC2: "Teste OK",
-        uptime: ceramicaId ? "0h" : "--"
+        uptime: novoDev.uptime
     });
 
     saveDevices(devices);
+
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+    }
+
     fecharModalAdmin("modalFabricarDispositivo", null);
     renderTabelaDispositivos();
     renderDashboardGeral();
@@ -653,19 +1028,54 @@ function salvarNovoDispositivo(e) {
     abrirModalEtiquetaQRCode(serial);
 }
 
-function desvincularDispositivo(serial) {
+async function desvincularDispositivo(serial) {
     if (!confirm(`Deseja realmente desvincular o dispositivo ${serial}?\nEle voltará para o status "Em Estoque (Disponível)".`)) return;
 
+    try {
+        const { error } = await sb.from("dispositivos").update({
+            status: "Disponível",
+            ceramica_id: null,
+            modulo_num: null,
+            forno_id: null
+        }).or(`serial.eq.${serial},numero_serie.eq.${serial}`);
+
+        if (error) console.warn("[Supabase] Erro ao desvincular:", error);
+    } catch (err) {
+        console.error("[Supabase] Falha ao desvincular:", err);
+    }
+
     const devices = getDevices();
-    const target = devices.find(d => d.serial === serial);
+    const target = devices.find(d => d.serial === serial || d.numeroSerie === serial);
     if (target) {
         target.status = "Disponível";
         target.ceramicaId = null;
         target.ceramicaNome = "Em Estoque";
         target.moduloNum = null;
+        target.fornoId = null;
         saveDevices(devices);
         renderTabelaDispositivos();
+        renderDashboardGeral();
     }
+}
+
+async function excluirDispositivo(serial) {
+    if (!confirm(`Deseja realmente EXCLUIR o dispositivo ${serial} do inventário?`)) return;
+
+    try {
+        const { error } = await sb.from("dispositivos").delete().eq("serial", serial);
+        if (error) {
+            alert(`Erro ao excluir no banco: ${error.message}`);
+            return;
+        }
+    } catch (err) {
+        console.error("[Supabase] Falha ao deletar dispositivo:", err);
+    }
+
+    adminState.devices = getDevices().filter(d => d.serial !== serial);
+    saveDevices(adminState.devices);
+    renderTabelaDispositivos();
+    renderDashboardGeral();
+    alert(`Dispositivo ${serial} excluído do sistema.`);
 }
 
 // GERAÇÃO E IMPRESSÃO DE QR CODE
@@ -696,7 +1106,7 @@ function imprimirEtiquetaQRCode() {
 }
 
 // ==========================================================================
-// 6. NOC & TELEMETRIA TÉCNICA DE HARDWARE
+// 7. NOC & TELEMETRIA TÉCNICA DE HARDWARE
 // ==========================================================================
 
 function renderNocTelemetria() {
@@ -760,7 +1170,7 @@ function renderNocTelemetria() {
                 </div>
 
                 <div class="telemetry-foot">
-                    <span>Firmware: <b>v2.4.1</b></span>
+                    <span>Firmware: <b>v4.0.0 (OTA)</b></span>
                     <span style="color:#10b981;"><i class="fa-solid fa-shield-check"></i> Sem Erros de Hardware</span>
                 </div>
             </div>
@@ -769,7 +1179,7 @@ function renderNocTelemetria() {
 }
 
 // ==========================================================================
-// 7. PLANOS & CENTRAL OTA
+// 8. PLANOS & CENTRAL OTA
 // ==========================================================================
 
 function editarPlano(planoKey) {
@@ -777,13 +1187,13 @@ function editarPlano(planoKey) {
 }
 
 function abrirModalDeployOTA() {
-    if (confirm("Deseja disparar a atualização de Firmware v2.4.2 via Over-The-Air (OTA) para todos os dispositivos ThermoLink conectados no Brasil?")) {
-        alert("Comando de atualização remota disparado com sucesso!\nOs módulos farão o download e a reinicialização automática nos próximos 5 minutos.");
+    if (confirm("Deseja disparar a atualização de Firmware v4.0.0 via Over-The-Air (OTA) para todos os dispositivos ThermoLink conectados no Brasil?")) {
+        alert("Comando de atualização remota disparado com sucesso!\nOs módulos farão o download da release mais recente no GitHub e reinicialização automática.");
     }
 }
 
 // ==========================================================================
-// 8. SINCRONIZAÇÃO E MODAIS HELPERS
+// 9. SINCRONIZAÇÃO E MODAIS HELPERS
 // ==========================================================================
 
 function fecharModalAdmin(modalId, e) {
@@ -792,16 +1202,15 @@ function fecharModalAdmin(modalId, e) {
     }
 }
 
-function sincronizarDadosAdmin() {
+async function sincronizarDadosAdmin() {
     const icon = $("adminRefreshIcon");
-    if (icon) icon.style.transform = "rotate(360deg)";
+    if (icon) icon.classList.add("fa-spin");
     
-    renderDashboardGeral();
-    renderTabelaClientes();
-    renderTabelaDispositivos();
-    renderNocTelemetria();
+    await carregarDadosSupabase();
 
-    setTimeout(() => { if (icon) icon.style.transform = "none"; }, 400);
+    setTimeout(() => {
+        if (icon) icon.classList.remove("fa-spin");
+    }, 600);
 }
 
 function escapeHtml(str) {
@@ -821,6 +1230,17 @@ function inicializarPainelMaster() {
     renderTabelaClientes();
     renderTabelaDispositivos();
     renderNocTelemetria();
+
+    // Sincroniza em background com o Supabase
+    carregarDadosSupabase();
+
+    // Polling a cada 20 segundos para manter dados atualizados se painel aberto
+    if (adminState.syncInterval) clearInterval(adminState.syncInterval);
+    adminState.syncInterval = setInterval(() => {
+        if (adminState.isLoggedIn) {
+            carregarDadosSupabase();
+        }
+    }, 20000);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
