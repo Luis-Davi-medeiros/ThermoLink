@@ -31,12 +31,15 @@ CREATE TABLE IF NOT EXISTS public.ceramicas (
     valor_mensal    NUMERIC(10,2) NOT NULL DEFAULT 299.00,
     fornos_count    INT NOT NULL DEFAULT 6,
     status          TEXT NOT NULL DEFAULT 'Ativo',
+    motivo_bloqueio TEXT,
     username        TEXT UNIQUE,
     senha           TEXT,
     ultimo_acesso   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.ceramicas ADD COLUMN IF NOT EXISTS motivo_bloqueio TEXT;
 
 -- ==============================================================================
 -- 2. TABELA: DISPOSITIVOS (HARDWARE THERMOX ESP)

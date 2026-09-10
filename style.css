@@ -1,6 +1,6 @@
 /* ==========================================================================
    THERMOLINK MOBILE - DESIGN SYSTEM (DARK NAVY / THERMAL ORANGE)
-   Identidade Visual: Forno 3D Realista + Curva Térmica Multicanal
+   Identidade Visual: Forno 3D Realista + Curva Tﾃｩrmica Multicanal
    ========================================================================== */
 
 :root {
@@ -11,7 +11,7 @@
     --card-light: #163a51;
     --card-border: rgba(255, 255, 255, 0.08);
 
-    /* Cores de Destaque Térmico */
+    /* Cores de Destaque Tﾃｩrmico */
     --orange: #f47b20;
     --orange-light: #ff963d;
     --orange-dark: #d85d0c;
@@ -80,7 +80,7 @@ body {
     flex-direction: column;
 }
 
-/* Utilitários */
+/* Utilitﾃ｡rios */
 .hidden { display: none !important; }
 .text-orange { color: var(--orange) !important; }
 .text-blue { color: var(--blue-light) !important; }
@@ -139,7 +139,7 @@ button {
 }
 
 /* ==========================================================================
-   1. SPLASH SCREEN (ABERTURA COM SESSÃO VÁLIDA)
+   1. SPLASH SCREEN (ABERTURA COM SESSﾃグ Vﾃ´IDA)
    ========================================================================== */
 .splash-container {
     position: fixed;
@@ -1028,7 +1028,7 @@ button {
 }
 
 /* ==========================================================================
-   ABA DE ANÁLISE DETALHADA (COM FILTROS DE TEMPO & AMOSTRAS)
+   ABA DE ANﾃ´ISE DETALHADA (COM FILTROS DE TEMPO & AMOSTRAS)
    ========================================================================== */
 .analysis-header-card {
     padding: 14px 16px;
@@ -1140,7 +1140,7 @@ button {
     color: var(--text-muted);
 }
 
-/* GRÁFICO */
+/* GRﾃ：ICO */
 .chart-header-row {
     display: flex;
     align-items: center;
@@ -1278,7 +1278,7 @@ button {
     color: var(--text-muted);
 }
 
-/* MARCADORES DE PICO MÁXIMO E MÍNIMO NA TABELA DE ANÁLISE */
+/* MARCADORES DE PICO Mﾃ々IMO E Mﾃ康IMO NA TABELA DE ANﾃ´ISE */
 .row-peak-max {
     background: rgba(244, 123, 32, 0.08) !important;
     position: relative;
@@ -1399,7 +1399,7 @@ button {
 }
 
 /* ==========================================================================
-   CONFIGURAÇÕES DO CLIENTE
+   CONFIGURAﾃ�髭S DO CLIENTE
    ========================================================================== */
 .profile-card {
     display: flex;
@@ -1538,7 +1538,7 @@ button {
 }
 
 /* ==========================================================================
-   NOTIFICA��ES PUSH (SE��O CONFIGURA��ES)
+   NOTIFICAﾇﾕES PUSH (SEﾇﾃO CONFIGURAﾇﾕES)
 ========================================================================== */
 .push-state-badge {
     font-size: 11px;
@@ -1670,7 +1670,7 @@ button {
 .tl-banner-seta { color: var(--text-muted); font-size: 12px; }
 
 /* ==========================================================================
-   LISTA DE ALERTAS (CARD NOTIFICA��ES)
+   LISTA DE ALERTAS (CARD NOTIFICAﾇﾕES)
 ========================================================================== */
 .push-alerta-lista {
     margin-top: 10px;
@@ -1751,7 +1751,7 @@ button {
 }
 
 /* ==========================================================================
-   MODAL DE CONFIGURA��O DE ALERTAS
+   MODAL DE CONFIGURAﾇﾃO DE ALERTAS
 ========================================================================== */
 .tl-modal-overlay {
     position: fixed;
@@ -1870,7 +1870,7 @@ button {
 .cfg-msg-erro { color: var(--red) !important; }
 
 /* ==========================================================================
-   CONFIGURA��O DE ALERTAS (INTERRUPTOR + PAINEL)
+   CONFIGURAﾇﾃO DE ALERTAS (INTERRUPTOR + PAINEL)
 ========================================================================== */
 .alertas-header {
     display: flex;
@@ -1975,7 +1975,7 @@ button {
 .alertas-salvo.visivel { opacity: 1; }
 
 /* ==========================================================================
-   ALERTA CR�TICO ATIVO (FLASH VERMELHO PISCANTE + MODAL DE EMERG�NCIA)
+   ALERTA CRﾍTICO ATIVO (FLASH VERMELHO PISCANTE + MODAL DE EMERGﾊNCIA)
 ========================================================================== */
 .tl-flash-overlay {
     position: fixed;
@@ -2063,7 +2063,7 @@ button {
     line-height: 1.4;
 }
 
-/* Bot�o "Fechar alerta" do modal de emerg�ncia */
+/* Bot縊 "Fechar alerta" do modal de emerg麩cia */
 .btn-fechar-alerta {
     width: 100%;
     display: flex;
@@ -2085,4 +2085,127 @@ button {
 .btn-fechar-alerta:active {
     border-color: var(--text-muted);
     color: #ffffff;
+}
+
+/* ==========================================================================
+   OVERLAY DE BLOQUEIO POR INADIMPLÊNCIA / SUSPENSÃO (100% CENTRALIZADO NO MOBILE)
+   ========================================================================== */
+.client-blocked-overlay,
+.modal-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 999999 !important;
+    background: rgba(3, 13, 20, 0.88) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 18px !important;
+    box-sizing: border-box !important;
+}
+
+.client-blocked-overlay.hidden,
+.modal-overlay.hidden {
+    display: none !important;
+}
+
+.client-blocked-card,
+.modal-card {
+    width: 100%;
+    max-width: 420px;
+    background: #0d2638;
+    background: linear-gradient(180deg, #102f44 0%, #0d2638 100%);
+    border: 1px solid rgba(244, 63, 94, 0.45);
+    border-radius: 24px;
+    padding: 28px 22px;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(244, 63, 94, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    box-sizing: border-box;
+    margin: auto !important;
+    animation: zoomInBlockedModal 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.client-blocked-icon {
+    width: 68px;
+    height: 68px;
+    border-radius: 20px;
+    background: rgba(244, 63, 94, 0.15);
+    border: 1px solid rgba(244, 63, 94, 0.4);
+    color: #f43f5e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin: 0 auto 14px;
+}
+
+.client-blocked-title {
+    font-size: 19px;
+    font-weight: 800;
+    color: #ffffff;
+    margin-bottom: 4px;
+}
+
+.client-blocked-subtitle {
+    font-size: 14px;
+    font-weight: 700;
+    color: #94a3b8;
+    margin-bottom: 16px;
+}
+
+.client-blocked-reason-box {
+    background: rgba(244, 63, 94, 0.08);
+    border: 1px solid rgba(244, 63, 94, 0.25);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 18px;
+    text-align: left;
+}
+
+.client-blocked-reason-header {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #f43f5e;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.client-blocked-reason-text {
+    font-size: 13px;
+    color: #f1f5f9;
+    line-height: 1.6;
+    margin: 0;
+    white-space: pre-wrap;
+    font-weight: 500;
+}
+
+.client-blocked-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0 0 20px;
+    line-height: 1.5;
+}
+
+@keyframes zoomInBlockedModal {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }

@@ -503,6 +503,39 @@
     </div>
 </div>
 
+<!-- MODAL: BLOQUEAR ACESSO DA CERÂMICA -->
+<div id="modalBloquearCliente" class="modal-overlay hidden" onclick="fecharModalAdmin('modalBloquearCliente', event)">
+    <div class="modal-dialog" onclick="event.stopPropagation()">
+        <div class="modal-dialog-header">
+            <h3><i class="fa-solid fa-lock" style="color: #f43f5e;"></i> Bloquear Acesso da Cerâmica</h3>
+            <button class="btn-close-modal" onclick="fecharModalAdmin('modalBloquearCliente', null)"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form onsubmit="confirmarBloqueioCliente(event)">
+            <input type="hidden" id="bloqClienteId">
+            <div class="form-group">
+                <label>Cerâmica Selecionada</label>
+                <input type="text" id="bloqClienteNome" readonly style="background: rgba(255,255,255,0.06); font-weight: 700; color: #ffffff;">
+            </div>
+
+            <div class="form-group">
+                <label>Motivo do Bloqueio (Mensagem que aparecerá para o cliente)</label>
+                <textarea id="bloqMotivoTexto" rows="4" placeholder="Escreva o motivo da suspensão..." required style="width: 100%; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 12px; color: #ffffff; font-family: inherit; font-size: 13px; resize: vertical; line-height: 1.5;"></textarea>
+                <span style="font-size: 11px; color: #94a3b8; display: block; margin-top: 5px;">
+                    O cliente conseguirá abrir o aplicativo, mas verá esta notificação na frente impedindo o acesso aos dados até a regularização.
+                </span>
+            </div>
+
+            <div class="modal-dialog-actions">
+                <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalBloquearCliente', null)">Cancelar</button>
+                <button type="submit" class="btn-admin-submit" style="background: #e11d48; border-color: #f43f5e;">
+                    <i class="fa-solid fa-lock"></i>
+                    <span>Confirmar e Bloquear</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- MODAL 2: FABRICAR DISPOSITIVO & ETIQUETA QR CODE -->
 <div id="modalFabricarDispositivo" class="modal-overlay hidden" onclick="fecharModalAdmin('modalFabricarDispositivo', event)">
     <div class="modal-dialog" onclick="event.stopPropagation()">

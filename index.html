@@ -642,27 +642,43 @@
             </button>
         </nav>
 
+    <!-- ========================================================
+         OVERLAY DE BLOQUEIO POR INADIMPLÊNCIA / SUSPENSÃO
+    ========================================================= -->
+    <div id="clientBlockedOverlay" class="client-blocked-overlay modal-overlay hidden">
+        <div class="client-blocked-card modal-card">
+            <div class="client-blocked-icon">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <h2 class="client-blocked-title">Acesso Temporariamente Suspenso</h2>
+            <div id="clientBlockedCeramicaNome" class="client-blocked-subtitle">Cerâmica Cliente</div>
+
+            <!-- Caixa de Motivo personalizado digitado pelo Administrador -->
+            <div class="client-blocked-reason-box">
+                <div class="client-blocked-reason-header">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>Mensagem da Administração</span>
+                </div>
+                <p id="clientBlockedReasonText" class="client-blocked-reason-text">
+                    Acesso temporariamente suspenso pela administração.
+                </p>
+            </div>
+
+            <p class="client-blocked-info">
+                Os dados de telemetria e gráficos dos fornos estão temporariamente ocultos. Caso tenha realizado a regularização, clique em verificar ou entre em contato com o suporte da <b>ThermoLink</b>.
+            </p>
+
+            <button id="btnVerificarDesbloqueio" class="btn-primary" onclick="verificarDesbloqueio()" style="width: 100%; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; height: 46px; border-radius: 12px; font-weight: 700;">
+                <i class="fa-solid fa-rotate"></i>
+                <span>Verificar Regularização</span>
+            </button>
+            <button class="btn-logout" onclick="realizarLogout()" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; height: 42px; border-radius: 12px;">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                <span>Sair da Conta</span>
+            </button>
+        </div>
     </div>
 
-</div>
-
-<!-- ========================================================
-     OVERLAY DE BLOQUEIO POR INADIMPLÊNCIA / SUSPENSÃO
-========================================================= -->
-<div id="clientBlockedOverlay" class="modal-overlay hidden" style="z-index: 99999;">
-    <div class="modal-card" style="text-align: center; align-items: center; padding: 32px 24px;">
-        <div style="width: 64px; height: 64px; border-radius: 20px; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--red); color: var(--red); display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 12px;">
-            <i class="fa-solid fa-lock"></i>
-        </div>
-        <h2 style="font-size: 18px; font-weight: 800; color: #ffffff;">Acesso Temporariamente Suspenso</h2>
-        <p style="font-size: 13px; color: var(--text-secondary); margin: 8px 0 20px; line-height: 1.5;">
-            O monitoramento dos fornos desta cerâmica foi suspenso temporariamente pela administração do sistema.
-        </p>
-        <div style="background: var(--bg-secondary); border-radius: 10px; padding: 12px; font-size: 11px; color: var(--text-muted); margin-bottom: 20px;">
-            Entre em contato com o suporte técnico da <b>ThermoLink</b> para regularizar sua assinatura e reativar seus aparelhos.
-        </div>
-        <button class="btn-logout" onclick="realizarLogout()" style="width: 100%;">Voltar à Tela de Login</button>
-    </div>
 </div>
 
 <!-- Scripts da Aplicação -->

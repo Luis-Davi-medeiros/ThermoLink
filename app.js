@@ -110,7 +110,7 @@ async function realizarLogin(e) {
         try {
             const { data: ceramicaData } = await sb
                 .from("ceramicas")
-                .select("*")
+                .select("id, nome, username, status, motivo_bloqueio")
                 .ilike("username", userVal)
                 .eq("senha", passVal)
                 .maybeSingle();
@@ -120,7 +120,8 @@ async function realizarLogin(e) {
                     username: ceramicaData.username,
                     name: ceramicaData.nome,
                     role: "client",
-                    status: ceramicaData.status,
+                    status: ceramicaData.status || "Ativo",
+                    motivoBloqueio: ceramicaData.motivo_bloqueio || null,
                     ceramicaId: ceramicaData.id
                 };
             }
@@ -130,43 +131,58 @@ async function realizarLogin(e) {
     }
 
     if (found) {
-        // Garante o ID da Cerâmica vinculada ao usuário
-        if (found.role === "client" && !found.ceramicaId) {
+        // Garante o ID da Cerâmica vinculada ao usuário e status atualizado
+        if (found.role === "client") {
             try {
-                const { data: cData } = await sb
-                    .from("ceramicas")
-                    .select("id, status")
-                    .ilike("username", found.username)
-                    .maybeSingle();
+                let query = sb.from("ceramicas").select("id, nome, status, motivo_bloqueio");
+                if (found.ceramicaId && !String(found.ceramicaId).startsWith("cli_")) {
+                    query = query.eq("id", found.ceramicaId);
+                } else {
+                    query = query.ilike("username", found.username);
+                }
+                const { data: cData } = await query.maybeSingle();
                 if (cData) {
-                    found.ceramicaId = cData.id;
+                    if (!found.ceramicaId) found.ceramicaId = cData.id;
+                    if (cData.nome) found.name = cData.nome;
                     if (cData.status) found.status = cData.status;
+                    if (cData.motivo_bloqueio) found.motivoBloqueio = cData.motivo_bloqueio;
                 }
             } catch (e) {}
 
-            if (!found.ceramicaId) {
-                const localClients = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
-                const matched = localClients.find(c => c.username?.toLowerCase() === found.username?.toLowerCase());
-                if (matched) found.ceramicaId = matched.id;
+            // Fallback de status e motivo no localStorage administrativo
+            const localClients = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
+            const matched = localClients.find(c => 
+                (found.ceramicaId && c.id === found.ceramicaId) || 
+                (c.username && c.username.toLowerCase() === found.username?.toLowerCase())
+            );
+            if (matched) {
+                if (!found.ceramicaId) found.ceramicaId = matched.id;
+                if (!found.name || found.name === found.username) found.name = matched.nome;
+                if (matched.status) found.status = matched.status;
+                if (matched.motivoBloqueio) found.motivoBloqueio = matched.motivoBloqueio;
             }
+
+            const motivosMap = JSON.parse(localStorage.getItem("thermolink_motivos_bloqueio") || "{}");
+            if (found.ceramicaId && motivosMap[found.ceramicaId]) {
+                found.motivoBloqueio = motivosMap[found.ceramicaId];
+            } else if (found.username && motivosMap[found.username.toLowerCase()]) {
+                found.motivoBloqueio = motivosMap[found.username.toLowerCase()];
+            }
+
             if (!found.ceramicaId && found.username === "ceramica") {
                 found.ceramicaId = "cli_1";
             }
         }
 
-        if (found.status === "Bloqueado") {
-            $("loginError").textContent = "Acesso bloqueado pela administração.";
-            $("loginError").classList.remove("hidden");
-            return;
-        }
-
         $("loginError").classList.add("hidden");
 
-        // Sessão persistida SEM a senha (apenas dados de identificação)
+        // Sessão persistida com dados de identificação e status de bloqueio
         const sessao = {
             username: found.username,
             name: found.name,
             role: found.role,
+            status: found.status || "Ativo",
+            motivoBloqueio: found.motivoBloqueio || null,
             ceramicaId: found.ceramicaId || null,
             loginAt: new Date().toISOString()
         };
@@ -186,24 +202,52 @@ async function realizarLogin(e) {
 function iniciarPainelUsuario(user, usarSplash = false) {
     state.currentUser = user;
 
-    // Checagem se a conta foi bloqueada pelo Master Admin
+    // Sincroniza status de bloqueio e motivo mais recente do armazenamento administrativo
     if (user.role !== "admin" && !user.isImpersonateMode) {
         const clientsAdmin = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
-        const clientRecord = clientsAdmin.find(c => c.username?.toLowerCase() === user.username?.toLowerCase());
-        if (clientRecord && clientRecord.status === "Bloqueado") {
-            $("splashScreen").classList.add("hidden");
-            $("clientBlockedOverlay").classList.remove("hidden");
-            return;
+        const clientRecord = clientsAdmin.find(c => 
+            (user.ceramicaId && c.id === user.ceramicaId) || 
+            (c.username && c.username.toLowerCase() === user.username?.toLowerCase())
+        );
+        if (clientRecord) {
+            if (clientRecord.status) user.status = clientRecord.status;
+            if (clientRecord.motivoBloqueio) user.motivoBloqueio = clientRecord.motivoBloqueio;
+        }
+
+        const motivosMap = JSON.parse(localStorage.getItem("thermolink_motivos_bloqueio") || "{}");
+        if (user.ceramicaId && motivosMap[user.ceramicaId]) {
+            user.motivoBloqueio = motivosMap[user.ceramicaId];
+        } else if (user.username && motivosMap[user.username.toLowerCase()]) {
+            user.motivoBloqueio = motivosMap[user.username.toLowerCase()];
         }
     }
 
-    $("clientBlockedOverlay").classList.add("hidden");
     $("loginScreen").classList.add("hidden");
 
     // Entrada: splash com a logo (2,5s + fade suave) ou direto após o login
     const abrirApp = () => {
         $("splashScreen").classList.add("hidden");
         $("mainApp").classList.remove("hidden");
+
+        // Se a conta do cliente estiver BLOQUEADA, exibe a notificação na frente e oculta dados
+        if (user.role !== "admin" && !user.isImpersonateMode && user.status === "Bloqueado") {
+            const overlay = $("clientBlockedOverlay");
+            if (overlay) {
+                if ($("clientBlockedCeramicaNome")) {
+                    $("clientBlockedCeramicaNome").textContent = user.name || user.username || "Cerâmica Cliente";
+                }
+                if ($("clientBlockedReasonText")) {
+                    const msg = user.motivoBloqueio || "Acesso temporariamente suspenso pela administração do sistema. Entre em contato com o suporte da ThermoLink para regularização.";
+                    $("clientBlockedReasonText").textContent = msg;
+                }
+                overlay.classList.remove("hidden");
+            }
+            limparPainelBloqueado();
+            return;
+        } else {
+            $("clientBlockedOverlay")?.classList.add("hidden");
+            carregarFornosELeituras();
+        }
     };
 
     if (usarSplash) {
@@ -233,10 +277,99 @@ function iniciarPainelUsuario(user, usarSplash = false) {
     $("profileName").textContent = user.name || user.username;
     $("profileRole").textContent = user.role === "admin" ? "Administrador Master" : "Acesso Cliente Cerâmica";
 
-    carregarFornosELeituras();
-
     // Hook: sincroniza o painel de notificações push com o usuário autenticado
     if (window.ThermoPush) window.ThermoPush.onAuthChanged();
+}
+
+function limparPainelBloqueado() {
+    state.readings = new Map();
+    const grid = $("ovensGrid");
+    if (grid) {
+        grid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; background: rgba(15, 23, 42, 0.6); border: 1px dashed rgba(244, 63, 94, 0.3); border-radius: 16px; color: #94a3b8;">
+                <i class="fa-solid fa-lock" style="font-size: 32px; color: #f43f5e; margin-bottom: 12px; display: block;"></i>
+                <h3 style="color: #ffffff; font-size: 16px; margin-bottom: 6px;">Visualização de Telemetria Oculta</h3>
+                <p style="font-size: 13px; max-width: 420px; margin: 0 auto; line-height: 1.5;">O acesso em tempo real aos módulos e canais térmicos está suspenso temporariamente pela administração.</p>
+            </div>
+        `;
+    }
+}
+
+async function verificarDesbloqueio() {
+    const btn = $("btnVerificarDesbloqueio");
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Verificando regularização...</span>`;
+    }
+
+    try {
+        let isLiberado = false;
+        const cid = state.currentUser?.ceramicaId;
+        const username = state.currentUser?.username;
+
+        // 1. Consulta no Supabase
+        if (cid || username) {
+            try {
+                let query = sb.from("ceramicas").select("status, motivo_bloqueio");
+                if (cid && !String(cid).startsWith("cli_")) {
+                    query = query.eq("id", cid);
+                } else if (username) {
+                    query = query.ilike("username", username);
+                }
+                const { data, error } = await query.maybeSingle();
+                if (!error && data) {
+                    if (data.status === "Ativo") {
+                        isLiberado = true;
+                    } else if (data.motivo_bloqueio) {
+                        state.currentUser.motivoBloqueio = data.motivo_bloqueio;
+                        if ($("clientBlockedReasonText")) {
+                            $("clientBlockedReasonText").textContent = data.motivo_bloqueio;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("[ThermoLink] Erro ao verificar status no Supabase:", e);
+            }
+        }
+
+        // 2. Consulta no armazenamento local do Master Admin
+        if (!isLiberado) {
+            const localClients = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
+            const matched = localClients.find(c => 
+                (cid && c.id === cid) || 
+                (username && c.username?.toLowerCase() === username?.toLowerCase())
+            );
+            if (matched && matched.status === "Ativo") {
+                isLiberado = true;
+            }
+        }
+
+        if (isLiberado) {
+            if (state.currentUser) {
+                state.currentUser.status = "Ativo";
+                state.currentUser.motivoBloqueio = null;
+                const saved = localStorage.getItem("thermolink_active_session");
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        parsed.status = "Ativo";
+                        parsed.motivoBloqueio = null;
+                        localStorage.setItem("thermolink_active_session", JSON.stringify(parsed));
+                    } catch (e) {}
+                }
+            }
+            $("clientBlockedOverlay")?.classList.add("hidden");
+            alert("Acesso liberado! Seus fornos e telemetria estão sendo carregados.");
+            await carregarFornosELeituras();
+        } else {
+            alert("Seu acesso ainda consta como suspenso pela administração.\nCaso já tenha efetuado a regularização, aguarde a liberação pelo administrador.");
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fa-solid fa-rotate"></i> <span>Verificar Regularização</span>`;
+        }
+    }
 }
 
 function sairModoSuporte() {
@@ -263,6 +396,9 @@ function realizarLogout() {
 // ==========================================================================
 
 async function carregarFornosELeituras() {
+    if (state.currentUser && state.currentUser.status === "Bloqueado") {
+        return;
+    }
     if (state.isPolling) return;
     state.isPolling = true;
 
@@ -1204,9 +1340,9 @@ document.addEventListener("DOMContentLoaded", () => {
         $("loginScreen").classList.remove("hidden");
     }
 
-    // Sincronização automática a cada 8 segundos
+    // Sincronização automática a cada 8 segundos (apenas para clientes ativos)
     setInterval(() => {
-        if (state.currentUser) {
+        if (state.currentUser && state.currentUser.status !== "Bloqueado") {
             carregarFornosELeituras();
         }
     }, 8000);

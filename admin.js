@@ -241,6 +241,7 @@ async function carregarDadosSupabase() {
                 valorMensal: Number(c.valor_mensal) || 299,
                 fornosCount: Number(c.fornos_count) || 4,
                 status: c.status || "Ativo",
+                motivoBloqueio: c.motivo_bloqueio || null,
                 username: c.username,
                 senha: c.senha,
                 ultimoAcesso: c.ultimo_acesso ? new Date(c.ultimo_acesso).toLocaleDateString("pt-BR") : "Nunca"
@@ -573,21 +574,45 @@ function filtrarTabelaClientes(texto) {
     renderTabelaClientes();
 }
 
-async function alternarBloqueioCliente(clienteId) {
+function alternarBloqueioCliente(clienteId) {
     const clients = getClients();
     const target = clients.find(c => c.id === clienteId);
     if (!target) return;
 
-    const novoStatus = target.status === "Ativo" ? "Bloqueado" : "Ativo";
-
     if (target.status === "Ativo") {
-        if (!confirm(`Deseja realmente BLOQUEAR o acesso da ${target.nome}?\nO cliente não conseguirá visualizar os fornos até ser desbloqueado.`)) {
-            return;
+        // Abre modal para o administrador digitar o motivo do bloqueio
+        $("bloqClienteId").value = clienteId;
+        $("bloqClienteNome").value = target.nome;
+        $("bloqMotivoTexto").value = target.motivoBloqueio || "Acesso temporariamente suspenso devido a pendência financeira na assinatura. Favor entrar em contato com o suporte financeiro ThermoLink para regularização.";
+        $("modalBloquearCliente").classList.remove("hidden");
+    } else {
+        // Desbloquear / Liberar
+        if (confirm(`Deseja realmente LIBERAR o acesso da "${target.nome}"?\nO cliente voltará a visualizar todos os seus fornos e telemetria normalmente.`)) {
+            desbloquearCliente(clienteId);
         }
     }
+}
 
-    target.status = novoStatus;
+async function confirmarBloqueioCliente(e) {
+    e.preventDefault();
+    const clienteId = $("bloqClienteId").value;
+    const motivo = $("bloqMotivoTexto").value.trim();
+
+    const clients = getClients();
+    const target = clients.find(c => c.id === clienteId);
+    if (!target) return;
+
+    target.status = "Bloqueado";
+    target.motivoBloqueio = motivo;
     saveClients(clients);
+
+    // Salva também em mapa de motivos no localStorage para garantir acesso instantâneo pelo app
+    const motivosMap = JSON.parse(localStorage.getItem("thermolink_motivos_bloqueio") || "{}");
+    motivosMap[clienteId] = motivo;
+    if (target.username) motivosMap[target.username.toLowerCase()] = motivo;
+    localStorage.setItem("thermolink_motivos_bloqueio", JSON.stringify(motivosMap));
+
+    fecharModalAdmin("modalBloquearCliente", null);
     renderTabelaClientes();
     renderDashboardGeral();
 
@@ -595,13 +620,51 @@ async function alternarBloqueioCliente(clienteId) {
     try {
         const { error } = await sb
             .from("ceramicas")
-            .update({ status: novoStatus })
+            .update({ status: "Bloqueado", motivo_bloqueio: motivo })
             .eq("id", clienteId);
 
-        if (error) console.warn("[Supabase] Aviso ao atualizar status da cerâmica:", error);
+        if (error) {
+            // Caso a coluna motivo_bloqueio ainda não tenha sido criada no banco via SQL
+            await sb.from("ceramicas").update({ status: "Bloqueado" }).eq("id", clienteId);
+        }
     } catch (err) {
-        console.error("[Supabase] Erro de rede ao atualizar status:", err);
+        console.error("[Supabase] Erro ao bloquear cerâmica:", err);
     }
+
+    alert(`Cerâmica "${target.nome}" foi BLOQUEADA.\n\nMotivo configurado:\n"${motivo}"\n\nEssa mensagem será exibida na tela do cliente quando ele acessar.`);
+}
+
+async function desbloquearCliente(clienteId) {
+    const clients = getClients();
+    const target = clients.find(c => c.id === clienteId);
+    if (!target) return;
+
+    target.status = "Ativo";
+    target.motivoBloqueio = null;
+    saveClients(clients);
+
+    const motivosMap = JSON.parse(localStorage.getItem("thermolink_motivos_bloqueio") || "{}");
+    delete motivosMap[clienteId];
+    if (target.username) delete motivosMap[target.username.toLowerCase()];
+    localStorage.setItem("thermolink_motivos_bloqueio", JSON.stringify(motivosMap));
+
+    renderTabelaClientes();
+    renderDashboardGeral();
+
+    try {
+        const { error } = await sb
+            .from("ceramicas")
+            .update({ status: "Ativo", motivo_bloqueio: null })
+            .eq("id", clienteId);
+
+        if (error) {
+            await sb.from("ceramicas").update({ status: "Ativo" }).eq("id", clienteId);
+        }
+    } catch (err) {
+        console.error("[Supabase] Erro ao desbloquear cerâmica:", err);
+    }
+
+    alert(`Acesso da cerâmica "${target.nome}" foi LIBERADO com sucesso!`);
 }
 
 async function excluirCeramica(clienteId) {
