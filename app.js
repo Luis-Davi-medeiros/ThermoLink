@@ -537,11 +537,12 @@ async function carregarFornosELeituras() {
         if (window.ThermoAlertas) window.ThermoAlertas.verificarLeituras();
 
         // Renderiza telas
-        renderListaFornos();
-
-        if (state.activeTab === "historico" || state.selectedModule !== null) {
+        if (state.selectedModule === null) {
+            renderListaFornos();
+        } else {
             if (state.analysisModule) atualizarFaixaResumoAnalise(state.analysisModule);
-            carregarDadosAnalise();
+            // IMPORTANTE: NÃO chamamos carregarDadosAnalise() em segundo plano!
+            // Isso evita que o gráfico sofra refresh periódico e perca o zoom ou a navegação do usuário.
         }
     } catch (err) {
         console.error("[ThermoLink] Falha na sincronização:", err);
@@ -1494,6 +1495,9 @@ async function atualizarManual() {
     const icon = $("refreshIcon");
     if (icon) icon.style.transform = "rotate(360deg)";
     await carregarFornosELeituras();
+    if (state.selectedModule !== null) {
+        await carregarDadosAnalise();
+    }
     setTimeout(() => { if (icon) icon.style.transform = "none"; }, 400);
 }
 
