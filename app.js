@@ -989,6 +989,15 @@ function renderGraficoAnalise(rows) {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
+            onClick: (evt, elements) => {
+                if (elements.length > 0) {
+                    const idx = elements[0].index;
+                    const item = rows[idx];
+                    if (item) {
+                        atualizarInspectorAnalise(item);
+                    }
+                }
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -997,16 +1006,25 @@ function renderGraficoAnalise(rows) {
                     cornerRadius: 8,
                     callbacks: {
                         label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + " °C" : "--"}`
+                    },
+                    external: (context) => {
+                        const tooltip = context.tooltip;
+                        if (!tooltip || !tooltip.dataPoints || !tooltip.dataPoints.length) return;
+                        const idx = tooltip.dataPoints[0].dataIndex;
+                        const item = rows[idx];
+                        if (item) {
+                            atualizarInspectorAnalise(item);
+                        }
                     }
                 },
                 zoom: {
                     pan: {
                         enabled: true,
                         mode: 'x',
-                        threshold: 5
+                        threshold: 0
                     },
                     zoom: {
-                        wheel: { enabled: true },
+                        wheel: { enabled: true, speed: 0.1 },
                         pinch: { enabled: true },
                         mode: 'x'
                     }
@@ -1024,6 +1042,12 @@ function renderGraficoAnalise(rows) {
             }
         }
     });
+
+    // Inicializa inspector com a leitura mais recente
+    atualizarInspectorAnalise(rows[rows.length - 1]);
+
+    // Habilita arrasto táctil direto no canvas (Touch / Mouse)
+    habilitarArrastoCanvas("analysisChartCanvas", () => state.analysisChart);
 
     if (state.isLandscapeOpen) {
         renderGraficoLandscape(rows);
@@ -1220,10 +1244,10 @@ function renderGraficoLandscape(rows) {
                     pan: {
                         enabled: true,
                         mode: 'x',
-                        threshold: 5
+                        threshold: 0
                     },
                     zoom: {
-                        wheel: { enabled: true },
+                        wheel: { enabled: true, speed: 0.1 },
                         pinch: { enabled: true },
                         mode: 'x'
                     }
@@ -1241,6 +1265,9 @@ function renderGraficoLandscape(rows) {
             }
         }
     });
+
+    atualizarPillLeituraLandscape(rows[rows.length - 1]);
+    habilitarArrastoCanvas("landscapeChartCanvas", () => state.landscapeChart);
 }
 
 function atualizarPillLeituraLandscape(item) {
@@ -1266,30 +1293,269 @@ function filtrarCanaisLandscape(canal, btn) {
     }
 }
 
-// FERRAMENTAS DE PAN E ZOOM (FUNCIONAM TANTO NO MODO NORMAL QUANTO DE LADO)
+// ==========================================================================
+// 5.2 FERRAMENTAS INTERATIVAS DE NAVEGAÇÃO, INSPEÇÃO, ARRASTO E ZOOM
+// ==========================================================================
+
+function atualizarInspectorAnalise(item) {
+    if (!item) return;
+    const c1 = numVal(item.canal_1);
+    const c2 = numVal(item.canal_2);
+    const delta = (c1 !== null && c2 !== null) ? Math.abs(c1 - c2) : null;
+    const d = new Date(item.created_at);
+    const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    if ($("anReadoutTime")) $("anReadoutTime").textContent = hora;
+    if ($("anReadoutC1")) $("anReadoutC1").textContent = c1 !== null ? `${Math.round(c1)} °C` : '-- °C';
+    if ($("anReadoutC2")) $("anReadoutC2").textContent = c2 !== null ? `${Math.round(c2)} °C` : '-- °C';
+    if ($("anReadoutDelta")) $("anReadoutDelta").textContent = delta !== null ? `${Math.round(delta)} °C` : '--';
+}
+
+function getActiveChart() {
+    return state.isLandscapeOpen ? state.landscapeChart : state.analysisChart;
+}
+
+// NAVEGAÇÃO HORIZONTAL IMEDIATA (PAN)
 function panGrafico(direcao) {
-    const chart = state.isLandscapeOpen ? state.landscapeChart : state.analysisChart;
-    if (!chart) return;
-    const amount = direcao === 'left' ? 70 : -70;
-    if (typeof chart.pan === 'function') {
-        chart.pan({ x: amount }, undefined, 'default');
+    const chart = getActiveChart();
+    if (!chart || !chart.data || !chart.data.labels || !chart.data.labels.length) return;
+
+    const scale = chart.scales.x;
+    if (!scale) return;
+    const total = chart.data.labels.length;
+    if (total <= 1) return;
+
+    let min = (typeof scale.min === 'number') ? scale.min : 0;
+    let max = (typeof scale.max === 'number') ? scale.max : (total - 1);
+    let span = max - min;
+
+    // Se estiver em visão 100% ampla (sem zoom):
+    // Ao clicar em anterior ou posterior, foca imediatamente em uma janela confortável (~35% dos dados)
+    // para responder INSTANTANEAMENTE ao toque do usuário sem ficar travado!
+    if (span >= total - 1) {
+        const initialWindow = Math.max(4, Math.min(35, Math.round(total * 0.35)));
+        if (direcao === 'left') {
+            min = 0;
+            max = min + initialWindow;
+        } else {
+            max = total - 1;
+            min = Math.max(0, max - initialWindow);
+        }
+        scale.options.min = min;
+        scale.options.max = max;
+        chart.update('none');
+        return;
     }
+
+    // Passo de navegação ágil proporcional à janela visível (25% do span visível)
+    const step = Math.max(2, Math.round(span * 0.25));
+
+    if (direcao === 'left') {
+        if (min <= 0) return;
+        const newMin = Math.max(0, min - step);
+        const newMax = newMin + span;
+        scale.options.min = newMin;
+        scale.options.max = Math.min(total - 1, newMax);
+    } else {
+        if (max >= total - 1) return;
+        const newMax = Math.min(total - 1, max + step);
+        const newMin = newMax - span;
+        scale.options.min = Math.max(0, newMin);
+        scale.options.max = newMax;
+    }
+
+    chart.update('none');
 }
 
+// ZOOM PRECISO E ÁGIL (+ / -)
 function zoomGrafico(fator) {
-    const chart = state.isLandscapeOpen ? state.landscapeChart : state.analysisChart;
-    if (!chart) return;
-    if (typeof chart.zoom === 'function') {
-        chart.zoom(fator, 'default');
+    const chart = getActiveChart();
+    if (!chart || !chart.data || !chart.data.labels || !chart.data.labels.length) return;
+
+    const scale = chart.scales.x;
+    if (!scale) return;
+    const total = chart.data.labels.length;
+    if (total <= 1) return;
+
+    let min = (typeof scale.min === 'number') ? scale.min : 0;
+    let max = (typeof scale.max === 'number') ? scale.max : (total - 1);
+    let span = max - min;
+    const center = (min + max) / 2;
+
+    if (fator > 1) {
+        // APROXIMAR ZOOM (+)
+        const newSpan = Math.max(4, Math.round(span / 1.35));
+        const half = newSpan / 2;
+        let newMin = Math.max(0, Math.round(center - half));
+        let newMax = newMin + newSpan;
+        if (newMax >= total) {
+            newMax = total - 1;
+            newMin = Math.max(0, newMax - newSpan);
+        }
+        scale.options.min = newMin;
+        scale.options.max = newMax;
+        chart.update('none');
+    } else {
+        // AFASTAR ZOOM (-)
+        const newSpan = Math.round(span * 1.35);
+        if (newSpan >= total - 1) {
+            resetZoomGrafico();
+            return;
+        }
+        const half = newSpan / 2;
+        let newMin = Math.max(0, Math.round(center - half));
+        let newMax = newMin + newSpan;
+        if (newMax >= total) {
+            newMax = total - 1;
+            newMin = Math.max(0, newMax - newSpan);
+        }
+        scale.options.min = newMin;
+        scale.options.max = newMax;
+        chart.update('none');
     }
 }
 
+// RESTAURAR ZOOM ORIGINAL (100% VISÃO COMPLETA)
 function resetZoomGrafico() {
-    const chart = state.isLandscapeOpen ? state.landscapeChart : state.analysisChart;
+    const chart = getActiveChart();
     if (!chart) return;
-    if (typeof chart.resetZoom === 'function') {
-        chart.resetZoom('default');
+
+    if (chart.scales && chart.scales.x) {
+        delete chart.scales.x.options.min;
+        delete chart.scales.x.options.max;
+        delete chart.scales.x.min;
+        delete chart.scales.x.max;
     }
+
+    if (typeof chart.resetZoom === 'function') {
+        try { chart.resetZoom('none'); } catch (e) {}
+    }
+
+    chart.update('none');
+}
+
+// ARRASTO TÁCTIL DIRETO NO CANVAS (TOUCH & MOUSE 1:1 ULTRA RESPONSIVO)
+const _canvasDragMap = new Set();
+
+function habilitarArrastoCanvas(canvasId, getChartFn) {
+    const canvas = $(canvasId);
+    if (!canvas || _canvasDragMap.has(canvasId)) return;
+    _canvasDragMap.add(canvasId);
+
+    let isDragging = false;
+    let startX = 0;
+    let initialMin = 0;
+    let initialMax = 0;
+    let span = 0;
+    let total = 0;
+
+    canvas.addEventListener("pointerdown", (e) => {
+        const chart = getChartFn();
+        if (!chart || !chart.data || !chart.data.labels || !chart.data.labels.length) return;
+
+        total = chart.data.labels.length;
+        if (total <= 1) return;
+
+        const scale = chart.scales.x;
+        initialMin = (typeof scale.min === 'number') ? scale.min : 0;
+        initialMax = (typeof scale.max === 'number') ? scale.max : (total - 1);
+        span = initialMax - initialMin;
+
+        // Se estiver em 100% visível, ao começar a arrastar cria foco inicial
+        if (span >= total - 1) {
+            span = Math.max(5, Math.min(35, Math.round(total * 0.4)));
+            const rect = canvas.getBoundingClientRect();
+            const rel = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            initialMin = Math.max(0, Math.min(total - 1 - span, Math.round(rel * total - span / 2)));
+            initialMax = initialMin + span;
+            scale.options.min = initialMin;
+            scale.options.max = initialMax;
+            chart.update('none');
+        }
+
+        isDragging = true;
+        startX = e.clientX;
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+
+    canvas.addEventListener("pointermove", (e) => {
+        if (!isDragging) return;
+        const chart = getChartFn();
+        if (!chart || !chart.scales.x) return;
+
+        const dx = e.clientX - startX;
+        if (Math.abs(dx) < 2) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const pxPerUnit = Math.max(1, rect.width / Math.max(1, span));
+        const shiftUnits = Math.round(dx / pxPerUnit);
+
+        let newMin = initialMin - shiftUnits;
+        let newMax = initialMax - shiftUnits;
+
+        if (newMin < 0) {
+            newMin = 0;
+            newMax = Math.min(total - 1, span);
+        } else if (newMax > total - 1) {
+            newMax = total - 1;
+            newMin = Math.max(0, total - 1 - span);
+        }
+
+        const scale = chart.scales.x;
+        scale.options.min = newMin;
+        scale.options.max = newMax;
+        chart.update('none');
+    });
+
+    const finishDrag = (e) => {
+        if (isDragging) {
+            isDragging = false;
+            try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        }
+    };
+
+    canvas.addEventListener("pointerup", finishDrag);
+    canvas.addEventListener("pointercancel", finishDrag);
+}
+
+// PRESSIONAMENTO CONTÍNUO DOS BOTÕES DE NAVEGAÇÃO (SEGURAR O BOTÃO NAVEGA CONTINUAMENTE)
+function configurarBotoesNavegacaoContinuo() {
+    const bindBtn = (id, action) => {
+        const btn = $(id);
+        if (!btn || btn._continuousBound) return;
+        btn._continuousBound = true;
+
+        let timer = null;
+        let interval = null;
+
+        const start = (e) => {
+            e.preventDefault();
+            action();
+            timer = setTimeout(() => {
+                interval = setInterval(action, 85);
+            }, 300);
+        };
+
+        const stop = () => {
+            if (timer) { clearTimeout(timer); timer = null; }
+            if (interval) { clearInterval(interval); interval = null; }
+        };
+
+        btn.addEventListener("pointerdown", start);
+        btn.addEventListener("pointerup", stop);
+        btn.addEventListener("pointercancel", stop);
+        btn.addEventListener("pointerleave", stop);
+    };
+
+    bindBtn("btnPanLeft", () => panGrafico('left'));
+    bindBtn("btnPanRight", () => panGrafico('right'));
+    bindBtn("btnZoomIn", () => zoomGrafico(1.35));
+    bindBtn("btnZoomOut", () => zoomGrafico(0.75));
+
+    bindBtn("btnLandPanLeft", () => panGrafico('left'));
+    bindBtn("btnLandPanRight", () => panGrafico('right'));
+    bindBtn("btnLandZoomIn", () => zoomGrafico(1.35));
+    bindBtn("btnLandZoomOut", () => zoomGrafico(0.75));
 }
 
 // ==========================================================================
@@ -1527,4 +1793,17 @@ document.addEventListener("DOMContentLoaded", () => {
             carregarFornosELeituras();
         }
     }, 8000);
+
+    // Configura botões de navegação contínua e gestos táteis do gráfico
+    configurarBotoesNavegacaoContinuo();
+
+    // Redimensionamento fluido em rotação de tela e resize de janela
+    window.addEventListener("resize", () => {
+        if (state.analysisChart) {
+            state.analysisChart.resize();
+        }
+        if (state.landscapeChart) {
+            state.landscapeChart.resize();
+        }
+    });
 });

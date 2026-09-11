@@ -271,26 +271,34 @@
                 <!-- BARRA DE FERRAMENTAS DE NAVEGAÇÃO E ZOOM DO GRÁFICO -->
                 <div class="chart-quick-nav-bar">
                     <span class="chart-nav-hint">
-                        <i class="fa-solid fa-arrows-left-right"></i> Arraste para navegar no histórico
+                        <i class="fa-solid fa-arrows-left-right"></i> Arraste o gráfico para navegar
                     </span>
                     <div class="chart-zoom-btn-group">
-                        <button class="chart-tool-btn" onclick="panGrafico('left')" title="Navegar para a esquerda (leituras anteriores)">
+                        <button class="chart-tool-btn" id="btnPanLeft" onclick="panGrafico('left')" title="Navegar para a esquerda (leituras anteriores)">
                             <i class="fa-solid fa-chevron-left"></i>
                         </button>
-                        <button class="chart-tool-btn" onclick="zoomGrafico(1.35)" title="Aproximar zoom (+)">
+                        <button class="chart-tool-btn" id="btnZoomIn" onclick="zoomGrafico(1.35)" title="Aproximar zoom (+)">
                             <i class="fa-solid fa-magnifying-glass-plus"></i>
                         </button>
-                        <button class="chart-tool-btn" onclick="zoomGrafico(0.75)" title="Afastar zoom (-)">
+                        <button class="chart-tool-btn" id="btnZoomOut" onclick="zoomGrafico(0.75)" title="Afastar zoom (-)">
                             <i class="fa-solid fa-magnifying-glass-minus"></i>
                         </button>
-                        <button class="chart-tool-btn" onclick="panGrafico('right')" title="Navegar para a direita (leituras recentes)">
+                        <button class="chart-tool-btn" id="btnPanRight" onclick="panGrafico('right')" title="Navegar para a direita (leituras recentes)">
                             <i class="fa-solid fa-chevron-right"></i>
                         </button>
-                        <button class="chart-tool-btn reset" onclick="resetZoomGrafico()" title="Restaurar zoom original">
+                        <button class="chart-tool-btn reset" id="btnZoomReset" onclick="resetZoomGrafico()" title="Restaurar zoom original">
                             <i class="fa-solid fa-rotate-left"></i>
                             <span>Reset</span>
                         </button>
                     </div>
+                </div>
+
+                <!-- PAINEL DINÂMICO DE INSPEÇÃO AO TOCAR OU ARRASTAR NO GRÁFICO -->
+                <div class="analysis-chart-readout" id="anChartReadoutPill">
+                    <span class="readout-clock"><i class="fa-regular fa-clock"></i> <b id="anReadoutTime">--:--:--</b></span>
+                    <span class="readout-c1 text-orange"><i class="fa-solid fa-circle"></i> C1: <b id="anReadoutC1">-- °C</b></span>
+                    <span class="readout-c2 text-blue"><i class="fa-solid fa-circle"></i> C2: <b id="anReadoutC2">-- °C</b></span>
+                    <span class="readout-delta"><i class="fa-solid fa-arrows-split-up-and-left"></i> ΔT: <b id="anReadoutDelta">--</b></span>
                 </div>
 
                 <div class="chart-canvas-box interactive-canvas-box" id="analysisChartBox">
@@ -609,19 +617,19 @@
 
             <!-- CONTROLES DE ZOOM E NAVEGAÇÃO -->
             <div class="landscape-tools">
-                <button class="land-tool-btn" onclick="panGrafico('left')" title="Navegar para leituras anteriores (passado)">
+                <button class="land-tool-btn" id="btnLandPanLeft" onclick="panGrafico('left')" title="Navegar para leituras anteriores (passado)">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
-                <button class="land-tool-btn" onclick="zoomGrafico(1.35)" title="Aproximar zoom (+)">
+                <button class="land-tool-btn" id="btnLandZoomIn" onclick="zoomGrafico(1.35)" title="Aproximar zoom (+)">
                     <i class="fa-solid fa-magnifying-glass-plus"></i>
                 </button>
-                <button class="land-tool-btn" onclick="zoomGrafico(0.75)" title="Afastar zoom (-)">
+                <button class="land-tool-btn" id="btnLandZoomOut" onclick="zoomGrafico(0.75)" title="Afastar zoom (-)">
                     <i class="fa-solid fa-magnifying-glass-minus"></i>
                 </button>
-                <button class="land-tool-btn" onclick="panGrafico('right')" title="Navegar para leituras recentes (tempo real)">
+                <button class="land-tool-btn" id="btnLandPanRight" onclick="panGrafico('right')" title="Navegar para leituras recentes (tempo real)">
                     <i class="fa-solid fa-chevron-right"></i>
                 </button>
-                <button class="land-tool-btn reset" onclick="resetZoomGrafico()" title="Restaurar visualização">
+                <button class="land-tool-btn reset" id="btnLandZoomReset" onclick="resetZoomGrafico()" title="Restaurar visualização">
                     <i class="fa-solid fa-rotate-left"></i>
                 </button>
             </div>
