@@ -45,6 +45,9 @@ const state = {
     readings: new Map(),
     mainChart: null,
     analysisChart: null,
+    landscapeChart: null,
+    isLandscapeOpen: false,
+    landscapeChannelFilter: "all",
     miniCharts: new Map(),
     chartChannelFilter: "all",
     analysisChannelFilter: "all",
@@ -536,13 +539,9 @@ async function carregarFornosELeituras() {
         // Renderiza telas
         renderListaFornos();
 
-        if (state.activeTab === "historico") {
+        if (state.activeTab === "historico" || state.selectedModule !== null) {
+            if (state.analysisModule) atualizarFaixaResumoAnalise(state.analysisModule);
             carregarDadosAnalise();
-        }
-
-        // Atualiza forno em detalhe se estiver aberto
-        if (state.selectedModule !== null) {
-            atualizarFornoDetalhe(state.selectedModule);
         }
     } catch (err) {
         console.error("[ThermoLink] Falha na sincronização:", err);
@@ -596,9 +595,6 @@ function isFornoOnline(reading) {
 function getNomeForno(modulo) {
     const oven = state.ovens.find(o => Number(o.numero) === Number(modulo));
     if (oven && oven.nome) {
-        if (oven.dispositivo_serial) {
-            return `${oven.nome} • ${oven.dispositivo_serial}`;
-        }
         return oven.nome;
     }
     return `Forno ${String(modulo).padStart(2, "0")}`;
@@ -628,406 +624,181 @@ function renderListaFornos() {
         return;
     }
 
-    const onlineOvens = state.ovens.filter(o => isFornoOnline(state.readings.get(Number(o.numero))));
-    $("statOnlineCount").textContent = `${onlineOvens.length} de ${state.ovens.length} ${state.ovens.length === 1 ? 'Forno' : 'Fornos'}`;
+    // Ordenação estrita sequencial de 1 até N (conforme solicitado pelo cliente)
+    const sortedOvens = [...state.ovens].sort((a, b) => Number(a.numero) - Number(b.numero));
 
-    container.innerHTML = state.ovens.map(o => {
+    const onlineOvens = sortedOvens.filter(o => isFornoOnline(state.readings.get(Number(o.numero))));
+    $("statOnlineCount").textContent = `${onlineOvens.length} de ${sortedOvens.length} ${sortedOvens.length === 1 ? 'Forno' : 'Fornos'}`;
+
+    container.innerHTML = sortedOvens.map(o => {
         const mod = Number(o.numero);
         const r = state.readings.get(mod);
         const online = isFornoOnline(r);
         const c1Val = numVal(r?.canal_1);
         const c2Val = numVal(r?.canal_2);
-        const relTime = r ? formatRelativo(r.created_at) : "Sem leituras recentes";
+        const relTime = r ? formatRelativo(r.created_at) : "Sem leituras";
+        const horaLeitura = r ? formatHora(r.created_at) : "--:--:--";
+        const delta = (c1Val !== null && c2Val !== null) ? Math.abs(c1Val - c2Val) : null;
+        const nomeForno = o.nome || `Forno ${String(mod).padStart(2, '0')}`;
 
         return `
-            <article class="oven-item-card" onclick="abrirDetalheForno(${mod})">
-                <div class="oven-card-head">
-                    <div class="oven-card-title-group">
-                        <span class="module-badge-mini">${escapeHtml(o.dispositivo_serial || `MÓDULO ${String(mod).padStart(2, "0")}`)}</span>
-                        <div class="oven-card-name">${escapeHtml(o.nome || getNomeForno(mod))}</div>
+            <article class="kiln-3d-card kiln-card-interactive" onclick="abrirDetalheForno(${mod}, 'grafico')" title="Toque para ver gráficos do ${escapeHtml(nomeForno)}">
+                <div class="kiln-top-meta">
+                    <div class="kiln-card-title-box">
+                        <h3 class="kiln-card-title">${escapeHtml(nomeForno)}</h3>
+                        ${o.dispositivo_serial ? `<span class="kiln-card-serial"><i class="fa-solid fa-microchip"></i> ${escapeHtml(o.dispositivo_serial)}</span>` : ''}
                     </div>
-                    <div class="oven-card-status" style="${online ? '' : 'color: #94a3b8; border-color: rgba(148,163,184,0.3); background: rgba(148,163,184,0.1);'}">
-                        <span class="pulse-dot" style="${online ? '' : 'background: #94a3b8; box-shadow: none;'}"></span>
-                        ${online ? 'ONLINE' : 'STANDBY'}
-                    </div>
+                    <span class="status-indicator-badge ${online ? 'is-online' : 'is-standby'}">
+                        <span class="pulse-dot"></span>
+                        <span class="status-text">${online ? 'ONLINE' : 'STANDBY'}</span>
+                    </span>
                 </div>
 
-                <div class="oven-card-main-grid">
-                    <div class="oven-card-temp-box">
-                        <span class="temp-c1-tag">Canal 1 (Superior)</span>
-                        <div class="temp-c1-big">
-                            ${c1Val !== null ? Math.round(c1Val) : "--"}<span class="unit">°C</span>
+                <!-- IMAGEM DO FORNO 3D COM OVERLAYS DE TEMPERATURA FLUTUANTES -->
+                <div class="kiln-3d-visual-container">
+                    <img src="nova imagen de um forno.png" alt="${escapeHtml(nomeForno)}" class="kiln-3d-image">
+                    
+                    <!-- SENSOR SUPERIOR (CANAL 1) -->
+                    <div class="sensor-overlay-tag overlay-top">
+                        <div class="overlay-tag-header">
+                            <span class="sensor-dot c1"></span>
+                            <span>CANAL 1 (SUPERIOR)</span>
+                        </div>
+                        <div class="overlay-tag-temp text-orange">
+                            ${c1Val !== null ? Math.round(c1Val) + ' °C' : '-- °C'}
                         </div>
                     </div>
-                    <div class="sparkline-container">
-                        <canvas id="miniSpark-${mod}"></canvas>
+
+                    <!-- SENSOR INFERIOR (CANAL 2) -->
+                    <div class="sensor-overlay-tag overlay-bottom">
+                        <div class="overlay-tag-header">
+                            <span class="sensor-dot c2"></span>
+                            <span>CANAL 2 (INFERIOR)</span>
+                        </div>
+                        <div class="overlay-tag-temp text-blue">
+                            ${c2Val !== null ? Math.round(c2Val) + ' °C' : '-- °C'}
+                        </div>
                     </div>
                 </div>
 
-                <div class="oven-card-foot">
-                    <span>Canal 2 (Inferior): <b class="foot-c2-val">${c2Val !== null ? Math.round(c2Val) + " °C" : "--"}</b></span>
-                    <span class="foot-time-val"><i class="fa-regular fa-clock"></i> ${relTime}</span>
+                <div class="gauge-footer-meta">
+                    <div class="gauge-meta-item">
+                        <span>ÚLTIMA LEITURA</span>
+                        <strong><i class="fa-regular fa-clock"></i> ${horaLeitura} <small class="meta-reltime">(${relTime})</small></strong>
+                    </div>
+                    <div class="gauge-meta-item text-right">
+                        <span>DIFERENCIAL (ΔT)</span>
+                        <strong class="text-orange">${delta !== null ? Math.round(delta) + ' °C' : '-- °C'}</strong>
+                    </div>
+                </div>
+
+                <div class="kiln-cta-banner">
+                    <div class="cta-left">
+                        <i class="fa-solid fa-chart-line text-orange"></i>
+                        <span>Ver Análise do Forno</span>
+                    </div>
+                    <i class="fa-solid fa-chevron-right cta-arrow"></i>
                 </div>
             </article>
         `;
     }).join("");
-
-    // Desenha sparklines apenas para fornos que possuem histórico recente
-    state.ovens.forEach(o => {
-        if (state.readings.has(Number(o.numero))) {
-            desenharMiniSparkline(Number(o.numero));
-        }
-    });
-}
-
-async function desenharMiniSparkline(modulo) {
-    const canvas = $(`miniSpark-${modulo}`);
-    if (!canvas) return;
-
-    const rows = await getHistoricoModulo(modulo, 20);
-    const vals = rows.map(r => numVal(r.canal_1)).filter(v => v !== null);
-    if (!vals.length) return;
-
-    const ctx = canvas.getContext("2d");
-    const grad = ctx.createLinearGradient(0, 0, 0, 50);
-    grad.addColorStop(0, "rgba(244, 123, 32, 0.35)");
-    grad.addColorStop(1, "rgba(244, 123, 32, 0.0)");
-
-    const chart = new Chart(canvas, {
-        type: "line",
-        data: {
-            labels: vals.map(() => ""),
-            datasets: [{
-                data: vals,
-                borderColor: "#f47b20",
-                borderWidth: 2,
-                tension: 0.35,
-                pointRadius: 0,
-                fill: true,
-                backgroundColor: grad
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            plugins: { legend: { display: false }, tooltip: { enabled: false } },
-            scales: { x: { display: false }, y: { display: false } }
-        }
-    });
-
-    state.miniCharts.set(modulo, chart);
 }
 
 // ==========================================================================
-// 4. TELA DE DETALHE DO FORNO (FORNO 3D & SUB-ABAS)
+// 4. ANÁLISE DO FORNO SELECIONADO (ABERTA AO CLICAR NO FORNO)
 // ==========================================================================
 
 async function abrirDetalheForno(modulo) {
-    state.selectedModule = modulo;
+    const mod = Number(modulo);
+    state.selectedModule = mod;
+    state.analysisModule = mod;
 
-    $("headerTitle").textContent = getNomeForno(modulo);
+    $("headerTitle").textContent = getNomeForno(mod);
     $("headerBackBtn").classList.remove("hidden");
 
     $("screenFornos").classList.add("hidden");
-    $("screenHistorico").classList.add("hidden");
     $("screenConfig").classList.add("hidden");
-    $("screenFornoDetalhe").classList.remove("hidden");
+    $("screenHistoricoQueimas").classList.add("hidden");
+    $("screenAnaliseForno").classList.remove("hidden");
+
+    // Mantém aba Fornos ativa no rodapé pois a análise fica dentro do forno
+    document.querySelectorAll(".bottom-tab-bar .tab-item").forEach(b => b.classList.remove("active"));
+    $("tabNavFornos").classList.add("active");
+
     window.scrollTo({ top: 0, behavior: "smooth" });
 
-    $("gaugeModuleTag").textContent = `MÓDULO ${String(modulo).padStart(2, "0")}`;
-
-    await atualizarFornoDetalhe(modulo);
+    atualizarFaixaResumoAnalise(mod);
+    await carregarDadosAnalise();
 }
 
 function voltarListaFornos() {
     state.selectedModule = null;
 
-    if (state.mainChart) {
-        state.mainChart.destroy();
-        state.mainChart = null;
-    }
-
     $("headerTitle").textContent = "ThermoLink";
     $("headerBackBtn").classList.add("hidden");
 
-    $("screenFornoDetalhe").classList.add("hidden");
-    navegarAba(state.activeTab || "fornos");
+    $("screenAnaliseForno").classList.add("hidden");
+    $("screenHistoricoQueimas").classList.add("hidden");
+    $("screenConfig").classList.add("hidden");
+    $("screenFornos").classList.remove("hidden");
+
+    document.querySelectorAll(".bottom-tab-bar .tab-item").forEach(b => b.classList.remove("active"));
+    $("tabNavFornos").classList.add("active");
+    state.activeTab = "fornos";
+
     renderListaFornos();
 }
 
-async function atualizarFornoDetalhe(modulo) {
-    const reading = state.readings.get(modulo);
+function atualizarFaixaResumoAnalise(modulo) {
+    const mod = Number(modulo);
+    const reading = state.readings.get(mod);
+    const online = isFornoOnline(reading);
     const c1 = numVal(reading?.canal_1);
     const c2 = numVal(reading?.canal_2);
+    const delta = (c1 !== null && c2 !== null) ? Math.abs(c1 - c2) : null;
 
-    // Mostrador no Forno 3D
-    $("gaugeMainTemp").textContent = c1 !== null ? `${Math.round(c1)} °C` : "-- °C";
-    $("gaugeC2Sub").textContent = c2 !== null ? `${Math.round(c2)} °C` : "-- °C";
-    $("gaugeLastTime").textContent = formatHora(reading?.created_at);
-
-    if (c1 !== null && c2 !== null) {
-        const delta = Math.abs(c1 - c2);
-        $("gaugeDeltaT").textContent = `${Math.round(delta)} °C`;
-    } else {
-        $("gaugeDeltaT").textContent = "-- °C";
+    if ($("anLiveTitle")) $("anLiveTitle").textContent = getNomeForno(mod);
+    if ($("anLiveStatus")) {
+        $("anLiveStatus").className = `status-indicator-badge ${online ? 'is-online' : 'is-standby'}`;
     }
-
-    // Cards de Sensores
-    $("cardValC1").textContent = c1 !== null ? `${Math.round(c1)} °C` : "-- °C";
-    $("cardValC2").textContent = c2 !== null ? `${Math.round(c2)} °C` : "-- °C";
-
-    // Histórico detalhado
-    const rows = await getHistoricoModulo(modulo, 60);
-    state.currentDetailHistory = rows;
-
-    atualizarEstatisticasQueima(rows);
-    renderTabelaLeituras(rows);
-    renderGraficoPrincipal(rows);
-}
-
-function trocarSubAba(subAba) {
-    state.activeSubTab = subAba;
-
-    const botoes = document.querySelectorAll(".sub-tab-btn");
-    botoes.forEach(b => b.classList.remove("active"));
-
-    $("subAbaTempoReal").classList.add("hidden");
-    $("subAbaGrafico").classList.add("hidden");
-    $("subAbaLeituras").classList.add("hidden");
-
-    if (subAba === "tempoReal") {
-        botoes[0].classList.add("active");
-        $("subAbaTempoReal").classList.remove("hidden");
-    } else if (subAba === "grafico") {
-        botoes[1].classList.add("active");
-        $("subAbaGrafico").classList.remove("hidden");
-        if (state.currentDetailHistory.length) {
-            renderGraficoPrincipal(state.currentDetailHistory);
-        }
-    } else if (subAba === "leituras") {
-        botoes[2].classList.add("active");
-        $("subAbaLeituras").classList.remove("hidden");
+    if ($("anLiveStatusText")) {
+        $("anLiveStatusText").textContent = online ? 'ONLINE' : 'STANDBY';
     }
-}
-
-function atualizarEstatisticasQueima(rows) {
-    if (!rows.length) return;
-
-    const c1Vals = rows.map(r => numVal(r.canal_1)).filter(v => v !== null);
-    const c2Vals = rows.map(r => numVal(r.canal_2)).filter(v => v !== null);
-
-    if (c1Vals.length) {
-        const max1 = Math.max(...c1Vals);
-        const min1 = Math.min(...c1Vals);
-        const avg1 = c1Vals.reduce((a, b) => a + b, 0) / c1Vals.length;
-
-        $("subStatC1Max").textContent = `${Math.round(max1)}°C`;
-        $("subStatC1Min").textContent = `${Math.round(min1)}°C`;
-        $("quadMax").textContent = `${Math.round(max1)} °C`;
-        $("quadMin").textContent = `${Math.round(min1)} °C`;
-        $("quadAvg").textContent = `${Math.round(avg1)} °C`;
-    }
-
-    if (c2Vals.length) {
-        $("subStatC2Max").textContent = `${Math.round(Math.max(...c2Vals))}°C`;
-        $("subStatC2Min").textContent = `${Math.round(Math.min(...c2Vals))}°C`;
-    }
-
-    $("quadCount").textContent = `${rows.length} leituras`;
-    $("chartPointCount").textContent = `${rows.length} pontos no gráfico`;
-}
-
-function renderTabelaLeituras(rows) {
-    const tbody = $("detailTableBody");
-    if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="4" class="table-empty-msg">Nenhuma leitura encontrada.</td></tr>`;
-        return;
-    }
-
-    const ultimos = [...rows].reverse().slice(0, 25);
-    tbody.innerHTML = ultimos.map(r => {
-        const c1 = numVal(r.canal_1);
-        const c2 = numVal(r.canal_2);
-        const delta = (c1 !== null && c2 !== null) ? `${Math.round(Math.abs(c1 - c2))} °C` : "--";
-
-        return `
-            <tr>
-                <td><b>${formatHora(r.created_at)}</b></td>
-                <td class="text-orange"><b>${c1 !== null ? Math.round(c1) + " °C" : "--"}</b></td>
-                <td class="text-blue"><b>${c2 !== null ? Math.round(c2) + " °C" : "--"}</b></td>
-                <td>${delta}</td>
-            </tr>
-        `;
-    }).join("");
-}
-
-function filtrarCanaisGrafico(canal) {
-    state.chartChannelFilter = canal;
-    const btns = document.querySelectorAll("#chartChannelFilter .pill-btn");
-    btns.forEach(b => b.classList.remove("active"));
-    event.target.classList.add("active");
-
-    if (state.currentDetailHistory.length) {
-        renderGraficoPrincipal(state.currentDetailHistory);
-    }
-}
-
-function renderGraficoPrincipal(rows) {
-    const canvas = $("detailChartCanvas");
-    if (!canvas || !rows.length) return;
-
-    if (state.mainChart) {
-        state.mainChart.destroy();
-        state.mainChart = null;
-    }
-
-    const labels = rows.map(r => {
-        const d = new Date(r.created_at);
-        return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    });
-
-    const c1Data = rows.map(r => numVal(r.canal_1));
-    const c2Data = rows.map(r => numVal(r.canal_2));
-
-    const ctx = canvas.getContext("2d");
-
-    const gradC1 = ctx.createLinearGradient(0, 0, 0, 250);
-    gradC1.addColorStop(0, "rgba(244, 123, 32, 0.35)");
-    gradC1.addColorStop(1, "rgba(244, 123, 32, 0.0)");
-
-    const gradC2 = ctx.createLinearGradient(0, 0, 0, 250);
-    gradC2.addColorStop(0, "rgba(59, 130, 182, 0.25)");
-    gradC2.addColorStop(1, "rgba(59, 130, 182, 0.0)");
-
-    const datasets = [];
-
-    if (state.chartChannelFilter === "all" || state.chartChannelFilter === "c1") {
-        datasets.push({
-            label: "Canal 1 (Superior)",
-            data: c1Data,
-            borderColor: "#f47b20",
-            backgroundColor: gradC1,
-            borderWidth: 2.5,
-            pointRadius: 1,
-            pointHoverRadius: 4,
-            tension: 0.35,
-            fill: true
-        });
-    }
-
-    if (state.chartChannelFilter === "all" || state.chartChannelFilter === "c2") {
-        datasets.push({
-            label: "Canal 2 (Inferior)",
-            data: c2Data,
-            borderColor: "#5ba6d5",
-            backgroundColor: gradC2,
-            borderWidth: 2,
-            pointRadius: 1,
-            pointHoverRadius: 4,
-            tension: 0.35,
-            fill: true
-        });
-    }
-
-    state.mainChart = new Chart(canvas, {
-        type: "line",
-        data: { labels, datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: "rgba(7, 27, 43, 0.95)",
-                    padding: 10,
-                    cornerRadius: 8,
-                    callbacks: {
-                        label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + " °C" : "--"}`
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    ticks: { color: "#71899a", maxTicksLimit: 6, font: { size: 10 } },
-                    grid: { color: "rgba(255, 255, 255, 0.04)" }
-                },
-                y: {
-                    ticks: { color: "#71899a", font: { size: 10 }, callback: (v) => `${v}°` },
-                    grid: { color: "rgba(255, 255, 255, 0.05)" }
-                }
-            }
-        }
-    });
+    if ($("anLiveC1")) $("anLiveC1").textContent = c1 !== null ? Math.round(c1) + ' °C' : '-- °C';
+    if ($("anLiveC2")) $("anLiveC2").textContent = c2 !== null ? Math.round(c2) + ' °C' : '-- °C';
+    if ($("anLiveDelta")) $("anLiveDelta").textContent = delta !== null ? Math.round(delta) + ' °C' : '-- °C';
 }
 
 // ==========================================================================
-// 5. ABA DE ANÁLISE DETALHADA (COM FILTROS DE TEMPO, AMOSTRAGEM E TABELA)
+// 5. ABA DE ANÁLISE DETALHADA (EXCLUSIVA DO FORNO ABERTO)
 // ==========================================================================
 
 async function carregarDadosAnalise() {
-    const select = $("analysisKilnSelect");
-    if (!select) return;
+    const mod = state.analysisModule || state.selectedModule;
+    if (!mod) return;
 
-    const availableOvens = state.ovens && state.ovens.length > 0 ? state.ovens : [];
+    atualizarFaixaResumoAnalise(mod);
 
-    if (!availableOvens.length) {
-        select.innerHTML = `<option value="">Nenhum forno disponível</option>`;
-        limparEstatisticasAnalise();
-        return;
-    }
-
-    // Se o forno atualmente selecionado na análise não estiver na lista, seleciona o primeiro
-    if (!state.analysisModule || !availableOvens.some(o => Number(o.numero) === Number(state.analysisModule))) {
-        state.analysisModule = Number(availableOvens[0].numero);
-    }
-
-    // Popula o select com todos os fornos desta cerâmica
-    select.innerHTML = availableOvens.map(o => {
-        const mod = Number(o.numero);
-        const r = state.readings.get(mod);
-        const online = isFornoOnline(r);
-        return `<option value="${mod}" ${mod === state.analysisModule ? "selected" : ""}>
-            ${escapeHtml(o.nome || getNomeForno(mod))} ${online ? '🟢 (Ao vivo)' : '⚪ (Standby)'}
-        </option>`;
-    }).join("");
-
-    // Carrega a quantidade de amostras selecionada (até 1000)
-    const rows = await getHistoricoModulo(state.analysisModule, state.analysisSampleSize);
+    // Carrega leituras históricas do forno selecionado (amostragem máxima de até 1000 leituras)
+    const rows = await getHistoricoModulo(mod, 1000);
     state.currentAnalysisRawHistory = rows;
 
     aplicarFiltrosEAtualizarAnalise();
-}
-
-function trocarFornoAnalise(modulo) {
-    if (!modulo) return;
-    state.analysisModule = Number(modulo);
-    carregarDadosAnalise();
 }
 
 // FILTRO DE PERÍODO / TEMPO (HORAS)
 function filtrarTempoAnalise(horas, btn) {
     state.analysisTimeRange = horas;
     document.querySelectorAll("#anTimeFilter .pill-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
+    if (btn) btn.classList.add("active");
     aplicarFiltrosEAtualizarAnalise();
 }
 
-// FILTRO DE TAMANHO DA AMOSTRAGEM (NÚMERO DE LEITURAS)
-function filtrarAmostragemAnalise(quantidade, btn) {
-    state.analysisSampleSize = Number(quantidade);
-    document.querySelectorAll("#anSampleFilter .pill-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    carregarDadosAnalise();
-}
-
 // FILTRO DE CANAIS (AMBOS, C1, C2)
-function filtrarCanaisAnalise(canal) {
+function filtrarCanaisAnalise(canal, btn) {
     state.analysisChannelFilter = canal;
-    const btns = document.querySelectorAll("#anChannelFilter .pill-btn");
-    btns.forEach(b => b.classList.remove("active"));
-    event.target.classList.add("active");
+    document.querySelectorAll("#anChannelFilter .pill-btn").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
 
     if (state.currentAnalysisFilteredHistory.length) {
         renderGraficoAnalise(state.currentAnalysisFilteredHistory);
@@ -1038,6 +809,15 @@ function filtrarCanaisAnalise(canal) {
 function trocarLimiteTabela(limite) {
     state.analysisTableRowLimit = limite === "all" ? "all" : Number(limite);
     renderTabelaAnalise(state.currentAnalysisFilteredHistory);
+}
+
+// EXPANDIR / RECOLHER TABELA DE LEITURAS
+function toggleTabelaAnalise() {
+    const wrapper = $("anTableScrollWrapper");
+    const chevron = $("anTableChevron");
+    if (!wrapper) return;
+    wrapper.classList.toggle("collapsed");
+    if (chevron) chevron.classList.toggle("collapsed");
 }
 
 function aplicarFiltrosEAtualizarAnalise() {
@@ -1057,11 +837,12 @@ function aplicarFiltrosEAtualizarAnalise() {
 }
 
 function limparEstatisticasAnalise() {
-    $("anStatMax").textContent = "-- °C";
-    $("anStatMin").textContent = "-- °C";
-    $("anStatAvg").textContent = "-- °C";
-    $("anStatCount").textContent = "0 leituras";
-    $("anTableBody").innerHTML = `<tr><td colspan="4" class="table-empty-msg">Nenhum dado disponível.</td></tr>`;
+    if ($("anStatMax")) $("anStatMax").textContent = "-- °C";
+    if ($("anStatMin")) $("anStatMin").textContent = "-- °C";
+    if ($("anStatAvg")) $("anStatAvg").textContent = "-- °C";
+    if ($("anStatCount")) $("anStatCount").textContent = "--";
+    if ($("anStatCountPill")) $("anStatCountPill").textContent = "0 leituras";
+    if ($("anTableBody")) $("anTableBody").innerHTML = `<tr><td colspan="4" class="table-empty-msg">Nenhum dado disponível.</td></tr>`;
     if (state.analysisChart) {
         state.analysisChart.destroy();
         state.analysisChart = null;
@@ -1081,11 +862,12 @@ function atualizarPainelAnalise(rows) {
         const min = Math.min(...c1Vals);
         const avg = c1Vals.reduce((a, b) => a + b, 0) / c1Vals.length;
 
-        $("anStatMax").textContent = `${Math.round(max)} °C`;
-        $("anStatMin").textContent = `${Math.round(min)} °C`;
-        $("anStatAvg").textContent = `${Math.round(avg)} °C`;
-        $("anStatCount").textContent = `${rows.length} leituras`;
-        $("anChartSub").textContent = `Curva detalhada de ${rows.length} leituras`;
+        if ($("anStatMax")) $("anStatMax").textContent = `${Math.round(max)} °C`;
+        if ($("anStatMin")) $("anStatMin").textContent = `${Math.round(min)} °C`;
+        if ($("anStatAvg")) $("anStatAvg").textContent = `${Math.round(avg)} °C`;
+        if ($("anStatCount")) $("anStatCount").textContent = `${rows.length} pts`;
+        if ($("anStatCountPill")) $("anStatCountPill").textContent = `${rows.length} leituras`;
+        if ($("anChartSub")) $("anChartSub").textContent = `Curva detalhada de ${rows.length} leituras`;
     }
 
     renderTabelaAnalise(rows);
@@ -1215,6 +997,18 @@ function renderGraficoAnalise(rows) {
                     callbacks: {
                         label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + " °C" : "--"}`
                     }
+                },
+                zoom: {
+                    pan: {
+                        enabled: true,
+                        mode: 'x',
+                        threshold: 5
+                    },
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x'
+                    }
                 }
             },
             scales: {
@@ -1229,6 +1023,272 @@ function renderGraficoAnalise(rows) {
             }
         }
     });
+
+    if (state.isLandscapeOpen) {
+        renderGraficoLandscape(rows);
+    }
+}
+
+// ==========================================================================
+// 5.1 GRÁFICO FULLSCREEN LANDSCAPE (VISUALIZAÇÃO DE LADO NO CELULAR)
+// ==========================================================================
+
+function aoClicarCanvasAnalise(event) {
+    // Ao clicar no gráfico em pé, abre imediatamente o modo horizontal de lado
+    abrirGraficoLandscape();
+}
+
+async function abrirGraficoLandscape() {
+    const modal = $("modalGraficoLandscape");
+    if (!modal) return;
+
+    state.isLandscapeOpen = true;
+    modal.classList.remove("hidden");
+
+    // Atualiza cabeçalho do modal landscape
+    const mod = state.analysisModule || state.selectedModule || 1;
+    const r = state.readings.get(Number(mod));
+    const online = isFornoOnline(r);
+
+    if ($("landFornoTitle")) $("landFornoTitle").textContent = getNomeForno(mod);
+    if ($("landStatusBadge")) {
+        $("landStatusBadge").className = `status-indicator-badge ${online ? 'is-online' : 'is-standby'}`;
+    }
+    if ($("landStatusText")) {
+        $("landStatusText").textContent = online ? 'ONLINE' : 'STANDBY';
+    }
+
+    // Tenta solicitar tela cheia e travamento horizontal nativo se suportado
+    try {
+        if (modal.requestFullscreen) {
+            await modal.requestFullscreen();
+        } else if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+        }
+        if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock("landscape");
+        }
+    } catch (e) {
+        // Fallback garantido via CSS rotate(90deg)
+    }
+
+    // Renderiza dados no canvas landscape
+    const rows = state.currentAnalysisFilteredHistory || [];
+    renderGraficoLandscape(rows);
+}
+
+function fecharGraficoLandscape() {
+    const modal = $("modalGraficoLandscape");
+    if (!modal) return;
+
+    state.isLandscapeOpen = false;
+    modal.classList.add("hidden");
+
+    // Destrói gráfico landscape
+    if (state.landscapeChart) {
+        state.landscapeChart.destroy();
+        state.landscapeChart = null;
+    }
+
+    // Restaura orientação da tela e sai de tela cheia se ativo
+    try {
+        if (screen.orientation && screen.orientation.unlock) {
+            screen.orientation.unlock();
+        }
+        if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    } catch (e) {}
+
+    // Garante que o gráfico padrão continue perfeitamente dimensionado
+    if (state.analysisChart) {
+        state.analysisChart.resize();
+    }
+}
+
+function renderGraficoLandscape(rows) {
+    const canvas = $("landscapeChartCanvas");
+    if (!canvas || !rows.length) return;
+
+    if (state.landscapeChart) {
+        state.landscapeChart.destroy();
+        state.landscapeChart = null;
+    }
+
+    // Atualiza estatísticas do rodapé landscape
+    const c1Vals = rows.map(r => numVal(r.canal_1)).filter(v => v !== null);
+    if (c1Vals.length) {
+        const max = Math.max(...c1Vals);
+        const min = Math.min(...c1Vals);
+        const avg = c1Vals.reduce((a, b) => a + b, 0) / c1Vals.length;
+        if ($("landStatPico")) $("landStatPico").textContent = `${Math.round(max)} °C`;
+        if ($("landStatMin")) $("landStatMin").textContent = `${Math.round(min)} °C`;
+        if ($("landStatAvg")) $("landStatAvg").textContent = `${Math.round(avg)} °C`;
+        if ($("landStatCount")) $("landStatCount").textContent = `${rows.length} leituras`;
+    }
+
+    const labels = rows.map(r => {
+        const d = new Date(r.created_at);
+        return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    });
+
+    const c1Data = rows.map(r => numVal(r.canal_1));
+    const c2Data = rows.map(r => numVal(r.canal_2));
+
+    const ctx = canvas.getContext("2d");
+    const h = canvas.clientHeight || 360;
+
+    const gradC1 = ctx.createLinearGradient(0, 0, 0, h);
+    gradC1.addColorStop(0, "rgba(244, 123, 32, 0.45)");
+    gradC1.addColorStop(1, "rgba(244, 123, 32, 0.0)");
+
+    const gradC2 = ctx.createLinearGradient(0, 0, 0, h);
+    gradC2.addColorStop(0, "rgba(59, 130, 182, 0.35)");
+    gradC2.addColorStop(1, "rgba(59, 130, 182, 0.0)");
+
+    const datasets = [];
+
+    if (state.landscapeChannelFilter === "all" || state.landscapeChannelFilter === "c1") {
+        datasets.push({
+            label: "Canal 1 (Superior)",
+            data: c1Data,
+            borderColor: "#f47b20",
+            backgroundColor: gradC1,
+            borderWidth: 2.2,
+            pointRadius: 2,
+            pointHoverRadius: 7,
+            pointBackgroundColor: "#f47b20",
+            pointHoverBackgroundColor: "#ffffff",
+            tension: 0.28,
+            fill: true
+        });
+    }
+
+    if (state.landscapeChannelFilter === "all" || state.landscapeChannelFilter === "c2") {
+        datasets.push({
+            label: "Canal 2 (Inferior)",
+            data: c2Data,
+            borderColor: "#5ba6d5",
+            backgroundColor: gradC2,
+            borderWidth: 2,
+            pointRadius: 2,
+            pointHoverRadius: 7,
+            pointBackgroundColor: "#5ba6d5",
+            pointHoverBackgroundColor: "#ffffff",
+            tension: 0.28,
+            fill: true
+        });
+    }
+
+    state.landscapeChart = new Chart(canvas, {
+        type: "line",
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            onClick: (evt, elements) => {
+                if (elements.length > 0) {
+                    const idx = elements[0].index;
+                    const item = rows[idx];
+                    if (item) {
+                        atualizarPillLeituraLandscape(item);
+                    }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: "rgba(7, 27, 43, 0.95)",
+                    padding: 10,
+                    cornerRadius: 8,
+                    callbacks: {
+                        label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + " °C" : "--"}`
+                    },
+                    external: (context) => {
+                        const tooltip = context.tooltip;
+                        if (!tooltip || !tooltip.dataPoints || !tooltip.dataPoints.length) return;
+                        const idx = tooltip.dataPoints[0].dataIndex;
+                        const item = rows[idx];
+                        if (item) {
+                            atualizarPillLeituraLandscape(item);
+                        }
+                    }
+                },
+                zoom: {
+                    pan: {
+                        enabled: true,
+                        mode: 'x',
+                        threshold: 5
+                    },
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: "#94a3b8", maxTicksLimit: 14, font: { size: 11, weight: "bold" } },
+                    grid: { color: "rgba(255, 255, 255, 0.05)" }
+                },
+                y: {
+                    ticks: { color: "#94a3b8", font: { size: 11 }, callback: (v) => `${v}°` },
+                    grid: { color: "rgba(255, 255, 255, 0.06)" }
+                }
+            }
+        }
+    });
+}
+
+function atualizarPillLeituraLandscape(item) {
+    if (!item) return;
+    const c1 = numVal(item.canal_1);
+    const c2 = numVal(item.canal_2);
+    const delta = (c1 !== null && c2 !== null) ? Math.abs(c1 - c2) : null;
+    const d = new Date(item.created_at);
+    const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    if ($("landReadoutTime")) $("landReadoutTime").textContent = hora;
+    if ($("landReadoutC1")) $("landReadoutC1").textContent = `C1: ${c1 !== null ? Math.round(c1) + ' °C' : '--'}`;
+    if ($("landReadoutC2")) $("landReadoutC2").textContent = `C2: ${c2 !== null ? Math.round(c2) + ' °C' : '--'}`;
+    if ($("landReadoutDelta")) $("landReadoutDelta").textContent = `ΔT: ${delta !== null ? Math.round(delta) + ' °C' : '--'}`;
+}
+
+function filtrarCanaisLandscape(canal, btn) {
+    state.landscapeChannelFilter = canal;
+    document.querySelectorAll("#landChannelFilter .pill-btn").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+    if (state.currentAnalysisFilteredHistory.length) {
+        renderGraficoLandscape(state.currentAnalysisFilteredHistory);
+    }
+}
+
+// FERRAMENTAS DE PAN E ZOOM (FUNCIONAM TANTO NO MODO NORMAL QUANTO DE LADO)
+function panGrafico(direcao) {
+    const chart = state.isLandscapeOpen ? state.landscapeChart : state.analysisChart;
+    if (!chart) return;
+    const amount = direcao === 'left' ? 70 : -70;
+    if (typeof chart.pan === 'function') {
+        chart.pan({ x: amount }, undefined, 'default');
+    }
+}
+
+function zoomGrafico(fator) {
+    const chart = state.isLandscapeOpen ? state.landscapeChart : state.analysisChart;
+    if (!chart) return;
+    if (typeof chart.zoom === 'function') {
+        chart.zoom(fator, 'default');
+    }
+}
+
+function resetZoomGrafico() {
+    const chart = state.isLandscapeOpen ? state.landscapeChart : state.analysisChart;
+    if (!chart) return;
+    if (typeof chart.resetZoom === 'function') {
+        chart.resetZoom('default');
+    }
 }
 
 // ==========================================================================
@@ -1237,37 +1297,154 @@ function renderGraficoAnalise(rows) {
 
 function navegarAba(aba) {
     state.activeTab = aba;
-    state.selectedModule = null;
-
-    if (state.mainChart) {
-        state.mainChart.destroy();
-        state.mainChart = null;
-    }
-
-    $("headerTitle").textContent = "ThermoLink";
-    $("headerBackBtn").classList.add("hidden");
-
-    // Desativa todas as telas
-    $("screenFornos").classList.add("hidden");
-    $("screenFornoDetalhe").classList.add("hidden");
-    $("screenHistorico").classList.add("hidden");
-    $("screenConfig").classList.add("hidden");
-
-    // Desativa botões da bottom nav
-    document.querySelectorAll(".bottom-tab-bar .tab-item").forEach(b => b.classList.remove("active"));
 
     if (aba === "fornos") {
-        $("tabNavFornos").classList.add("active");
-        $("screenFornos").classList.remove("hidden");
-        renderListaFornos();
+        voltarListaFornos();
     } else if (aba === "historico") {
+        state.selectedModule = null;
+        $("headerTitle").textContent = "Histórico de Queimas";
+        $("headerBackBtn").classList.add("hidden");
+
+        $("screenFornos").classList.add("hidden");
+        $("screenAnaliseForno").classList.add("hidden");
+        $("screenConfig").classList.add("hidden");
+        $("screenHistoricoQueimas").classList.remove("hidden");
+
+        document.querySelectorAll(".bottom-tab-bar .tab-item").forEach(b => b.classList.remove("active"));
         $("tabNavHistorico").classList.add("active");
-        $("screenHistorico").classList.remove("hidden");
-        carregarDadosAnalise();
+
+        carregarHistoricoQueimas();
     } else if (aba === "config") {
-        $("tabNavConfig").classList.add("active");
+        state.selectedModule = null;
+        $("headerTitle").textContent = "Configurações";
+        $("headerBackBtn").classList.add("hidden");
+
+        $("screenFornos").classList.add("hidden");
+        $("screenAnaliseForno").classList.add("hidden");
+        $("screenHistoricoQueimas").classList.add("hidden");
         $("screenConfig").classList.remove("hidden");
+
+        document.querySelectorAll(".bottom-tab-bar .tab-item").forEach(b => b.classList.remove("active"));
+        $("tabNavConfig").classList.add("active");
     }
+}
+
+// ==========================================================================
+// 5.1 HISTÓRICO DE QUEIMAS (CICLOS, LOTES & RELATÓRIOS)
+// ==========================================================================
+
+state.historicoFornoFiltro = "all";
+
+function carregarHistoricoQueimas() {
+    const filterContainer = $("histFiltroForno");
+    const container = $("listaQueimasHistorico");
+    if (!container) return;
+
+    const availableOvens = state.ovens && state.ovens.length > 0 ? state.ovens : [];
+    if (filterContainer) {
+        const btnsHtml = [
+            `<button class="pill-btn ${state.historicoFornoFiltro === 'all' ? 'active' : ''}" onclick="filtrarHistoricoForno('all', this)">Todos</button>`,
+            ...availableOvens.map(o => {
+                const mod = Number(o.numero);
+                const isActive = state.historicoFornoFiltro === String(mod);
+                return `<button class="pill-btn ${isActive ? 'active' : ''}" onclick="filtrarHistoricoForno('${mod}', this)">${escapeHtml(o.nome || `Forno ${String(mod).padStart(2, '0')}`)}</button>`;
+            })
+        ].join("");
+        filterContainer.innerHTML = btnsHtml;
+    }
+
+    const queimasBase = [
+        { id: "QUEIMA #54", lote: "LOTE-920", mod: 1, fornoNome: "Forno 01", data: "10/09/2026", horario: "06:15 às 15:00", duracao: "8h 45m", picoC1: 984, picoC2: 960, media: 742, delta: 24, status: "Concluída no Padrão" },
+        { id: "QUEIMA #53", lote: "LOTE-919", mod: 2, fornoNome: "Forno 02", data: "09/09/2026", horario: "07:00 às 15:30", duracao: "8h 30m", picoC1: 976, picoC2: 955, media: 735, delta: 21, status: "Concluída no Padrão" },
+        { id: "QUEIMA #52", lote: "LOTE-918", mod: 1, fornoNome: "Forno 01", data: "07/09/2026", horario: "06:30 às 15:45", duracao: "9h 15m", picoC1: 988, picoC2: 962, media: 748, delta: 26, status: "Concluída no Padrão" },
+        { id: "QUEIMA #51", lote: "LOTE-917", mod: 2, fornoNome: "Forno 02", data: "05/09/2026", horario: "06:00 às 14:45", duracao: "8h 45m", picoC1: 968, picoC2: 948, media: 729, delta: 20, status: "Concluída no Padrão" },
+        { id: "QUEIMA #50", lote: "LOTE-916", mod: 3, fornoNome: "Forno 03", data: "04/09/2026", horario: "08:00 às 16:30", duracao: "8h 30m", picoC1: 980, picoC2: 958, media: 738, delta: 22, status: "Concluída no Padrão" },
+        { id: "QUEIMA #49", lote: "LOTE-915", mod: 1, fornoNome: "Forno 01", data: "02/09/2026", horario: "06:15 às 15:15", duracao: "9h 00m", picoC1: 982, picoC2: 961, media: 740, delta: 21, status: "Concluída no Padrão" }
+    ];
+
+    const queimasAdaptadas = queimasBase.map(q => {
+        const found = availableOvens.find(o => Number(o.numero) === q.mod);
+        return {
+            ...q,
+            fornoNome: found ? (found.nome || `Forno ${String(q.mod).padStart(2, '0')}`) : q.fornoNome
+        };
+    });
+
+    const filtradas = state.historicoFornoFiltro === "all"
+        ? queimasAdaptadas
+        : queimasAdaptadas.filter(q => String(q.mod) === state.historicoFornoFiltro);
+
+    if ($("kpiTotalQueimas")) $("kpiTotalQueimas").textContent = `${filtradas.length}`;
+    if ($("kpiTempoMedio")) $("kpiTempoMedio").textContent = "8h 45m";
+    if ($("kpiTaxaSucesso")) $("kpiTaxaSucesso").textContent = "100%";
+    if ($("statHistoricoCount")) $("statHistoricoCount").textContent = `${filtradas.length} Ciclos`;
+
+    if (filtradas.length) {
+        const picos = filtradas.map(q => q.picoC1);
+        const avgPico = Math.round(picos.reduce((a, b) => a + b, 0) / picos.length);
+        if ($("kpiPicoMedio")) $("kpiPicoMedio").textContent = `${avgPico} °C`;
+    } else {
+        if ($("kpiPicoMedio")) $("kpiPicoMedio").textContent = "-- °C";
+    }
+
+    if (!filtradas.length) {
+        container.innerHTML = `
+            <div class="loading-box" style="padding: 30px; text-align: center;">
+                <i class="fa-solid fa-clock-rotate-left" style="font-size: 32px; color: #f97316; margin-bottom: 10px;"></i>
+                <p style="color: #94a3b8; font-size: 13px;">Nenhuma queima registrada para este filtro.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filtradas.map(q => `
+        <article class="queima-card">
+            <div class="queima-card-top">
+                <div class="queima-card-title-group">
+                    <span class="queima-id-tag">${escapeHtml(q.id)} • ${escapeHtml(q.lote)}</span>
+                    <h3 class="queima-forno-nome">${escapeHtml(q.fornoNome)}</h3>
+                </div>
+                <span class="queima-status-badge">
+                    <i class="fa-solid fa-circle-check"></i>
+                    ${escapeHtml(q.status)}
+                </span>
+            </div>
+
+            <div class="queima-metrics-grid">
+                <div class="queima-metric-item">
+                    <span class="queima-metric-lbl">Duração</span>
+                    <strong class="queima-metric-val">${escapeHtml(q.duracao)}</strong>
+                </div>
+                <div class="queima-metric-item">
+                    <span class="queima-metric-lbl">Pico Máx</span>
+                    <strong class="queima-metric-val text-orange">${q.picoC1} °C</strong>
+                </div>
+                <div class="queima-metric-item">
+                    <span class="queima-metric-lbl">Média Ciclo</span>
+                    <strong class="queima-metric-val text-blue">${q.media} °C</strong>
+                </div>
+            </div>
+
+            <div class="queima-cycle-bar">
+                <div class="queima-cycle-fill" style="width: 100%;"></div>
+            </div>
+
+            <div class="queima-card-foot">
+                <span><i class="fa-regular fa-calendar" style="margin-right: 4px;"></i> ${escapeHtml(q.data)} • ${escapeHtml(q.horario)}</span>
+                <button class="queima-btn-action" onclick="abrirDetalheForno(${q.mod})">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Ver Análise</span>
+                </button>
+            </div>
+        </article>
+    `).join("");
+}
+
+function filtrarHistoricoForno(modulo, btn) {
+    state.historicoFornoFiltro = String(modulo);
+    document.querySelectorAll("#histFiltroForno .pill-btn").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+    carregarHistoricoQueimas();
 }
 
 // ==========================================================================

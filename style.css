@@ -610,12 +610,175 @@ button {
 }
 
 /* ==========================================================================
-   CARDS DE FORNOS (LISTAGEM)
+   CARDS DE FORNOS (LISTAGEM DE FORNOS COM VISUAL 3D REALISTA)
    ========================================================================== */
 .ovens-list-container {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 18px;
+}
+
+/* CARD INTERATIVO DE FORNO NA TELA INICIAL */
+.kiln-card-interactive {
+    cursor: pointer;
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), 
+                border-color 0.2s ease, 
+                box-shadow 0.2s ease;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.kiln-card-interactive:hover {
+    border-color: rgba(244, 123, 32, 0.5);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 24px rgba(244, 123, 32, 0.18);
+    transform: translateY(-3px);
+}
+
+.kiln-card-interactive:active {
+    transform: scale(0.985);
+}
+
+.kiln-card-title-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.kiln-card-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.kiln-card-serial {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 2px 7px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.kiln-cta-banner {
+    width: 100%;
+    margin-top: 2px;
+    padding: 10px 14px;
+    background: linear-gradient(90deg, rgba(244, 123, 32, 0.12) 0%, rgba(59, 130, 182, 0.08) 100%);
+    border: 1px solid rgba(244, 123, 32, 0.24);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.kiln-card-interactive:hover .kiln-cta-banner {
+    background: linear-gradient(90deg, rgba(244, 123, 32, 0.22) 0%, rgba(59, 130, 182, 0.16) 100%);
+    border-color: rgba(244, 123, 32, 0.5);
+}
+
+.cta-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.cta-arrow {
+    font-size: 12px;
+    color: var(--orange);
+    transition: transform 0.2s ease;
+}
+
+.kiln-card-interactive:hover .cta-arrow {
+    transform: translateX(4px);
+}
+
+.meta-reltime {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.text-right {
+    text-align: right;
+}
+
+/* Status helpers */
+.status-indicator-badge.is-online {
+    color: var(--green);
+}
+
+.status-indicator-badge.is-standby {
+    color: #94a3b8;
+}
+
+.status-indicator-badge.is-standby .pulse-dot {
+    background: #94a3b8;
+    box-shadow: none;
+    animation: none;
+}
+
+/* FAIXA RESUMO COMPACTA DA TELA DE DETALHE */
+.forno-detail-summary-strip {
+    background: linear-gradient(135deg, rgba(13, 44, 66, 0.9) 0%, var(--card) 100%);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+}
+
+.detail-strip-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.detail-strip-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.detail-chip-pill {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 9px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-feature-settings: "tnum";
+}
+
+.detail-chip-pill.c1 {
+    color: var(--orange-light);
+    border-color: rgba(244, 123, 32, 0.35);
+    background: rgba(244, 123, 32, 0.1);
+}
+
+.detail-chip-pill.c2 {
+    color: var(--blue-light);
+    border-color: rgba(59, 130, 182, 0.35);
+    background: rgba(59, 130, 182, 0.1);
 }
 
 .oven-item-card {
@@ -2209,3 +2372,695 @@ button {
         transform: scale(1);
     }
 }
+
+/* ==========================================================================
+   HISTÓRICO DE QUEIMAS (LAYOUT DE CICLOS TÉRMICOS & LOTES ANTERIORES)
+   ========================================================================== */
+.historico-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+@media (min-width: 480px) {
+    .historico-kpi-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.historico-kpi-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kpi-lbl {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.kpi-val {
+    font-size: 20px;
+    font-weight: 800;
+    color: #ffffff;
+    font-feature-settings: "tnum";
+}
+
+.kpi-sub {
+    font-size: 9px;
+    color: var(--text-secondary);
+}
+
+.historico-queimas-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.queima-card {
+    background: linear-gradient(145deg, #0b2233 0%, var(--card) 100%);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: var(--shadow);
+    transition: transform 0.15s ease, border-color 0.2s ease;
+}
+
+.queima-card:hover {
+    border-color: rgba(244, 123, 32, 0.4);
+    transform: translateY(-2px);
+}
+
+.queima-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.queima-card-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.queima-id-tag {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--orange-light);
+    letter-spacing: 0.02em;
+}
+
+.queima-forno-nome {
+    font-size: 16px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.queima-status-badge {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--green);
+    background: var(--green-bg);
+    padding: 4px 9px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.queima-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.queima-metric-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.queima-metric-lbl {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.queima-metric-val {
+    font-size: 14px;
+    font-weight: 800;
+    color: #ffffff;
+    font-feature-settings: "tnum";
+}
+
+.queima-cycle-bar {
+    width: 100%;
+    height: 6px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    position: relative;
+    overflow: hidden;
+}
+
+.queima-cycle-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blue) 0%, var(--orange) 60%, var(--red) 100%);
+    border-radius: 6px;
+}
+
+.queima-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.queima-btn-action {
+    background: rgba(244, 123, 32, 0.12);
+    border: 1px solid rgba(244, 123, 32, 0.3);
+    color: var(--orange-light);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.queima-btn-action:hover {
+    background: rgba(244, 123, 32, 0.22);
+    border-color: var(--orange);
+    color: #ffffff;
+}
+
+/* ==========================================================================
+   TELA DE ANÁLISE OTIMIZADA DO FORNO (HERO CARD, TOOLBAR, STATS & TABELA)
+   ========================================================================== */
+
+.analise-hero-card {
+    background: linear-gradient(135deg, #0d283c 0%, #071b2b 100%);
+    border: 1px solid rgba(244, 123, 32, 0.25);
+    border-radius: 16px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    margin-bottom: 12px;
+}
+
+.analise-hero-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.analise-btn-back {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #f1f5f9;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.analise-btn-back:hover {
+    background: rgba(244, 123, 32, 0.2);
+    border-color: var(--orange);
+    color: #ffffff;
+    transform: translateX(-2px);
+}
+
+.analise-hero-ident {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.analise-hero-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.analise-live-tiles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+@media (max-width: 420px) {
+    .analise-live-tiles {
+        grid-template-columns: 1fr 1fr;
+    }
+    .analise-tile.delta {
+        grid-column: span 2;
+    }
+}
+
+.analise-tile {
+    background: rgba(4, 18, 29, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.analise-tile.c1 {
+    border-left: 3px solid var(--orange);
+}
+
+.analise-tile.c2 {
+    border-left: 3px solid var(--blue);
+}
+
+.analise-tile.delta {
+    border-left: 3px solid #10b981;
+}
+
+.analise-tile-head {
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.analise-tile-temp {
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.1;
+    font-feature-settings: "tnum";
+}
+
+/* TOOLBAR DE PERÍODO ENXUTA */
+.analise-filter-bar {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.analise-filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.analise-filter-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.analise-filter-counter {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+/* CARDS DE STATS COM ÍCONES E GRADIENTES SUAVES */
+.analysis-stat-card {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s ease, border-color 0.2s ease;
+}
+
+.analysis-stat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.stat-card-icon {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 18px;
+    opacity: 0.25;
+}
+
+.stat-card-pico {
+    background: linear-gradient(145deg, rgba(244, 123, 32, 0.12) 0%, var(--card) 75%);
+}
+
+.stat-card-min {
+    background: linear-gradient(145deg, rgba(59, 130, 246, 0.12) 0%, var(--card) 75%);
+}
+
+.stat-card-avg {
+    background: linear-gradient(145deg, rgba(16, 185, 129, 0.12) 0%, var(--card) 75%);
+}
+
+.stat-card-delta {
+    background: linear-gradient(145deg, rgba(168, 85, 247, 0.12) 0%, var(--card) 75%);
+}
+
+/* TABELA ACCORDION */
+.table-accordion-card {
+    margin-bottom: 20px;
+}
+
+.table-toggle-chevron {
+    transition: transform 0.25s ease;
+}
+
+.table-toggle-chevron.collapsed {
+    transform: rotate(-90deg);
+}
+
+.table-scroll-wrapper.collapsed {
+    display: none;
+}
+
+/* ==========================================================================
+   GRÁFICO INTERATIVO (ZOOM, PAN & VISUALIZAÇÃO DE LADO NO CELULAR)
+   ========================================================================== */
+
+.btn-expand-landscape {
+    background: linear-gradient(135deg, rgba(244, 123, 32, 0.2) 0%, rgba(244, 123, 32, 0.08) 100%);
+    border: 1px solid rgba(244, 123, 32, 0.4);
+    color: var(--orange-light);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-expand-landscape:hover {
+    background: rgba(244, 123, 32, 0.3);
+    border-color: var(--orange);
+    color: #ffffff;
+    transform: scale(1.03);
+}
+
+.chart-quick-nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 0 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.chart-nav-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.chart-zoom-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.chart-tool-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+}
+
+.chart-tool-btn:hover {
+    background: var(--card);
+    border-color: var(--orange);
+    color: #ffffff;
+}
+
+.chart-tool-btn.reset {
+    font-size: 10px;
+    padding: 5px 7px;
+}
+
+.interactive-canvas-box {
+    cursor: grab;
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.interactive-canvas-box:active {
+    cursor: grabbing;
+}
+
+/* ==========================================================================
+   MODAL LANDSCAPE FULLSCREEN (DE LADO NO CELULAR)
+   ========================================================================== */
+
+.modal-landscape-view {
+    background: #04121d;
+    display: flex;
+    flex-direction: column;
+    color: #ffffff;
+    box-sizing: border-box;
+    overflow: hidden;
+    touch-action: pan-x pan-y;
+}
+
+/* Em celulares em pé (retrato), rotaciona 90 graus para forçar horizontal nativo */
+@media screen and (max-width: 900px) and (orientation: portrait) {
+    .modal-landscape-view {
+        position: fixed !important;
+        top: 0 !important;
+        left: 100vw !important;
+        width: 100vh !important;
+        height: 100vw !important;
+        transform: rotate(90deg) !important;
+        transform-origin: top left !important;
+        z-index: 99999 !important;
+    }
+}
+
+/* Em telas já em horizontal (ou desktop/tablets paisagem) */
+@media screen and (min-width: 901px), screen and (orientation: landscape) {
+    .modal-landscape-view {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 99999 !important;
+    }
+}
+
+.landscape-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: rgba(7, 27, 43, 0.95);
+    border-bottom: 1px solid rgba(244, 123, 32, 0.25);
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.landscape-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-landscape-close {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-landscape-close:hover {
+    background: rgba(244, 123, 32, 0.25);
+    border-color: var(--orange);
+}
+
+.landscape-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.landscape-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+/* PILL DINÂMICA DE LEITURA AO VIVO / TOUCH TRACKER */
+.landscape-readout-pill {
+    background: rgba(2, 10, 18, 0.85);
+    border: 1px solid rgba(244, 123, 32, 0.35);
+    border-radius: 20px;
+    padding: 5px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    font-feature-settings: "tnum";
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.landscape-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.landscape-pill-group {
+    display: flex;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.landscape-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.land-tool-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #f1f5f9;
+    font-size: 12px;
+    width: 34px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.land-tool-btn:hover {
+    background: rgba(244, 123, 32, 0.25);
+    border-color: var(--orange);
+    color: #ffffff;
+}
+
+.btn-landscape-icon-close {
+    background: rgba(244, 63, 94, 0.15);
+    border: 1px solid rgba(244, 63, 94, 0.3);
+    color: #ff5252;
+    font-size: 14px;
+    width: 34px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-landscape-icon-close:hover {
+    background: #ff5252;
+    color: #ffffff;
+}
+
+.landscape-canvas-wrapper {
+    flex: 1;
+    position: relative;
+    width: 100%;
+    min-height: 0;
+    padding: 10px 16px;
+    box-sizing: border-box;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.landscape-canvas-wrapper:active {
+    cursor: grabbing;
+}
+
+.landscape-footer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(7, 27, 43, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 11px;
+    gap: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.landscape-footer-hint {
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+}
+
+.landscape-footer-stats {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-feature-settings: "tnum";
+}
+
+.land-stat-tag {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.land-stat-tag b {
+    color: #ffffff;
+}
+
+

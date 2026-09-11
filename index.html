@@ -23,6 +23,10 @@
 
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+    <!-- Hammer.js (para suporte a gestos touch de pinça e arrasto) -->
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <!-- Chart.js Zoom & Pan Plugin -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
     <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -192,276 +196,104 @@
         </section>
 
         <!-- ====================================================
-             TELA DETALHADA: FORNO SELECIONADO COM VISUAL 3D
+             ANÁLISE DETALHADA DO FORNO SELECIONADO (EXCLUSIVO DO FORNO ABERTO)
         ===================================================== -->
-        <section id="screenFornoDetalhe" class="screen-view hidden">
-            
-            <!-- CARD COM FORNO CERÂMICO 3D E SENSORES INTEGRADOS -->
-            <div class="kiln-3d-card">
-                <div class="kiln-top-meta">
-                    <span class="gauge-module-tag" id="gaugeModuleTag">MÓDULO 01</span>
-                    <span class="status-indicator-badge">
-                        <span class="pulse-dot"></span>
-                        <span id="gaugeStatusText">Em Operação</span>
-                    </span>
+        <section id="screenAnaliseForno" class="screen-view hidden">
+
+            <!-- FILTRO DE PERÍODO RÁPIDO & PRÁTICO -->
+            <div class="card-dark analise-filter-bar">
+                <div class="analise-filter-header">
+                    <div class="analise-filter-title">
+                        <i class="fa-regular fa-clock text-orange"></i>
+                        <span>Período da Curva:</span>
+                    </div>
+                    <span class="analise-filter-counter" id="anStatCountPill">-- leituras</span>
                 </div>
-
-                <!-- IMAGEM DO FORNO 3D COM OVERLAYS DE TEMPERATURA -->
-                <div class="kiln-3d-visual-container">
-                    <img src="nova imagen de um forno.png" alt="Forno Cerâmico ThermoLink" class="kiln-3d-image">
-                    
-                    <!-- TAG DO SENSOR SUPERIOR (CANAL 1) -->
-                    <div class="sensor-overlay-tag overlay-top">
-                        <div class="overlay-tag-header">
-                            <span class="sensor-dot c1"></span>
-                            <span>CANAL 1 (SUPERIOR)</span>
-                        </div>
-                        <div class="overlay-tag-temp text-orange" id="gaugeMainTemp">-- °C</div>
-                    </div>
-
-                    <!-- TAG DO SENSOR INFERIOR (CANAL 2) -->
-                    <div class="sensor-overlay-tag overlay-bottom">
-                        <div class="overlay-tag-header">
-                            <span class="sensor-dot c2"></span>
-                            <span>CANAL 2 (INFERIOR)</span>
-                        </div>
-                        <div class="overlay-tag-temp text-blue" id="gaugeC2Sub">-- °C</div>
-                    </div>
-                </div>
-
-                <div class="gauge-footer-meta">
-                    <div class="gauge-meta-item">
-                        <span>ÚLTIMA LEITURA</span>
-                        <strong id="gaugeLastTime">--:--:--</strong>
-                    </div>
-                    <div class="gauge-meta-item" style="text-align: right;">
-                        <span>DIFERENCIAL (ΔT)</span>
-                        <strong id="gaugeDeltaT" class="text-orange">-- °C</strong>
-                    </div>
+                <div class="filter-pill-scroll" id="anTimeFilter">
+                    <button class="pill-btn" onclick="filtrarTempoAnalise(6, this)">6h</button>
+                    <button class="pill-btn" onclick="filtrarTempoAnalise(24, this)">24h</button>
+                    <button class="pill-btn" onclick="filtrarTempoAnalise(48, this)">48h</button>
+                    <button class="pill-btn" onclick="filtrarTempoAnalise(72, this)">72h</button>
+                    <button class="pill-btn active" onclick="filtrarTempoAnalise('all', this)">Tudo</button>
                 </div>
             </div>
 
-            <!-- SUB-ABAS DO FORNO -->
-            <div class="sub-tabs-bar">
-                <button class="sub-tab-btn active" onclick="trocarSubAba('tempoReal')">
-                    <i class="fa-solid fa-gauge-high"></i>
-                    Tempo Real
-                </button>
-                <button class="sub-tab-btn" onclick="trocarSubAba('grafico')">
-                    <i class="fa-solid fa-chart-line"></i>
-                    Curva Térmica
-                </button>
-                <button class="sub-tab-btn" onclick="trocarSubAba('leituras')">
-                    <i class="fa-solid fa-list-ul"></i>
-                    Leituras
-                </button>
-            </div>
-
-            <!-- CONTEÚDO SUB-ABA 1: TEMPO REAL -->
-            <div id="subAbaTempoReal" class="sub-tab-content active">
-                <div class="sensors-grid-duo">
-                    <div class="sensor-box sensor-c1">
-                        <div class="sensor-header">
-                            <span class="sensor-dot c1"></span>
-                            <span class="sensor-title">Canal 1 • Superior</span>
-                        </div>
-                        <div class="sensor-value text-orange" id="cardValC1">-- °C</div>
-                        <div class="sensor-stats">
-                            <span>Máx: <b id="subStatC1Max">--</b></span>
-                            <span>Mín: <b id="subStatC1Min">--</b></span>
-                        </div>
-                    </div>
-
-                    <div class="sensor-box sensor-c2">
-                        <div class="sensor-header">
-                            <span class="sensor-dot c2"></span>
-                            <span class="sensor-title">Canal 2 • Inferior</span>
-                        </div>
-                        <div class="sensor-value text-blue" id="cardValC2">-- °C</div>
-                        <div class="sensor-stats">
-                            <span>Máx: <b id="subStatC2Max">--</b></span>
-                            <span>Mín: <b id="subStatC2Min">--</b></span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card-dark summary-box">
-                    <div class="card-dark-header">
-                        <i class="fa-solid fa-fire text-orange"></i>
-                        <span>Resumo da Queima no Período</span>
-                    </div>
-                    <div class="stats-grid-quad">
-                        <div class="quad-item">
-                            <span class="quad-lbl">Média do Forno</span>
-                            <strong class="quad-val" id="quadAvg">-- °C</strong>
-                        </div>
-                        <div class="quad-item">
-                            <span class="quad-lbl">Pico Atingido</span>
-                            <strong class="quad-val text-orange" id="quadMax">-- °C</strong>
-                        </div>
-                        <div class="quad-item">
-                            <span class="quad-lbl">Menor Leitura</span>
-                            <strong class="quad-val text-blue" id="quadMin">-- °C</strong>
-                        </div>
-                        <div class="quad-item">
-                            <span class="quad-lbl">Registros</span>
-                            <strong class="quad-val" id="quadCount">--</strong>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CONTEÚDO SUB-ABA 2: GRÁFICO / CURVA TÉRMICA -->
-            <div id="subAbaGrafico" class="sub-tab-content hidden">
-                <div class="card-dark chart-card">
-                    <div class="chart-header-row">
-                        <div>
-                            <div class="chart-title">Curva de Temperatura</div>
-                            <div class="chart-sub" id="chartPointCount">Carregando dados...</div>
-                        </div>
-
-                        <!-- Filtros do Gráfico -->
-                        <div class="chart-pill-group" id="chartChannelFilter">
-                            <button class="pill-btn active" onclick="filtrarCanaisGrafico('all')">Ambos</button>
-                            <button class="pill-btn" onclick="filtrarCanaisGrafico('c1')">C1</button>
-                            <button class="pill-btn" onclick="filtrarCanaisGrafico('c2')">C2</button>
-                        </div>
-                    </div>
-
-                    <div class="chart-canvas-box">
-                        <canvas id="detailChartCanvas"></canvas>
-                    </div>
-
-                    <div class="chart-legend-custom">
-                        <div class="legend-row">
-                            <span class="legend-color legend-c1"></span>
-                            <span>Canal 1 - Superior (Laranja)</span>
-                        </div>
-                        <div class="legend-row">
-                            <span class="legend-color legend-c2"></span>
-                            <span>Canal 2 - Inferior (Azul)</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CONTEÚDO SUB-ABA 3: LEITURAS / HISTÓRICO -->
-            <div id="subAbaLeituras" class="sub-tab-content hidden">
-                <div class="card-dark">
-                    <div class="card-dark-header">
-                        <i class="fa-solid fa-clock-rotate-left text-orange"></i>
-                        <span>Últimos Registros do Módulo</span>
-                    </div>
-
-                    <div class="table-scroll-wrapper">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Horário</th>
-                                    <th>Canal 1 (C1)</th>
-                                    <th>Canal 2 (C2)</th>
-                                    <th>ΔT (Diferencial)</th>
-                                </tr>
-                            </thead>
-                            <tbody id="detailTableBody">
-                                <tr>
-                                    <td colspan="4" class="table-empty-msg">Nenhum dado recente.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-        </section>
-
-        <!-- ====================================================
-             ABA 2: ANÁLISE DETALHADA DAS QUEIMAS (COM FILTROS DE TEMPO E AMOSTRAGEM)
-        ===================================================== -->
-        <section id="screenHistorico" class="screen-view hidden">
-            
-            <!-- SELETOR DE FORNO PARA ANÁLISE -->
-            <div class="card-dark analysis-header-card">
-                <div class="analysis-select-row">
-                    <label for="analysisKilnSelect">
-                        <i class="fa-solid fa-fire text-orange"></i>
-                        Forno em Análise:
-                    </label>
-                    <select id="analysisKilnSelect" onchange="trocarFornoAnalise(this.value)">
-                        <option value="">Carregando fornos...</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- BARRA DE FILTROS: TEMPO (HORAS) & AMOSTRAGEM -->
-            <div class="card-dark filters-control-card">
-                
-                <!-- FILTRO DE PERÍODO / TEMPO (HORAS) -->
-                <div class="filter-row">
-                    <span class="filter-row-title"><i class="fa-regular fa-clock text-orange"></i> Período:</span>
-                    <div class="filter-pill-scroll" id="anTimeFilter">
-                        <button class="pill-btn" onclick="filtrarTempoAnalise(6, this)">6h</button>
-                        <button class="pill-btn" onclick="filtrarTempoAnalise(24, this)">24h</button>
-                        <button class="pill-btn" onclick="filtrarTempoAnalise(48, this)">48h</button>
-                        <button class="pill-btn" onclick="filtrarTempoAnalise(72, this)">72h</button>
-                        <button class="pill-btn active" onclick="filtrarTempoAnalise('all', this)">Tudo</button>
-                    </div>
-                </div>
-
-                <!-- FILTRO DE QUANTIDADE DE LEITURAS NA AMOSTRAGEM -->
-                <div class="filter-row">
-                    <span class="filter-row-title"><i class="fa-solid fa-chart-simple text-blue"></i> Amostras:</span>
-                    <div class="filter-pill-scroll" id="anSampleFilter">
-                        <button class="pill-btn" onclick="filtrarAmostragemAnalise(100, this)">100 pts</button>
-                        <button class="pill-btn" onclick="filtrarAmostragemAnalise(250, this)">250 pts</button>
-                        <button class="pill-btn" onclick="filtrarAmostragemAnalise(500, this)">500 pts</button>
-                        <button class="pill-btn active" onclick="filtrarAmostragemAnalise(1000, this)">1000 pts</button>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- ESTATÍSTICAS COMPLETAS (PICO MÁXIMO, MÍNIMO, MÉDIA E AMOSTRAGEM) -->
+            <!-- RESUMO ESTATÍSTICO DE QUEIMA (KPIS) -->
             <div class="analysis-stats-grid">
-                <div class="analysis-stat-card">
+                <div class="analysis-stat-card stat-card-pico">
+                    <div class="stat-card-icon text-orange"><i class="fa-solid fa-fire"></i></div>
                     <span class="analysis-stat-lbl">Pico Máximo</span>
                     <strong class="analysis-stat-val text-orange" id="anStatMax">-- °C</strong>
-                    <span class="analysis-stat-meta">Maior temperatura</span>
+                    <span class="analysis-stat-meta">Canal 1 (Superior)</span>
                 </div>
-                <div class="analysis-stat-card">
+                <div class="analysis-stat-card stat-card-min">
+                    <div class="stat-card-icon text-blue"><i class="fa-solid fa-snowflake"></i></div>
                     <span class="analysis-stat-lbl">Pico Mínimo</span>
                     <strong class="analysis-stat-val text-blue" id="anStatMin">-- °C</strong>
-                    <span class="analysis-stat-meta">Menor temperatura</span>
+                    <span class="analysis-stat-meta">Menor leitura</span>
                 </div>
-                <div class="analysis-stat-card">
+                <div class="analysis-stat-card stat-card-avg">
+                    <div class="stat-card-icon text-green"><i class="fa-solid fa-chart-line"></i></div>
                     <span class="analysis-stat-lbl">Média de Queima</span>
                     <strong class="analysis-stat-val" id="anStatAvg">-- °C</strong>
                     <span class="analysis-stat-meta">Média no período</span>
                 </div>
-                <div class="analysis-stat-card">
+                <div class="analysis-stat-card stat-card-delta">
+                    <div class="stat-card-icon"><i class="fa-solid fa-layer-group"></i></div>
                     <span class="analysis-stat-lbl">Amostragem</span>
-                    <strong class="analysis-stat-val text-green" id="anStatCount">--</strong>
-                    <span class="analysis-stat-meta" id="anStatPeriod">Leituras filtradas</span>
+                    <strong class="analysis-stat-val text-white" id="anStatCount">--</strong>
+                    <span class="analysis-stat-meta" id="anStatPeriod">Pontos avaliados</span>
                 </div>
             </div>
 
-            <!-- PAINEL DO GRÁFICO DE ANÁLISE -->
+            <!-- GRÁFICO DA CURVA TÉRMICA INTERATIVO COM ZOOM, PAN E MODO DE LADO -->
             <div class="card-dark chart-card">
                 <div class="chart-header-row">
                     <div>
-                        <div class="chart-title">Curva Térmica Detalhada</div>
-                        <div class="chart-sub" id="anChartSub">Análise multicanal contínua</div>
+                        <div class="chart-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span>Curva Térmica Detalhada</span>
+                            <button class="btn-expand-landscape" onclick="abrirGraficoLandscape()" title="Abrir em tela cheia de lado no celular">
+                                <i class="fa-solid fa-mobile-screen-button fa-rotate-90"></i>
+                                <span>Ver de Lado</span>
+                            </button>
+                        </div>
+                        <div class="chart-sub" id="anChartSub">Análise contínua das temperaturas</div>
                     </div>
 
                     <!-- Controles de Canais -->
                     <div class="chart-pill-group" id="anChannelFilter">
-                        <button class="pill-btn active" onclick="filtrarCanaisAnalise('all')">Ambos</button>
-                        <button class="pill-btn" onclick="filtrarCanaisAnalise('c1')">C1</button>
-                        <button class="pill-btn" onclick="filtrarCanaisAnalise('c2')">C2</button>
+                        <button class="pill-btn active" onclick="filtrarCanaisAnalise('all', this)">Ambos</button>
+                        <button class="pill-btn" onclick="filtrarCanaisAnalise('c1', this)">C1</button>
+                        <button class="pill-btn" onclick="filtrarCanaisAnalise('c2', this)">C2</button>
                     </div>
                 </div>
 
-                <div class="chart-canvas-box" style="height: 280px;">
+                <!-- BARRA DE FERRAMENTAS DE NAVEGAÇÃO E ZOOM DO GRÁFICO -->
+                <div class="chart-quick-nav-bar">
+                    <span class="chart-nav-hint">
+                        <i class="fa-solid fa-arrows-left-right"></i> Arraste para navegar no histórico
+                    </span>
+                    <div class="chart-zoom-btn-group">
+                        <button class="chart-tool-btn" onclick="panGrafico('left')" title="Navegar para a esquerda (leituras anteriores)">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <button class="chart-tool-btn" onclick="zoomGrafico(1.35)" title="Aproximar zoom (+)">
+                            <i class="fa-solid fa-magnifying-glass-plus"></i>
+                        </button>
+                        <button class="chart-tool-btn" onclick="zoomGrafico(0.75)" title="Afastar zoom (-)">
+                            <i class="fa-solid fa-magnifying-glass-minus"></i>
+                        </button>
+                        <button class="chart-tool-btn" onclick="panGrafico('right')" title="Navegar para a direita (leituras recentes)">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                        <button class="chart-tool-btn reset" onclick="resetZoomGrafico()" title="Restaurar zoom original">
+                            <i class="fa-solid fa-rotate-left"></i>
+                            <span>Reset</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chart-canvas-box interactive-canvas-box" id="analysisChartBox" onclick="aoClicarCanvasAnalise(event)" title="Clique para abrir de lado em tela cheia">
                     <canvas id="analysisChartCanvas"></canvas>
                 </div>
 
@@ -477,12 +309,13 @@
                 </div>
             </div>
 
-            <!-- HISTÓRICO DAS LEITURAS COM FILTRO DE LINHAS -->
-            <div class="card-dark">
+            <!-- TABELA DE REGISTROS COM EXPANSÃO RÁPIDA -->
+            <div class="card-dark table-accordion-card">
                 <div class="table-header-with-filter">
-                    <div class="card-dark-header" style="margin-bottom: 0;">
+                    <div class="table-title-group" onclick="toggleTabelaAnalise()" style="cursor: pointer; display: flex; align-items: center; gap: 8px;">
                         <i class="fa-solid fa-list-check text-orange"></i>
-                        <span>Tabela das Leituras Analisadas</span>
+                        <span style="font-weight: 700; font-size: 13px; color: #fff;">Registros de Leituras</span>
+                        <i class="fa-solid fa-chevron-down table-toggle-chevron" id="anTableChevron" style="font-size: 11px; color: var(--text-muted); transition: transform 0.2s;"></i>
                     </div>
 
                     <div class="table-limit-filter">
@@ -496,7 +329,7 @@
                     </div>
                 </div>
 
-                <div class="table-scroll-wrapper" style="max-height: 280px;">
+                <div id="anTableScrollWrapper" class="table-scroll-wrapper" style="max-height: 260px; margin-top: 10px;">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -512,6 +345,64 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ====================================================
+             ABA 2: HISTÓRICO DE QUEIMAS (CICLOS, LOTES & RELATÓRIOS)
+        ===================================================== -->
+        <section id="screenHistoricoQueimas" class="screen-view hidden">
+            
+            <!-- CABEÇALHO DA TELA DE HISTÓRICO -->
+            <div class="section-title-bar">
+                <div class="section-title-left">
+                    <i class="fa-solid fa-clock-rotate-left text-orange"></i>
+                    <h2>Histórico de Queimas</h2>
+                </div>
+                <span class="badge-online-count" id="statHistoricoCount">Ciclos Anteriores</span>
+            </div>
+
+            <!-- CARDS DE MÉTRICAS GERAIS (KPIS) -->
+            <div class="historico-kpi-grid">
+                <div class="historico-kpi-card">
+                    <span class="kpi-lbl">Total de Queimas</span>
+                    <strong class="kpi-val text-orange" id="kpiTotalQueimas">--</strong>
+                    <span class="kpi-sub">Ciclos registrados</span>
+                </div>
+                <div class="historico-kpi-card">
+                    <span class="kpi-lbl">Tempo Médio</span>
+                    <strong class="kpi-val text-blue" id="kpiTempoMedio">8h 45m</strong>
+                    <span class="kpi-sub">Ciclo completo</span>
+                </div>
+                <div class="historico-kpi-card">
+                    <span class="kpi-lbl">Pico Médio</span>
+                    <strong class="kpi-val" id="kpiPicoMedio">-- °C</strong>
+                    <span class="kpi-sub">Queima nominal</span>
+                </div>
+                <div class="historico-kpi-card">
+                    <span class="kpi-lbl">Conformidade</span>
+                    <strong class="kpi-val text-green" id="kpiTaxaSucesso">100%</strong>
+                    <span class="kpi-sub">No padrão de queima</span>
+                </div>
+            </div>
+
+            <!-- FILTRO POR FORNO NO HISTÓRICO -->
+            <div class="card-dark filters-control-card">
+                <div class="filter-row">
+                    <span class="filter-row-title"><i class="fa-solid fa-fire text-orange"></i> Filtrar Forno:</span>
+                    <div class="filter-pill-scroll" id="histFiltroForno">
+                        <button class="pill-btn active" onclick="filtrarHistoricoForno('all', this)">Todos</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LISTAGEM DOS CICLOS DE QUEIMA ANTERIORES -->
+            <div id="listaQueimasHistorico" class="historico-queimas-container">
+                <div class="loading-box">
+                    <div class="app-spinner"></div>
+                    <p>Consultando histórico de queimas...</p>
                 </div>
             </div>
 
@@ -633,8 +524,8 @@
                 <span>Fornos</span>
             </button>
             <button class="tab-item" id="tabNavHistorico" onclick="navegarAba('historico')">
-                <i class="fa-solid fa-chart-line"></i>
-                <span>Análise</span>
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span>Histórico</span>
             </button>
             <button class="tab-item" id="tabNavConfig" onclick="navegarAba('config')">
                 <i class="fa-solid fa-gear"></i>
@@ -679,6 +570,84 @@
         </div>
     </div>
 
+</div>
+
+<!-- ========================================================
+     MODAL FULLSCREEN LANDSCAPE DO GRÁFICO (DE LADO NO CELULAR)
+========================================================= -->
+<div id="modalGraficoLandscape" class="modal-landscape-view hidden">
+    <div class="landscape-header-bar">
+        <div class="landscape-header-left">
+            <button class="btn-landscape-close" onclick="fecharGraficoLandscape()" title="Voltar / Sair do modo horizontal">
+                <i class="fa-solid fa-arrow-left"></i>
+                <span>Voltar</span>
+            </button>
+            <div class="landscape-title-group">
+                <span class="landscape-title" id="landFornoTitle">Forno 01</span>
+                <span class="status-indicator-badge is-online" id="landStatusBadge">
+                    <span class="pulse-dot"></span>
+                    <span id="landStatusText">ONLINE</span>
+                </span>
+            </div>
+        </div>
+
+        <!-- LEITURA DINÂMICA AO TOCAR/ARRASTAR NO GRÁFICO -->
+        <div class="landscape-readout-pill" id="landReadoutPill">
+            <span class="readout-time" id="landReadoutTime">Toque na linha para inspecionar</span>
+            <span class="readout-c1 text-orange" id="landReadoutC1">C1: -- °C</span>
+            <span class="readout-c2 text-blue" id="landReadoutC2">C2: -- °C</span>
+            <span class="readout-delta" id="landReadoutDelta">ΔT: --</span>
+        </div>
+
+        <div class="landscape-header-right">
+            <!-- SELETOR DE CANAIS -->
+            <div class="landscape-pill-group" id="landChannelFilter">
+                <button class="pill-btn active" onclick="filtrarCanaisLandscape('all', this)">Ambos</button>
+                <button class="pill-btn" onclick="filtrarCanaisLandscape('c1', this)">C1</button>
+                <button class="pill-btn" onclick="filtrarCanaisLandscape('c2', this)">C2</button>
+            </div>
+
+            <!-- CONTROLES DE ZOOM E NAVEGAÇÃO -->
+            <div class="landscape-tools">
+                <button class="land-tool-btn" onclick="panGrafico('left')" title="Navegar para leituras anteriores (passado)">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button class="land-tool-btn" onclick="zoomGrafico(1.35)" title="Aproximar zoom (+)">
+                    <i class="fa-solid fa-magnifying-glass-plus"></i>
+                </button>
+                <button class="land-tool-btn" onclick="zoomGrafico(0.75)" title="Afastar zoom (-)">
+                    <i class="fa-solid fa-magnifying-glass-minus"></i>
+                </button>
+                <button class="land-tool-btn" onclick="panGrafico('right')" title="Navegar para leituras recentes (tempo real)">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <button class="land-tool-btn reset" onclick="resetZoomGrafico()" title="Restaurar visualização">
+                    <i class="fa-solid fa-rotate-left"></i>
+                </button>
+            </div>
+
+            <button class="btn-landscape-icon-close" onclick="fecharGraficoLandscape()" title="Fechar tela cheia">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="landscape-canvas-wrapper" id="landCanvasWrapper">
+        <canvas id="landscapeChartCanvas"></canvas>
+    </div>
+
+    <div class="landscape-footer-bar">
+        <div class="landscape-footer-hint">
+            <i class="fa-solid fa-arrows-left-right"></i>
+            <span>Arraste para navegar no tempo • Use pinça ou botões para zoom • Toque na linha para ver valores</span>
+        </div>
+        <div class="landscape-footer-stats">
+            <span class="land-stat-tag pico"><i class="fa-solid fa-fire text-orange"></i> Pico: <b id="landStatPico">-- °C</b></span>
+            <span class="land-stat-tag min"><i class="fa-solid fa-snowflake text-blue"></i> Mín: <b id="landStatMin">-- °C</b></span>
+            <span class="land-stat-tag avg"><i class="fa-solid fa-chart-line text-green"></i> Média: <b id="landStatAvg">-- °C</b></span>
+            <span class="land-stat-tag count"><i class="fa-solid fa-layer-group"></i> <b id="landStatCount">--</b></span>
+        </div>
+    </div>
 </div>
 
 <!-- Scripts da Aplicação -->
