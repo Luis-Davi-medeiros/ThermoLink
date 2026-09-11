@@ -232,6 +232,9 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         $("splashScreen").classList.add("hidden");
         $("mainApp").classList.remove("hidden");
 
+        // Garante que o aplicativo sempre abra diretamente na tela principal dos Fornos
+        voltarListaFornos();
+
         // Se a conta do cliente estiver BLOQUEADA, exibe a notificação na frente e oculta dados
         if (user.role !== "admin" && !user.isImpersonateMode && user.status === "Bloqueado") {
             const overlay = $("clientBlockedOverlay");
