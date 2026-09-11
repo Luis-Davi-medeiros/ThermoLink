@@ -1018,16 +1018,8 @@ function renderGraficoAnalise(rows) {
                     }
                 },
                 zoom: {
-                    pan: {
-                        enabled: true,
-                        mode: 'x',
-                        threshold: 0
-                    },
-                    zoom: {
-                        wheel: { enabled: true, speed: 0.1 },
-                        pinch: { enabled: true },
-                        mode: 'x'
-                    }
+                    pan: { enabled: false },
+                    zoom: { wheel: { enabled: false }, pinch: { enabled: false } }
                 }
             },
             scales: {
@@ -1046,8 +1038,11 @@ function renderGraficoAnalise(rows) {
     // Inicializa inspector com a leitura mais recente
     atualizarInspectorAnalise(rows[rows.length - 1]);
 
-    // Habilita arrasto táctil direto no canvas (Touch / Mouse)
-    habilitarArrastoCanvas("analysisChartCanvas", () => state.analysisChart);
+    // Toque no gráfico em pé abre imediatamente o modo horizontal de lado
+    canvas.onclick = () => abrirGraficoLandscape();
+
+    // Habilita gestos fluidos multi-touch (pinch-zoom + pan)
+    habilitarGestosGrafico("analysisChartCanvas", () => state.analysisChart, () => state.currentAnalysisFilteredHistory, false);
 
     if (state.isLandscapeOpen) {
         renderGraficoLandscape(rows);
@@ -1241,16 +1236,8 @@ function renderGraficoLandscape(rows) {
                     }
                 },
                 zoom: {
-                    pan: {
-                        enabled: true,
-                        mode: 'x',
-                        threshold: 0
-                    },
-                    zoom: {
-                        wheel: { enabled: true, speed: 0.1 },
-                        pinch: { enabled: true },
-                        mode: 'x'
-                    }
+                    pan: { enabled: false },
+                    zoom: { wheel: { enabled: false }, pinch: { enabled: false } }
                 }
             },
             scales: {
@@ -1267,7 +1254,7 @@ function renderGraficoLandscape(rows) {
     });
 
     atualizarPillLeituraLandscape(rows[rows.length - 1]);
-    habilitarArrastoCanvas("landscapeChartCanvas", () => state.landscapeChart);
+    habilitarGestosGrafico("landscapeChartCanvas", () => state.landscapeChart, () => state.currentAnalysisFilteredHistory, true);
 }
 
 function atualizarPillLeituraLandscape(item) {
@@ -1434,88 +1421,283 @@ function resetZoomGrafico() {
     chart.update('none');
 }
 
-// ARRASTO TÁCTIL DIRETO NO CANVAS (TOUCH & MOUSE 1:1 ULTRA RESPONSIVO)
-const _canvasDragMap = new Set();
+// MOTOR DE GESTOS MULTI-TOUCH FLUIDO (PINCH-TO-ZOOM COM 2 DEDOS + PAN COM 1 DEDO)
+const _canvasGesturesBound = new Set();
 
-function habilitarArrastoCanvas(canvasId, getChartFn) {
+function habilitarGestosGrafico(canvasId, getChartFn, getRowsFn, isLandscape) {
     const canvas = $(canvasId);
-    if (!canvas || _canvasDragMap.has(canvasId)) return;
-    _canvasDragMap.add(canvasId);
+    if (!canvas || _canvasGesturesBound.has(canvasId)) return;
+    _canvasGesturesBound.add(canvasId);
 
-    let isDragging = false;
+    let touchMode = "none"; // "none" | "pan" | "pinch"
     let startX = 0;
     let initialMin = 0;
     let initialMax = 0;
-    let span = 0;
-    let total = 0;
+    let initialSpan = 0;
+    let initialDist = 0;
+    let centerIndex = 0;
+    let centerRatio = 0.5;
+    let hasMoved = false;
 
-    canvas.addEventListener("pointerdown", (e) => {
+    const getScale = () => {
         const chart = getChartFn();
-        if (!chart || !chart.data || !chart.data.labels || !chart.data.labels.length) return;
-
-        total = chart.data.labels.length;
-        if (total <= 1) return;
-
+        if (!chart || !chart.data || !chart.data.labels || !chart.data.labels.length) return null;
+        const total = chart.data.labels.length;
+        if (total <= 1) return null;
         const scale = chart.scales.x;
-        initialMin = (typeof scale.min === 'number') ? scale.min : 0;
-        initialMax = (typeof scale.max === 'number') ? scale.max : (total - 1);
-        span = initialMax - initialMin;
+        if (!scale) return null;
+        const min = (typeof scale.min === "number") ? scale.min : 0;
+        const max = (typeof scale.max === "number") ? scale.max : (total - 1);
+        return { chart, scale, total, min, max, span: Math.max(1, max - min) };
+    };
 
-        // Se estiver em 100% visível, ao começar a arrastar cria foco inicial
-        if (span >= total - 1) {
-            span = Math.max(5, Math.min(35, Math.round(total * 0.4)));
+    // TOUCH START
+    canvas.addEventListener("touchstart", (e) => {
+        const s = getScale();
+        if (!s) return;
+
+        hasMoved = false;
+
+        if (e.touches.length === 1) {
+            // 1 Dedo: prepara arrasto
+            touchMode = "pan";
+            startX = e.touches[0].clientX;
+            initialMin = s.min;
+            initialMax = s.max;
+            initialSpan = s.span;
+        } else if (e.touches.length >= 2) {
+            // 2 Dedos: prepara PINCH-TO-ZOOM
+            touchMode = "pinch";
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            initialDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY) || 10;
+
             const rect = canvas.getBoundingClientRect();
-            const rel = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            initialMin = Math.max(0, Math.min(total - 1 - span, Math.round(rel * total - span / 2)));
-            initialMax = initialMin + span;
-            scale.options.min = initialMin;
-            scale.options.max = initialMax;
-            chart.update('none');
+            const centerClientX = (t1.clientX + t2.clientX) / 2;
+            centerRatio = Math.max(0, Math.min(1, (centerClientX - rect.left) / Math.max(1, rect.width)));
+
+            initialMin = s.min;
+            initialMax = s.max;
+            initialSpan = s.span;
+            centerIndex = initialMin + (initialSpan * centerRatio);
+        }
+    }, { passive: false });
+
+    // TOUCH MOVE
+    canvas.addEventListener("touchmove", (e) => {
+        const s = getScale();
+        if (!s) return;
+
+        if (touchMode === "pan" && e.touches.length === 1) {
+            const currentX = e.touches[0].clientX;
+            const dx = currentX - startX;
+
+            // Só ativa arrasto se o usuário realmente moveu o dedo (> 6px)
+            if (Math.abs(dx) > 6) {
+                hasMoved = true;
+                e.preventDefault();
+
+                // Se estiver em 100% da visualização, dá um foco de 40% inicial para começar a navegar
+                if (initialSpan >= s.total - 1) {
+                    const rect = canvas.getBoundingClientRect();
+                    const ratio = Math.max(0, Math.min(1, (startX - rect.left) / Math.max(1, rect.width)));
+                    initialSpan = Math.max(4, Math.min(40, Math.round(s.total * 0.4)));
+                    initialMin = Math.max(0, Math.min(s.total - 1 - initialSpan, Math.round(ratio * s.total - initialSpan / 2)));
+                    initialMax = initialMin + initialSpan;
+                    startX = currentX;
+                    s.scale.options.min = initialMin;
+                    s.scale.options.max = initialMax;
+                    s.chart.update("none");
+                    return;
+                }
+
+                const rect = canvas.getBoundingClientRect();
+                const unitsPerPixel = initialSpan / Math.max(1, rect.width);
+                const shiftUnits = dx * unitsPerPixel;
+
+                let newMin = Math.round(initialMin - shiftUnits);
+                let newMax = Math.round(newMin + initialSpan);
+
+                if (newMin < 0) {
+                    newMin = 0;
+                    newMax = Math.min(s.total - 1, initialSpan);
+                } else if (newMax > s.total - 1) {
+                    newMax = s.total - 1;
+                    newMin = Math.max(0, s.total - 1 - initialSpan);
+                }
+
+                s.scale.options.min = newMin;
+                s.scale.options.max = newMax;
+                s.chart.update("none");
+            }
+        } else if (touchMode === "pinch" && e.touches.length >= 2) {
+            e.preventDefault();
+            hasMoved = true;
+
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const currDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY) || 10;
+            const pinchRatio = currDist / Math.max(1, initialDist);
+
+            // pinchRatio > 1 => dedos se afastando => ZOOM IN (span menor)
+            // pinchRatio < 1 => dedos se aproximando => ZOOM OUT (span maior)
+            let targetSpan = Math.round(initialSpan / pinchRatio);
+            targetSpan = Math.max(3, Math.min(s.total - 1, targetSpan));
+
+            if (targetSpan >= s.total - 1) {
+                // Afastou totalmente -> visão 100% sem travar
+                delete s.scale.options.min;
+                delete s.scale.options.max;
+                s.chart.update("none");
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const currCenterClientX = (t1.clientX + t2.clientX) / 2;
+            const currCenterRatio = Math.max(0, Math.min(1, (currCenterClientX - rect.left) / Math.max(1, rect.width)));
+
+            let newMin = Math.round(centerIndex - (targetSpan * currCenterRatio));
+            let newMax = Math.round(newMin + targetSpan);
+
+            if (newMin < 0) {
+                newMin = 0;
+                newMax = Math.min(s.total - 1, targetSpan);
+            }
+            if (newMax > s.total - 1) {
+                newMax = s.total - 1;
+                newMin = Math.max(0, s.total - 1 - targetSpan);
+            }
+
+            s.scale.options.min = newMin;
+            s.scale.options.max = newMax;
+            s.chart.update("none");
+        }
+    }, { passive: false });
+
+    // TOUCH END
+    const onTouchEnd = (e) => {
+        if (!hasMoved && touchMode === "pan" && e.changedTouches && e.changedTouches.length === 1) {
+            // Toque simples (sem arrastar)
+            if (isLandscape) {
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.changedTouches[0].clientX - rect.left;
+                const ratio = Math.max(0, Math.min(1, clickX / Math.max(1, rect.width)));
+                const s = getScale();
+                if (s) {
+                    const idx = Math.max(0, Math.min(s.total - 1, Math.round(s.min + (s.span * ratio))));
+                    const rows = getRowsFn ? getRowsFn() : [];
+                    if (rows && rows[idx]) {
+                        atualizarPillLeituraLandscape(rows[idx]);
+                    }
+                }
+            } else {
+                abrirGraficoLandscape();
+            }
         }
 
-        isDragging = true;
-        startX = e.clientX;
-        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
-    });
-
-    canvas.addEventListener("pointermove", (e) => {
-        if (!isDragging) return;
-        const chart = getChartFn();
-        if (!chart || !chart.scales.x) return;
-
-        const dx = e.clientX - startX;
-        if (Math.abs(dx) < 2) return;
-
-        const rect = canvas.getBoundingClientRect();
-        const pxPerUnit = Math.max(1, rect.width / Math.max(1, span));
-        const shiftUnits = Math.round(dx / pxPerUnit);
-
-        let newMin = initialMin - shiftUnits;
-        let newMax = initialMax - shiftUnits;
-
-        if (newMin < 0) {
-            newMin = 0;
-            newMax = Math.min(total - 1, span);
-        } else if (newMax > total - 1) {
-            newMax = total - 1;
-            newMin = Math.max(0, total - 1 - span);
-        }
-
-        const scale = chart.scales.x;
-        scale.options.min = newMin;
-        scale.options.max = newMax;
-        chart.update('none');
-    });
-
-    const finishDrag = (e) => {
-        if (isDragging) {
-            isDragging = false;
-            try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (e.touches.length === 0) {
+            touchMode = "none";
+            hasMoved = false;
+        } else if (e.touches.length === 1) {
+            // Tirou um dedo do pinch: continua em pan suave sem saltar
+            touchMode = "pan";
+            startX = e.touches[0].clientX;
+            const s = getScale();
+            if (s) {
+                initialMin = s.min;
+                initialMax = s.max;
+                initialSpan = s.span;
+            }
         }
     };
 
-    canvas.addEventListener("pointerup", finishDrag);
-    canvas.addEventListener("pointercancel", finishDrag);
+    canvas.addEventListener("touchend", onTouchEnd);
+    canvas.addEventListener("touchcancel", onTouchEnd);
+
+    // MOUSE DRAG (DESKTOP)
+    let isMouseDown = false;
+    let mouseStartX = 0;
+    let mouseInitialMin = 0;
+    let mouseInitialSpan = 0;
+
+    canvas.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        const s = getScale();
+        if (!s) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseInitialMin = s.min;
+        mouseInitialSpan = s.span;
+    });
+
+    window.addEventListener("mousemove", (e) => {
+        if (!isMouseDown) return;
+        const s = getScale();
+        if (!s) return;
+
+        const dx = e.clientX - mouseStartX;
+        if (Math.abs(dx) < 3) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const unitsPerPixel = mouseInitialSpan / Math.max(1, rect.width);
+        const shiftUnits = dx * unitsPerPixel;
+
+        let newMin = Math.round(mouseInitialMin - shiftUnits);
+        let newMax = Math.round(newMin + mouseInitialSpan);
+
+        if (newMin < 0) {
+            newMin = 0;
+            newMax = Math.min(s.total - 1, mouseInitialSpan);
+        } else if (newMax > s.total - 1) {
+            newMax = s.total - 1;
+            newMin = Math.max(0, s.total - 1 - mouseInitialSpan);
+        }
+
+        s.scale.options.min = newMin;
+        s.scale.options.max = newMax;
+        s.chart.update("none");
+    });
+
+    window.addEventListener("mouseup", () => {
+        isMouseDown = false;
+    });
+
+    // MOUSE WHEEL ZOOM (DESKTOP)
+    canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const s = getScale();
+        if (!s) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const cursorRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+        const centerIndex = s.min + (s.span * cursorRatio);
+
+        const zoomFactor = e.deltaY < 0 ? 0.8 : 1.25;
+        const targetSpan = Math.max(4, Math.min(s.total - 1, Math.round(s.span * zoomFactor)));
+
+        if (targetSpan >= s.total - 1) {
+            delete s.scale.options.min;
+            delete s.scale.options.max;
+            s.chart.update("none");
+            return;
+        }
+
+        let newMin = Math.round(centerIndex - (targetSpan * cursorRatio));
+        let newMax = Math.round(newMin + targetSpan);
+
+        if (newMin < 0) {
+            newMin = 0;
+            newMax = Math.min(s.total - 1, targetSpan);
+        }
+        if (newMax > s.total - 1) {
+            newMax = s.total - 1;
+            newMin = Math.max(0, s.total - 1 - targetSpan);
+        }
+
+        s.scale.options.min = newMin;
+        s.scale.options.max = newMax;
+        s.chart.update("none");
+    }, { passive: false });
 }
 
 // PRESSIONAMENTO CONTÍNUO DOS BOTÕES DE NAVEGAÇÃO (SEGURAR O BOTÃO NAVEGA CONTINUAMENTE)

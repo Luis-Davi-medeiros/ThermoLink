@@ -301,8 +301,12 @@
                     <span class="readout-delta"><i class="fa-solid fa-arrows-split-up-and-left"></i> ΔT: <b id="anReadoutDelta">--</b></span>
                 </div>
 
-                <div class="chart-canvas-box interactive-canvas-box" id="analysisChartBox">
+                <div class="chart-canvas-box interactive-canvas-box" id="analysisChartBox" onclick="abrirGraficoLandscape()" title="Toque no gráfico para ver de lado">
                     <canvas id="analysisChartCanvas"></canvas>
+                    <div class="chart-tap-fullscreen-hint">
+                        <i class="fa-solid fa-mobile-screen-button fa-rotate-90"></i>
+                        <span>Toque no gráfico para ver de lado</span>
+                    </div>
                 </div>
 
                 <div class="chart-legend-custom">

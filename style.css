@@ -2913,15 +2913,43 @@ button {
 }
 
 .interactive-canvas-box {
-    cursor: grab;
+    cursor: pointer;
     position: relative;
     user-select: none;
     -webkit-user-select: none;
     touch-action: none !important;
 }
 
-.interactive-canvas-box:active {
-    cursor: grabbing;
+.chart-tap-fullscreen-hint {
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    background: rgba(4, 18, 29, 0.88);
+    border: 1px solid rgba(244, 123, 32, 0.4);
+    color: #f1f5f9;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease;
+}
+
+.chart-tap-fullscreen-hint i {
+    color: var(--orange);
+    font-size: 12px;
+}
+
+.interactive-canvas-box:hover .chart-tap-fullscreen-hint {
+    background: rgba(244, 123, 32, 0.25);
+    border-color: var(--orange);
+    color: #ffffff;
+    transform: translateY(-1px);
 }
 
 #analysisChartCanvas {
