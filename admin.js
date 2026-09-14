@@ -373,11 +373,6 @@ function trocarSecaoAdmin(secao) {
         b.classList.toggle("active", onclickAttr.includes(`'${secao}'`));
     });
 
-    // Atualiza botões da Bottom Navigation Mobile
-    document.querySelectorAll(".bottom-nav-btn").forEach(b => {
-        b.classList.toggle("active", b.dataset.section === secao);
-    });
-
     // Oculta todas as seções
     $("secDashboard")?.classList.add("hidden");
     $("secClientes")?.classList.add("hidden");
@@ -415,39 +410,46 @@ function trocarSecaoAdmin(secao) {
         $("secPlanos")?.classList.remove("hidden");
     }
 
-    // Fecha sidebar e backdrop no mobile
-    const sidebar = document.querySelector(".admin-sidebar");
-    if (sidebar) sidebar.classList.remove("mobile-open");
-    $("sidebarBackdrop")?.classList.add("hidden");
+    // Atualiza estado ativo na sidebar e na bottom bar móvel
+    document.querySelectorAll(".nav-btn").forEach(btn => {
+        if (btn.getAttribute("data-secao") === secao) {
+            btn.classList.add("active");
+        } else {
+            btn.classList.remove("active");
+        }
+    });
 
-    // Rola para o topo suavemente
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.querySelectorAll(".mobile-nav-item").forEach(item => {
+        if (item.getAttribute("data-secao") === secao) {
+            item.classList.add("active");
+        } else {
+            item.classList.remove("active");
+        }
+    });
+
+    // Fecha sidebar no mobile se estiver aberta
+    fecharSidebarMobile();
 }
 
-function toggleSidebarMobile(forceState) {
+function fecharSidebarMobile() {
     const sidebar = document.querySelector(".admin-sidebar");
-    const backdrop = $("sidebarBackdrop");
-    if (!sidebar) return;
+    const backdrop = document.getElementById("sidebarBackdrop");
+    if (sidebar) sidebar.classList.remove("mobile-open");
+    if (backdrop) backdrop.classList.remove("show");
+    document.body.classList.remove("sidebar-mobile-locked");
+}
 
-    const isOpen = typeof forceState === "boolean" 
-        ? !forceState 
-        : sidebar.classList.contains("mobile-open");
-
-    if (isOpen) {
-        sidebar.classList.remove("mobile-open");
-        backdrop?.classList.add("hidden");
-    } else {
-        sidebar.classList.add("mobile-open");
-        backdrop?.classList.remove("hidden");
+function toggleSidebarMobile() {
+    const sidebar = document.querySelector(".admin-sidebar");
+    const backdrop = document.getElementById("sidebarBackdrop");
+    if (sidebar) {
+        const isOpen = sidebar.classList.toggle("mobile-open");
+        if (backdrop) {
+            backdrop.classList.toggle("show", isOpen);
+        }
+        document.body.classList.toggle("sidebar-mobile-locked", isOpen);
     }
 }
-
-// Redimensionamento fluído dos gráficos do Chart.js
-window.addEventListener("resize", () => {
-    if (adminState.trafficChart) adminState.trafficChart.resize();
-    if (adminState.dailyAccessChart) adminState.dailyAccessChart.resize();
-    if (adminState.hourlyDistributionChart) adminState.hourlyDistributionChart.resize();
-});
 
 // ==========================================================================
 // 4. RENDERIZAÇÃO DO DASHBOARD GERAL
@@ -458,19 +460,22 @@ function renderDashboardGeral() {
     const devices = getDevices();
 
     // KPIs
+    const totalMRR = clients
+        .filter(c => c.status === "Ativo")
+        .reduce((acc, c) => acc + (Number(c.valorMensal) || 0), 0);
+
     const ativas = clients.filter(c => c.status === "Ativo");
-    const mrr = ativas.reduce((acc, c) => acc + (c.valorMensal || 0), 0);
     const onlineDevs = devices.filter(d => d.status === "Vinculado");
 
-    $("kpiTotalClients").textContent = clients.length;
-    $("kpiActiveClientsCount").textContent = `${ativas.length} ativas`;
-    $("sidebarBadgeClients").textContent = clients.length;
+    if ($("kpiTotalClients")) $("kpiTotalClients").textContent = clients.length;
+    if ($("kpiActiveClientsCount")) $("kpiActiveClientsCount").textContent = `${ativas.length} ativas`;
+    if ($("sidebarBadgeClients")) $("sidebarBadgeClients").textContent = clients.length;
 
-    $("kpiTotalDevices").textContent = devices.length;
-    $("kpiOnlineDevicesCount").textContent = `${onlineDevs.length} em operação`;
+    if ($("kpiTotalDevices")) $("kpiTotalDevices").textContent = devices.length;
+    if ($("kpiOnlineDevicesCount")) $("kpiOnlineDevicesCount").textContent = `${onlineDevs.length} vinculados`;
 
-    $("kpiTotalRevenue").textContent = `R$ ${mrr.toLocaleString("pt-BR")}`;
-    $("kpiTotalAlerts").textContent = "0";
+    if ($("kpiTotalRevenue")) $("kpiTotalRevenue").textContent = `R$ ${totalMRR.toLocaleString("pt-BR")}`;
+    if ($("kpiTotalAlerts")) $("kpiTotalAlerts").textContent = "0";
 
     // Activity Feed
     const feed = $("activityFeedList");
@@ -598,8 +603,8 @@ function renderTabelaClientes() {
                 <td><span style="color:#0ea5e9; font-weight:700;">${c.plano}</span></td>
                 <td><b>${c.fornosCount}</b> Fornos</td>
                 <td>${statusBadge}</td>
-                <td style="font-size:12px; color:#94a3b8;">${c.ultimoAcesso}</td>
-                <td style="text-align: right;">
+                <td><span style="font-size:12px; color:#94a3b8;">${c.ultimoAcesso}</span></td>
+                <td>
                     <div class="actions-cell">
                         <button class="btn-tbl-action btn-impersonate" onclick="impersonateCeramica('${c.id}')" title="Entrar no Dashboard desta Cerâmica">
                             <i class="fa-solid fa-eye"></i>
@@ -903,8 +908,8 @@ function renderTabelaDispositivos() {
                 <td>${statusBadge}</td>
                 <td><b>${escapeHtml(d.ceramicaNome || "--")}</b></td>
                 <td>${d.moduloNum ? `<span style="color:#38bdf8; font-weight:700;">Forno ${String(d.moduloNum).padStart(2, '0')}</span>` : "--"}</td>
-                <td style="font-size:12px; color:#64748b;">${d.dataFabricacao}</td>
-                <td style="text-align: right;">
+                <td><span style="font-size:12px; color:#64748b;">${d.dataFabricacao}</span></td>
+                <td>
                     <div class="actions-cell">
                         <button class="btn-tbl-action ${isDisponivel ? 'btn-vincular-novo' : 'btn-vincular-edit'}" onclick="abrirModalVincularDispositivo('${d.serial}')" title="${isDisponivel ? 'Vincular este aparelho a uma Cerâmica' : 'Alterar Cerâmica / Forno Vinculado'}">
                             <i class="fa-solid fa-link"></i>
@@ -1956,7 +1961,7 @@ function renderTabelaAtividadeUsuarios(usersList, periodLogs) {
                             <i class="fa-solid fa-industry"></i>
                         </div>
                         <div>
-                            <b class="user-cell-title">${escapeHtml(u.nome || u.usuario)}</b>
+                            <b>${escapeHtml(u.nome || u.usuario)}</b>
                             <div class="user-cell-sub">
                                 <span><i class="fa-regular fa-user"></i> ${escapeHtml(u.usuario)}</span>
                                 ${u.responsavel && u.responsavel !== "--" ? `<span>• ${escapeHtml(u.responsavel)}</span>` : ""}
@@ -1992,11 +1997,13 @@ function renderTabelaAtividadeUsuarios(usersList, periodLogs) {
                     </div>
                 </td>
                 <td>${ipDisplay}</td>
-                <td style="text-align: right;">
-                    <button class="btn-tbl-action btn-hist-sessions" onclick="abrirHistoricoUsuario('${uParam}')" title="Ver histórico completo de sessões">
-                        <i class="fa-solid fa-clock-rotate-left"></i>
-                        <span>Histórico</span>
-                    </button>
+                <td>
+                    <div class="actions-cell">
+                        <button class="btn-tbl-action btn-hist-sessions" onclick="abrirHistoricoUsuario('${uParam}')" title="Ver histórico completo de sessões">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                            <span>Histórico de Sessões</span>
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;

@@ -2,8 +2,13 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#07121f">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <title>ThermoLink • Painel Master Admin</title>
 
     <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
@@ -70,11 +75,9 @@
 ========================================================= -->
 <div class="admin-layout" id="adminMainLayout">
 
-    <!-- BACKDROP PARA SIDEBAR MOBILE -->
-    <div id="sidebarBackdrop" class="sidebar-backdrop hidden" onclick="toggleSidebarMobile()"></div>
-
     <!-- SIDEBAR DE NAVEGAÇÃO -->
-    <aside class="admin-sidebar">
+    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebarMobile()"></div>
+    <aside class="admin-sidebar" id="adminSidebar">
         <div class="sidebar-header">
             <div class="brand-badge-box">
                 <i class="fa-solid fa-fire-flame-curved"></i>
@@ -83,36 +86,36 @@
                 <div class="brand-title">ThermoLink</div>
                 <div class="brand-tag">MASTER ADMIN</div>
             </div>
-            <button class="btn-sidebar-close" onclick="toggleSidebarMobile()" title="Fechar Menu">
+            <button class="btn-sidebar-close-mobile" onclick="toggleSidebarMobile()" aria-label="Fechar Menu">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
 
         <nav class="sidebar-nav">
             <div class="nav-section-label">GERAL & NEGÓCIOS</div>
-            <button class="nav-btn active" onclick="trocarSecaoAdmin('dashboard')">
+            <button class="nav-btn active" data-secao="dashboard" onclick="trocarSecaoAdmin('dashboard')">
                 <i class="fa-solid fa-chart-pie"></i>
                 <span>Dashboard Geral</span>
             </button>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('clientes')">
+            <button class="nav-btn" data-secao="clientes" onclick="trocarSecaoAdmin('clientes')">
                 <i class="fa-solid fa-industry"></i>
                 <span>Cerâmicas & Clientes</span>
                 <span class="nav-badge" id="sidebarBadgeClients">3</span>
             </button>
 
             <div class="nav-section-label">HARDWARE & PRODUÇÃO</div>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('dispositivos')">
+            <button class="nav-btn" data-secao="dispositivos" onclick="trocarSecaoAdmin('dispositivos')">
                 <i class="fa-solid fa-microchip"></i>
                 <span>Fábrica & QR Codes</span>
             </button>
 
             <div class="nav-section-label">GESTÃO & SISTEMA</div>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('atividade')">
+            <button class="nav-btn" data-secao="atividade" onclick="trocarSecaoAdmin('atividade')">
                 <i class="fa-solid fa-users-viewfinder"></i>
                 <span>Atividade dos Usuários</span>
                 <span class="nav-badge nav-badge-green" id="sidebarBadgeOnline">--</span>
             </button>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('planos')">
+            <button class="nav-btn" data-secao="planos" onclick="trocarSecaoAdmin('planos')">
                 <i class="fa-solid fa-sliders"></i>
                 <span>Planos & Retenção</span>
             </button>
@@ -620,6 +623,30 @@
 
         </div>
 
+        <!-- BARRA DE NAVEGAÇÃO INFERIOR EXCLUSIVA PARA CELULAR -->
+        <nav class="admin-mobile-nav" id="adminMobileNav">
+            <button class="mobile-nav-item active" data-secao="dashboard" onclick="trocarSecaoAdmin('dashboard')">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>Geral</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="clientes" onclick="trocarSecaoAdmin('clientes')">
+                <i class="fa-solid fa-industry"></i>
+                <span>Clientes</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="dispositivos" onclick="trocarSecaoAdmin('dispositivos')">
+                <i class="fa-solid fa-microchip"></i>
+                <span>Fábrica</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="atividade" onclick="trocarSecaoAdmin('atividade')">
+                <i class="fa-solid fa-users-viewfinder"></i>
+                <span>Acessos</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="planos" onclick="trocarSecaoAdmin('planos')">
+                <i class="fa-solid fa-sliders"></i>
+                <span>Planos</span>
+            </button>
+        </nav>
+
     </main>
 
 </div>
@@ -884,30 +911,6 @@
         </div>
     </div>
 </div>
-
-<!-- BARRA DE NAVEGAÇÃO INFERIOR PARA CELULARES (MOBILE BOTTOM NAV) -->
-<nav class="admin-bottom-nav" id="adminBottomNav">
-    <button class="bottom-nav-btn active" data-section="dashboard" onclick="trocarSecaoAdmin('dashboard')">
-        <i class="fa-solid fa-chart-pie"></i>
-        <span>Dashboard</span>
-    </button>
-    <button class="bottom-nav-btn" data-section="clientes" onclick="trocarSecaoAdmin('clientes')">
-        <i class="fa-solid fa-industry"></i>
-        <span>Clientes</span>
-    </button>
-    <button class="bottom-nav-btn" data-section="dispositivos" onclick="trocarSecaoAdmin('dispositivos')">
-        <i class="fa-solid fa-microchip"></i>
-        <span>Aparelhos</span>
-    </button>
-    <button class="bottom-nav-btn" data-section="atividade" onclick="trocarSecaoAdmin('atividade')">
-        <i class="fa-solid fa-users-viewfinder"></i>
-        <span>Acessos</span>
-    </button>
-    <button class="bottom-nav-btn" data-section="planos" onclick="trocarSecaoAdmin('planos')">
-        <i class="fa-solid fa-sliders"></i>
-        <span>Planos</span>
-    </button>
-</nav>
 
 <!-- Scripts do Painel Master -->
 <script src="admin.js"></script>
