@@ -256,7 +256,8 @@ ON CONFLICT (id) DO UPDATE SET
 INSERT INTO public.ceramicas (id, nome, responsavel, cidade, plano, valor_mensal, fornos_count, status, username, senha)
 VALUES
     ('cli_1', 'Cerâmica São José', 'Carlos Eduardo', 'Tatuí - SP', 'Profissional', 299.00, 4, 'Ativo', 'ceramica', 'forno2026'),
-    ('cli_2', 'Cerâmica Santa Rita', 'Marcos Silva', 'Itu - SP', 'Básico', 149.00, 2, 'Ativo', 'santarita', 'cer8492')
+    ('cli_2', 'Cerâmica Santa Rita', 'Marcos Silva', 'Itu - SP', 'Básico', 149.00, 2, 'Ativo', 'santarita', 'cer8492'),
+    ('cli_3', 'Cerâmica Paulista', 'Roberto Almeida', 'Itu - SP', 'Básico', 149.00, 2, 'Ativo', 'paulista', 'cer3910')
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Dispositivos com ID numérico idêntico ao THX:
@@ -282,3 +283,54 @@ UPDATE public.leituras
 SET ceramica_id = 'cli_1788920539236'
 WHERE (numero_serie = 'THX-00003' OR dispositivo_id = 3)
   AND (ceramica_id IS NULL OR ceramica_id <> 'cli_1788920539236');
+
+-- ==============================================================================
+-- 7. TABELA: ACESSOS DOS USUÁRIOS (SESSÕES, AUDITORIA & RLS)
+-- ==============================================================================
+ALTER TABLE IF EXISTS public.ceramicas ADD COLUMN IF NOT EXISTS total_acessos INT DEFAULT 0;
+
+-- Remove trava de chave estrangeira caso já tenha sido criada
+ALTER TABLE IF EXISTS public.acessos_usuarios DROP CONSTRAINT IF EXISTS acessos_usuarios_ceramica_id_fkey;
+
+CREATE TABLE IF NOT EXISTS public.acessos_usuarios (
+    id                  BIGSERIAL PRIMARY KEY,
+    session_token       TEXT,
+    usuario             TEXT NOT NULL,
+    nome                TEXT,
+    ceramica_id         TEXT,
+    role                TEXT DEFAULT 'client',
+    login_em            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ultimo_acesso       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    quantidade_acessos  INT DEFAULT 1,
+    dispositivo         TEXT DEFAULT 'Dispositivo Móvel',
+    navegador           TEXT DEFAULT 'Navegador Web',
+    sistema_operacional TEXT DEFAULT 'Indefinido',
+    ip_acesso           TEXT DEFAULT 'Não identificado',
+    user_agent          TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_acessos_usuario ON public.acessos_usuarios(usuario);
+CREATE INDEX IF NOT EXISTS idx_acessos_ceramica_id ON public.acessos_usuarios(ceramica_id);
+CREATE INDEX IF NOT EXISTS idx_acessos_ultimo_acesso ON public.acessos_usuarios(ultimo_acesso DESC);
+CREATE INDEX IF NOT EXISTS idx_acessos_login_em ON public.acessos_usuarios(login_em DESC);
+CREATE INDEX IF NOT EXISTS idx_acessos_created_at ON public.acessos_usuarios(created_at DESC);
+
+ALTER TABLE public.acessos_usuarios ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "permitir_inserir_acessos" ON public.acessos_usuarios;
+CREATE POLICY "permitir_inserir_acessos" ON public.acessos_usuarios
+    FOR INSERT TO anon, authenticated
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "permitir_atualizar_acessos" ON public.acessos_usuarios;
+CREATE POLICY "permitir_atualizar_acessos" ON public.acessos_usuarios
+    FOR UPDATE TO anon, authenticated
+    USING (true)
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "permitir_leitura_acessos" ON public.acessos_usuarios;
+CREATE POLICY "permitir_leitura_acessos" ON public.acessos_usuarios
+    FOR SELECT TO anon, authenticated
+    USING (true);
+

@@ -99,6 +99,260 @@ function toggleSenha(inputId) {
     }
 }
 
+// ==========================================================================
+// MONITORAMENTO & TELEMETRIA DE ACESSO DO USUÁRIO
+// ==========================================================================
+const AccessTelemetry = {
+    heartbeatTimer: null,
+    currentSessionToken: null,
+
+    detectarDispositivo() {
+        const ua = navigator.userAgent || "";
+        const isTouch = navigator.maxTouchPoints > 0;
+        const width = window.screen?.width || window.innerWidth;
+
+        if (/iPad/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
+            return "Tablet (iPad)";
+        }
+        if (/Tablet|Android/i.test(ua) && !/Mobile/i.test(ua)) {
+            return "Tablet";
+        }
+        if (/iPhone/i.test(ua)) {
+            return "Smartphone (iPhone)";
+        }
+        if (/Android/i.test(ua) && /Mobile/i.test(ua)) {
+            return "Smartphone (Android)";
+        }
+        if (/Mobile|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || (isTouch && width <= 768)) {
+            return "Dispositivo Móvel";
+        }
+        if (width <= 1024 && isTouch) {
+            return "Tablet / Touch";
+        }
+        return "Computador / Desktop";
+    },
+
+    detectarNavegador() {
+        const ua = navigator.userAgent || "";
+        let browser = "Navegador Web";
+        let version = "";
+
+        if (/Edg\/([0-9\.]+)/i.test(ua)) {
+            browser = "Microsoft Edge";
+            version = RegExp.$1.split(".")[0];
+        } else if (/OPR\/([0-9\.]+)/i.test(ua) || /Opera/i.test(ua)) {
+            browser = "Opera";
+            version = RegExp.$1.split(".")[0];
+        } else if (/SamsungBrowser\/([0-9\.]+)/i.test(ua)) {
+            browser = "Samsung Internet";
+            version = RegExp.$1.split(".")[0];
+        } else if (/Chrome\/([0-9\.]+)/i.test(ua)) {
+            browser = "Google Chrome";
+            version = RegExp.$1.split(".")[0];
+        } else if (/Version\/([0-9\.]+).*Safari/i.test(ua)) {
+            browser = "Safari";
+            version = RegExp.$1.split(".")[0];
+        } else if (/Firefox\/([0-9\.]+)/i.test(ua)) {
+            browser = "Mozilla Firefox";
+            version = RegExp.$1.split(".")[0];
+        }
+        return version ? `${browser} ${version}` : browser;
+    },
+
+    detectarSO() {
+        const ua = navigator.userAgent || "";
+        if (/Windows NT 10.0|Windows NT 11.0/i.test(ua)) return "Windows 10/11";
+        if (/Windows NT 6.3/i.test(ua)) return "Windows 8.1";
+        if (/Windows NT 6.1/i.test(ua)) return "Windows 7";
+        if (/Windows/i.test(ua)) return "Windows";
+        if (/Android/i.test(ua)) {
+            const m = ua.match(/Android\s([0-9\.]+)/i);
+            return m ? `Android ${m[1].split(".")[0]}` : "Android";
+        }
+        if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
+            return "iOS / iPadOS";
+        }
+        if (/Macintosh|Mac OS X/i.test(ua)) return "macOS";
+        if (/Linux/i.test(ua)) return "Linux";
+        return "Outro SO";
+    },
+
+    async obterIpAcesso() {
+        const cached = sessionStorage.getItem("thermolink_cached_ip");
+        if (cached && cached !== "Não identificado") return cached;
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2500);
+            const resp = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data && data.ip) {
+                    sessionStorage.setItem("thermolink_cached_ip", data.ip);
+                    return data.ip;
+                }
+            }
+        } catch (e) {
+            try {
+                const controller2 = new AbortController();
+                const timeoutId2 = setTimeout(() => controller2.abort(), 2000);
+                const resp2 = await fetch("https://ipapi.co/json/", { signal: controller2.signal });
+                clearTimeout(timeoutId2);
+                if (resp2.ok) {
+                    const data2 = await resp2.json();
+                    if (data2 && data2.ip) {
+                        sessionStorage.setItem("thermolink_cached_ip", data2.ip);
+                        return data2.ip;
+                    }
+                }
+            } catch (e2) {}
+        }
+        return "Não identificado";
+    },
+
+    async registrarAcesso(user, isNovoLogin = false) {
+        if (!user || !user.username) return;
+        if (user.isImpersonateMode) return;
+
+        let token = sessionStorage.getItem("thermolink_session_token");
+        if (!token || isNovoLogin) {
+            token = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+            sessionStorage.setItem("thermolink_session_token", token);
+        }
+        this.currentSessionToken = token;
+
+        const dev = this.detectarDispositivo();
+        const nav = this.detectarNavegador();
+        const so = this.detectarSO();
+        const ip = await this.obterIpAcesso();
+        const agoraIso = new Date().toISOString();
+
+        // Incrementa contagem de acessos
+        let totalAcessos = 1;
+        const accessMap = JSON.parse(localStorage.getItem("thermolink_user_access_count") || "{}");
+        const uKey = user.username.toLowerCase();
+        accessMap[uKey] = (accessMap[uKey] || 0) + 1;
+        totalAcessos = accessMap[uKey];
+        localStorage.setItem("thermolink_user_access_count", JSON.stringify(accessMap));
+
+        // Registro local para auditoria instantânea / fallback
+        const localAudit = JSON.parse(localStorage.getItem("thermolink_audit_logs") || "[]");
+        localAudit.unshift({
+            session_token: token,
+            usuario: user.username,
+            nome: user.name || user.username,
+            ceramica_id: user.ceramicaId || null,
+            role: user.role || "client",
+            login_em: agoraIso,
+            ultimo_acesso: agoraIso,
+            quantidade_acessos: totalAcessos,
+            dispositivo: dev,
+            navegador: nav,
+            sistema_operacional: so,
+            ip_acesso: ip,
+            user_agent: navigator.userAgent
+        });
+        if (localAudit.length > 200) localAudit.length = 200;
+        localStorage.setItem("thermolink_audit_logs", JSON.stringify(localAudit));
+
+        // Sincronização com o Supabase
+        try {
+            const { data: sessaoExistente } = await sb
+                .from("acessos_usuarios")
+                .select("id, quantidade_acessos")
+                .eq("session_token", token)
+                .maybeSingle();
+
+            if (sessaoExistente) {
+                await sb
+                    .from("acessos_usuarios")
+                    .update({
+                        ultimo_acesso: agoraIso,
+                        ip_acesso: ip !== "Não identificado" ? ip : undefined
+                    })
+                    .eq("id", sessaoExistente.id);
+            } else {
+                await sb
+                    .from("acessos_usuarios")
+                    .insert([{
+                        session_token: token,
+                        usuario: user.username,
+                        nome: user.name || user.username,
+                        ceramica_id: user.ceramicaId || null,
+                        role: user.role || "client",
+                        login_em: agoraIso,
+                        ultimo_acesso: agoraIso,
+                        quantidade_acessos: totalAcessos,
+                        dispositivo: dev,
+                        navegador: nav,
+                        sistema_operacional: so,
+                        ip_acesso: ip,
+                        user_agent: navigator.userAgent
+                    }]);
+            }
+
+            if (user.ceramicaId) {
+                await sb
+                    .from("ceramicas")
+                    .update({
+                        ultimo_acesso: agoraIso,
+                        total_acessos: totalAcessos
+                    })
+                    .eq("id", user.ceramicaId);
+            }
+        } catch (err) {
+            console.warn("[AccessTelemetry] Sincronização offline/cache:", err);
+        }
+
+        this.iniciarHeartbeat(user, token);
+    },
+
+    iniciarHeartbeat(user, token) {
+        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+
+        this.heartbeatTimer = setInterval(async () => {
+            if (!state.currentUser || document.visibilityState === "hidden") return;
+
+            const agora = new Date().toISOString();
+            try {
+                if (token) {
+                    await sb
+                        .from("acessos_usuarios")
+                        .update({ ultimo_acesso: agora })
+                        .eq("session_token", token);
+                }
+
+                if (user.ceramicaId) {
+                    await sb
+                        .from("ceramicas")
+                        .update({ ultimo_acesso: agora })
+                        .eq("id", user.ceramicaId);
+                }
+            } catch (e) {}
+        }, 90000);
+    },
+
+    encerrarSessao() {
+        if (this.heartbeatTimer) {
+            clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = null;
+        }
+        const token = sessionStorage.getItem("thermolink_session_token");
+        if (token) {
+            try {
+                sb.from("acessos_usuarios")
+                    .update({ ultimo_acesso: new Date().toISOString() })
+                    .eq("session_token", token)
+                    .then(() => {});
+            } catch (e) {}
+        }
+        sessionStorage.removeItem("thermolink_session_token");
+        sessionStorage.removeItem("thermolink_session_recorded");
+        this.currentSessionToken = null;
+    }
+};
+
 async function realizarLogin(e) {
     e.preventDefault();
     const userVal = $("loginUser").value.trim().toLowerCase();
@@ -196,6 +450,7 @@ async function realizarLogin(e) {
         }
 
         iniciarPainelUsuario(sessao, false);
+        AccessTelemetry.registrarAcesso(sessao, true);
     } else {
         $("loginError").textContent = "Usuário ou senha incorretos.";
         $("loginError").classList.remove("hidden");
@@ -204,6 +459,12 @@ async function realizarLogin(e) {
 
 function iniciarPainelUsuario(user, usarSplash = false) {
     state.currentUser = user;
+
+    // Registra sessão ativa e telemetria de acesso (com proteção anti-duplicação na mesma aba)
+    if (sessionStorage.getItem("thermolink_session_recorded") !== user.username) {
+        sessionStorage.setItem("thermolink_session_recorded", user.username);
+        AccessTelemetry.registrarAcesso(user, false);
+    }
 
     // Sincroniza status de bloqueio e motivo mais recente do armazenamento administrativo
     if (user.role !== "admin" && !user.isImpersonateMode) {
@@ -384,6 +645,7 @@ function sairModoSuporte() {
 }
 
 function realizarLogout() {
+    AccessTelemetry.encerrarSessao();
     localStorage.removeItem("thermolink_active_session");
     state.currentUser = null;
     $("mainApp").classList.add("hidden");

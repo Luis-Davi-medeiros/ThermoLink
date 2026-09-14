@@ -1405,6 +1405,380 @@ button {
         border: 1px solid #000000;
         padding: 5mm;
     }
+/* ==========================================================================
+   SEÇÃO: ATIVIDADE DOS USUÁRIOS
+   ========================================================================== */
+
+/* Ícones de KPI para Atividade */
+.icon-online-pulse {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--green);
+    border: 1px solid var(--green-border);
+    position: relative;
+}
+
+.icon-access-count {
+    background: rgba(14, 165, 233, 0.15);
+    color: var(--cyan);
+    border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.icon-active-users {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.icon-peak-hour {
+    background: rgba(249, 115, 22, 0.15);
+    color: var(--orange);
+    border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+/* Bolinha pulsante */
+.live-dot-green {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulseGreen 1.8s infinite;
+    display: inline-block;
+}
+
+@keyframes pulseGreen {
+    0% { transform: scale(0.95); opacity: 0.8; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); opacity: 0.8; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.pulse-dot-green {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    display: inline-block;
+    box-shadow: 0 0 8px #10b981;
+    animation: pulseGreen 1.8s infinite;
+    flex-shrink: 0;
+}
+
+/* Badge Online no menu lateral */
+.nav-badge-green {
+    background: rgba(16, 185, 129, 0.2) !important;
+    color: #34d399 !important;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+/* Wrapper de gráficos */
+.chart-wrapper-admin {
+    width: 100%;
+    height: 240px;
+    position: relative;
+    padding-top: 10px;
+}
+
+/* Tag pill laranja */
+.tag-pill-orange {
+    background: rgba(249, 115, 22, 0.15) !important;
+    color: var(--orange-light) !important;
+    border-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+/* Barra de ferramentas de atividade */
+.activity-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 16px 20px;
+    background: rgba(10, 23, 40, 0.6);
+    border-bottom: 1px solid var(--adm-border);
+}
+
+.filter-group-segmented {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.filter-group-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.custom-date-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(14, 32, 52, 0.8);
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--adm-border);
+}
+
+.custom-date-inputs input[type="date"] {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    color-scheme: dark;
+}
+
+.custom-date-inputs span {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.btn-filter-apply {
+    background: var(--orange);
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: background 0.15s ease;
+}
+
+.btn-filter-apply:hover {
+    background: var(--orange-dark);
+}
+
+.sort-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-select {
+    background: var(--adm-card-light);
+    border: 1px solid var(--adm-border);
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.admin-select:focus {
+    border-color: var(--cyan);
+}
+
+.search-flex-grow {
+    min-width: 240px;
+}
+
+/* Badges de status de conexão do usuário */
+.badge-status-online {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: var(--radius-full);
+    color: #34d399;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.badge-status-recent {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: rgba(245, 158, 11, 0.14);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: var(--radius-full);
+    color: #fbbf24;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-status-offline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: rgba(100, 116, 139, 0.15);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+    border-radius: var(--radius-full);
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Célula do Usuário */
+.user-cell-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-avatar-badge {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: rgba(14, 165, 233, 0.12);
+    border: 1px solid rgba(14, 165, 233, 0.25);
+    color: var(--cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+.user-cell-title {
+    color: #ffffff;
+    font-size: 13px;
+    display: block;
+}
+
+.user-cell-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.date-time-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+}
+
+.date-time-cell b {
+    color: #ffffff;
+}
+
+.date-time-cell span {
+    color: var(--text-gray);
+    font-size: 11px;
+}
+
+/* Contador de acessos & barra de frequência */
+.access-count-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 90px;
+}
+
+.access-count-cell b {
+    font-size: 14px;
+    color: #ffffff;
+}
+
+.access-meter-bar {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.access-meter-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan) 0%, var(--orange) 100%);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+/* Célula de Dispositivo */
+.device-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.device-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.device-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* IP Badges */
+.ip-pill-mono {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: rgba(14, 32, 52, 0.85);
+    border: 1px solid var(--adm-border);
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: var(--orange-light);
+    letter-spacing: 0.02em;
+}
+
+.ip-pill-muted {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* Botão de Histórico de Sessões */
+.btn-hist-sessions {
+    background: rgba(249, 115, 22, 0.12);
+    color: var(--orange-light);
+    border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.btn-hist-sessions:hover {
+    background: var(--orange);
+    color: #ffffff;
+}
+
+/* Resumo do modal de histórico */
+.user-hist-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.hist-summary-card {
+    background: rgba(10, 23, 40, 0.7);
+    border: 1px solid var(--adm-border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.hist-summary-card span {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.hist-summary-card b {
+    font-size: 14px;
+    color: #ffffff;
 }
 
 /* ==========================================================================

@@ -101,6 +101,11 @@
             </button>
 
             <div class="nav-section-label">GESTÃO & SISTEMA</div>
+            <button class="nav-btn" onclick="trocarSecaoAdmin('atividade')">
+                <i class="fa-solid fa-users-viewfinder"></i>
+                <span>Atividade dos Usuários</span>
+                <span class="nav-badge nav-badge-green" id="sidebarBadgeOnline">--</span>
+            </button>
             <button class="nav-btn" onclick="trocarSecaoAdmin('planos')">
                 <i class="fa-solid fa-sliders"></i>
                 <span>Planos & Retenção</span>
@@ -363,7 +368,177 @@
 
             </section>
 
+            <!-- ========================================================
+                 SEÇÃO 4: MONITORAMENTO DE ATIVIDADE DOS USUÁRIOS
+            ========================================================= -->
+            <section id="secAtividade" class="admin-section hidden">
+                
+                <!-- CARDS DE KPIS DE ATIVIDADE -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-online-pulse">
+                            <i class="fa-solid fa-users"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Usuários Online Agora</span>
+                            <div class="kpi-value text-green" id="kpiUsersOnline">0</div>
+                            <div class="kpi-trend trend-green">
+                                <span class="live-dot-green"></span>
+                                <span>Ativos nos últimos 5 min</span>
+                            </div>
+                        </div>
+                    </div>
 
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-access-count">
+                            <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Total de Acessos Registrados</span>
+                            <div class="kpi-value" id="kpiTotalAccesses">--</div>
+                            <div class="kpi-trend trend-neutral">
+                                <i class="fa-regular fa-calendar-check"></i>
+                                <span id="kpiPeriodAccessSub">Período: 7 dias</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-active-users">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Usuários Ativos no Período</span>
+                            <div class="kpi-value text-blue" id="kpiActiveUsersCount">--</div>
+                            <div class="kpi-trend trend-neutral">
+                                <i class="fa-solid fa-industry"></i>
+                                <span id="kpiActivePercentSub">Engajamento ativo</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-peak-hour">
+                            <i class="fa-solid fa-fire-burner"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Horário de Maior Atividade</span>
+                            <div class="kpi-value text-orange" id="kpiPeakHour">--</div>
+                            <div class="kpi-trend trend-neutral">
+                                <i class="fa-solid fa-chart-simple"></i>
+                                <span>Pico de monitoramento</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GRÁFICOS: ACESSOS POR DIA & HORÁRIOS DE ATIVIDADE -->
+                <div class="dashboard-duo-grid">
+                    <div class="panel-box">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Quantidade de Acessos por Dia</h3>
+                                <p>Volume diário de entradas no sistema no período selecionado</p>
+                            </div>
+                            <div class="tag-pill" id="badgeChartDailyPeriod">Últimos 7 dias</div>
+                        </div>
+                        <div class="chart-wrapper-admin">
+                            <canvas id="dailyAccessChartCanvas"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel-box">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Horários de Maior Atividade (24 Horas)</h3>
+                                <p>Distribuição das entradas ao longo do dia para identificar picos de uso</p>
+                            </div>
+                            <div class="tag-pill tag-pill-orange">Turnos Operacionais</div>
+                        </div>
+                        <div class="chart-wrapper-admin">
+                            <canvas id="hourlyDistributionChartCanvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAINEL PRINCIPAL: TABELA DE USUÁRIOS E HISTÓRICO DE ACESSOS -->
+                <div class="panel-box">
+                    <div class="panel-header">
+                        <div>
+                            <h3>Usuários & Registro de Acessos ao Sistema</h3>
+                            <p>Acompanhe status online/offline, data do último acesso, frequência, dispositivos e IPs</p>
+                        </div>
+                        <div class="panel-actions-header">
+                            <button class="btn-secondary-admin" onclick="carregarAcessosUsuariosSupabase(true)">
+                                <i class="fa-solid fa-rotate" id="refreshAccessesIcon"></i>
+                                <span>Atualizar Acessos</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- BARRA DE FERRAMENTAS, FILTROS DE PERÍODO & BUSCA -->
+                    <div class="activity-toolbar">
+                        <!-- Filtros por Período -->
+                        <div class="filter-group-segmented">
+                            <span class="filter-group-label"><i class="fa-regular fa-calendar"></i> Período:</span>
+                            <div class="filter-pills">
+                                <button class="filter-pill" id="btnPeriodToday" onclick="filtrarPeriodoAtividade('today', this)">Hoje</button>
+                                <button class="filter-pill active" id="btnPeriod7d" onclick="filtrarPeriodoAtividade('7d', this)">7 Dias</button>
+                                <button class="filter-pill" id="btnPeriod30d" onclick="filtrarPeriodoAtividade('30d', this)">30 Dias</button>
+                                <button class="filter-pill" id="btnPeriodCustom" onclick="filtrarPeriodoAtividade('custom', this)">Personalizado</button>
+                            </div>
+                        </div>
+
+                        <!-- Inputs de data personalizada (revelados quando 'Personalizado' está ativo) -->
+                        <div class="custom-date-inputs hidden" id="boxCustomDates">
+                            <input type="date" id="activityStartDate" title="Data Inicial">
+                            <span>até</span>
+                            <input type="date" id="activityEndDate" title="Data Final">
+                            <button class="btn-filter-apply" onclick="aplicarFiltroDataPersonalizada()">Aplicar</button>
+                        </div>
+
+                        <!-- Ordenação -->
+                        <div class="sort-group">
+                            <span class="filter-group-label"><i class="fa-solid fa-arrow-down-wide-short"></i> Ordenar:</span>
+                            <select id="activitySortSelect" class="admin-select" onchange="alterarOrdenacaoAtividade(this.value)">
+                                <option value="lastAccessDesc">Último Acesso (Mais recente)</option>
+                                <option value="lastAccessAsc">Último Acesso (Mais antigo)</option>
+                                <option value="accessCountDesc">Quantidade de Acessos (Maior)</option>
+                                <option value="accessCountAsc">Quantidade de Acessos (Menor)</option>
+                                <option value="nameAsc">Nome do Usuário (A-Z)</option>
+                            </select>
+                        </div>
+
+                        <!-- Busca Textual -->
+                        <div class="search-input-group search-flex-grow">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="activitySearchInput" placeholder="Buscar por usuário, cerâmica, IP ou dispositivo..." oninput="filtrarTabelaAtividade(this.value)">
+                        </div>
+                    </div>
+
+                    <!-- TABELA DE USUÁRIOS & ACESSOS -->
+                    <div class="admin-table-wrapper">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Usuário / Cerâmica</th>
+                                    <th>Status de Conexão</th>
+                                    <th>Último Acesso</th>
+                                    <th>Data de Login</th>
+                                    <th>Qtd. Acessos</th>
+                                    <th>Dispositivo & Navegador</th>
+                                    <th>IP de Acesso</th>
+                                    <th style="text-align: right;">Auditoria</th>
+                                </tr>
+                            </thead>
+                            <tbody id="userActivityTableBody">
+                                <!-- Preenchido dinamicamente via admin.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </section>
 
             <!-- ========================================================
                  SEÇÃO 5: CONFIGURAÇÕES DE PLANOS, LIMITES E FATURAMENTO
@@ -662,6 +837,44 @@
                 <i class="fa-solid fa-print"></i>
                 <span>Imprimir Etiqueta</span>
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 4: HISTÓRICO COMPLETO DE SESSÕES DO USUÁRIO -->
+<div id="modalHistoricoSessoes" class="modal-overlay hidden" onclick="fecharModalAdmin('modalHistoricoSessoes', event)">
+    <div class="modal-dialog modal-dialog-lg" onclick="event.stopPropagation()">
+        <div class="modal-dialog-header">
+            <div>
+                <h3 id="modalHistTitle"><i class="fa-solid fa-clock-rotate-left text-orange"></i> Histórico Detalhado de Acessos</h3>
+                <p id="modalHistSubtitle" class="modal-subheading">Registros de logins e sessões rastreadas</p>
+            </div>
+            <button class="btn-close-modal" onclick="fecharModalAdmin('modalHistoricoSessoes', null)"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <div class="user-hist-summary" id="modalHistUserSummary">
+            <!-- Gerado dinamicamente -->
+        </div>
+
+        <div class="admin-table-wrapper" style="max-height: 380px; overflow-y: auto;">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Data & Horário do Login</th>
+                        <th>Último Contato / Duração</th>
+                        <th>Dispositivo</th>
+                        <th>Navegador & SO</th>
+                        <th>Endereço IP</th>
+                    </tr>
+                </thead>
+                <tbody id="userHistTableBody">
+                    <!-- Gerado dinamicamente -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="modal-dialog-actions">
+            <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalHistoricoSessoes', null)">Fechar</button>
         </div>
     </div>
 </div>
