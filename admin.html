@@ -70,6 +70,9 @@
 ========================================================= -->
 <div class="admin-layout" id="adminMainLayout">
 
+    <!-- BACKDROP PARA SIDEBAR MOBILE -->
+    <div id="sidebarBackdrop" class="sidebar-backdrop hidden" onclick="toggleSidebarMobile()"></div>
+
     <!-- SIDEBAR DE NAVEGAÇÃO -->
     <aside class="admin-sidebar">
         <div class="sidebar-header">
@@ -80,6 +83,9 @@
                 <div class="brand-title">ThermoLink</div>
                 <div class="brand-tag">MASTER ADMIN</div>
             </div>
+            <button class="btn-sidebar-close" onclick="toggleSidebarMobile()" title="Fechar Menu">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
         </div>
 
         <nav class="sidebar-nav">
@@ -878,6 +884,30 @@
         </div>
     </div>
 </div>
+
+<!-- BARRA DE NAVEGAÇÃO INFERIOR PARA CELULARES (MOBILE BOTTOM NAV) -->
+<nav class="admin-bottom-nav" id="adminBottomNav">
+    <button class="bottom-nav-btn active" data-section="dashboard" onclick="trocarSecaoAdmin('dashboard')">
+        <i class="fa-solid fa-chart-pie"></i>
+        <span>Dashboard</span>
+    </button>
+    <button class="bottom-nav-btn" data-section="clientes" onclick="trocarSecaoAdmin('clientes')">
+        <i class="fa-solid fa-industry"></i>
+        <span>Clientes</span>
+    </button>
+    <button class="bottom-nav-btn" data-section="dispositivos" onclick="trocarSecaoAdmin('dispositivos')">
+        <i class="fa-solid fa-microchip"></i>
+        <span>Aparelhos</span>
+    </button>
+    <button class="bottom-nav-btn" data-section="atividade" onclick="trocarSecaoAdmin('atividade')">
+        <i class="fa-solid fa-users-viewfinder"></i>
+        <span>Acessos</span>
+    </button>
+    <button class="bottom-nav-btn" data-section="planos" onclick="trocarSecaoAdmin('planos')">
+        <i class="fa-solid fa-sliders"></i>
+        <span>Planos</span>
+    </button>
+</nav>
 
 <!-- Scripts do Painel Master -->
 <script src="admin.js"></script>

@@ -368,8 +368,15 @@ function trocarSecaoAdmin(secao) {
     adminState.activeSection = secao;
 
     // Atualiza botões da sidebar
-    document.querySelectorAll(".sidebar-nav .nav-btn").forEach(b => b.classList.remove("active"));
-    event?.currentTarget?.classList?.add("active");
+    document.querySelectorAll(".sidebar-nav .nav-btn").forEach(b => {
+        const onclickAttr = b.getAttribute("onclick") || "";
+        b.classList.toggle("active", onclickAttr.includes(`'${secao}'`));
+    });
+
+    // Atualiza botões da Bottom Navigation Mobile
+    document.querySelectorAll(".bottom-nav-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.section === secao);
+    });
 
     // Oculta todas as seções
     $("secDashboard")?.classList.add("hidden");
@@ -408,15 +415,39 @@ function trocarSecaoAdmin(secao) {
         $("secPlanos")?.classList.remove("hidden");
     }
 
-    // Fecha sidebar no mobile
+    // Fecha sidebar e backdrop no mobile
     const sidebar = document.querySelector(".admin-sidebar");
     if (sidebar) sidebar.classList.remove("mobile-open");
+    $("sidebarBackdrop")?.classList.add("hidden");
+
+    // Rola para o topo suavemente
+    window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function toggleSidebarMobile() {
+function toggleSidebarMobile(forceState) {
     const sidebar = document.querySelector(".admin-sidebar");
-    if (sidebar) sidebar.classList.toggle("mobile-open");
+    const backdrop = $("sidebarBackdrop");
+    if (!sidebar) return;
+
+    const isOpen = typeof forceState === "boolean" 
+        ? !forceState 
+        : sidebar.classList.contains("mobile-open");
+
+    if (isOpen) {
+        sidebar.classList.remove("mobile-open");
+        backdrop?.classList.add("hidden");
+    } else {
+        sidebar.classList.add("mobile-open");
+        backdrop?.classList.remove("hidden");
+    }
 }
+
+// Redimensionamento fluído dos gráficos do Chart.js
+window.addEventListener("resize", () => {
+    if (adminState.trafficChart) adminState.trafficChart.resize();
+    if (adminState.dailyAccessChart) adminState.dailyAccessChart.resize();
+    if (adminState.hourlyDistributionChart) adminState.hourlyDistributionChart.resize();
+});
 
 // ==========================================================================
 // 4. RENDERIZAÇÃO DO DASHBOARD GERAL
