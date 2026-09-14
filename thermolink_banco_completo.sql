@@ -268,21 +268,27 @@ WHERE (numero_serie IN ('THX-00001', 'THX-00002', 'THX-00003') OR serial IN ('TH
 
 INSERT INTO public.dispositivos (id, numero_serie, serial, nome, ceramica_id, status, modulo_num, forno_id, firmware_version)
 VALUES
-    (3, 'THX-00003', 'THX-00003', 'ThermoX ESP (Aparecida)', 'cli_1788920539236', 'Vinculado', 1, 1, '4.5.1'),
+    (2, 'THX-00002', 'THX-00002', 'ThermoX ESP (Aparecida)', 'cli_1788920539236', 'Vinculado', 1, 1, '4.5.1'),
     (1, 'THX-00001', 'THX-00001', 'ThermoX ESP (Disponível)', NULL, 'Disponível', 1, 1, '4.5.1'),
-    (2, 'THX-00002', 'THX-00002', 'ThermoX ESP (Disponível)', NULL, 'Disponível', 2, 2, '4.5.1')
+    (3, 'THX-00003', 'THX-00003', 'ThermoX ESP (Disponível)', NULL, 'Disponível', 1, 1, '4.5.1')
 ON CONFLICT (numero_serie) DO UPDATE SET
     id = EXCLUDED.id,
     serial = EXCLUDED.serial,
     nome = EXCLUDED.nome,
     ceramica_id = EXCLUDED.ceramica_id,
-    status = EXCLUDED.status;
+    status = EXCLUDED.status,
+    modulo_num = EXCLUDED.modulo_num,
+    forno_id = EXCLUDED.forno_id;
 
--- 3. Atualiza leituras existentes do THX-00003 para carimbar a Cerâmica Nossa Senhora Aparecida
+-- 3. Atualiza leituras exclusivas do THX-00002 para a Cerâmica Nossa Senhora Aparecida e limpa outros aparelhos
 UPDATE public.leituras
 SET ceramica_id = 'cli_1788920539236'
-WHERE (numero_serie = 'THX-00003' OR dispositivo_id = 3)
-  AND (ceramica_id IS NULL OR ceramica_id <> 'cli_1788920539236');
+WHERE (numero_serie = 'THX-00002' OR dispositivo_id = 2);
+
+UPDATE public.leituras
+SET ceramica_id = NULL
+WHERE ceramica_id = 'cli_1788920539236'
+  AND (numero_serie <> 'THX-00002' AND dispositivo_id <> 2);
 
 -- ==============================================================================
 -- 7. TABELA: ACESSOS DOS USUÁRIOS (SESSÕES, AUDITORIA & RLS)
@@ -333,4 +339,5 @@ DROP POLICY IF EXISTS "permitir_leitura_acessos" ON public.acessos_usuarios;
 CREATE POLICY "permitir_leitura_acessos" ON public.acessos_usuarios
     FOR SELECT TO anon, authenticated
     USING (true);
+
 

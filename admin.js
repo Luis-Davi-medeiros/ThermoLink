@@ -729,6 +729,7 @@ function impersonateCeramica(clienteId) {
         username: target.username,
         name: target.nome,
         role: "client",
+        ceramicaId: target.id,
         isImpersonateMode: true,
         impersonatedBy: "Master Admin"
     };
@@ -990,13 +991,39 @@ async function salvarVinculoDispositivo(e) {
             console.warn("[Supabase] Erro ao vincular dispositivo:", error);
             alert(`Aviso ao salvar vínculo no banco: ${error.message}`);
         } else if (isVinculado && ceramicaId) {
-            // Retroalimenta as leituras deste dispositivo para a Cerâmica dona!
+            // 1. Retroalimenta as leituras DESTE dispositivo para a Cerâmica dona!
             try {
                 await sb.from("leituras")
                     .update({ ceramica_id: ceramicaId })
                     .or(`numero_serie.eq.${serial},serial.eq.${serial}`);
             } catch (errLeit) {
-                console.warn("[Supabase] Aviso ao atualizar leituras existentes:", errLeit);
+                console.warn("[Supabase] Aviso ao atualizar leituras do dispositivo:", errLeit);
+            }
+
+            // 2. Desassocia leituras antigas de outros números de série que estavam presas a esta cerâmica
+            try {
+                await sb.from("leituras")
+                    .update({ ceramica_id: null })
+                    .eq("ceramica_id", ceramicaId)
+                    .neq("numero_serie", serial);
+            } catch (errClean) {
+                console.warn("[Supabase] Aviso ao desassociar leituras de outros aparelhos:", errClean);
+            }
+
+            // 3. Se outro aparelho estava vinculado ao mesmo forno nesta Cerâmica, desvincula-o no Supabase
+            try {
+                await sb.from("dispositivos")
+                    .update({
+                        status: "Disponível",
+                        ceramica_id: null,
+                        modulo_num: null,
+                        forno_id: null
+                    })
+                    .eq("ceramica_id", ceramicaId)
+                    .eq("modulo_num", moduloNum)
+                    .neq("numero_serie", serial);
+            } catch (errPrevDev) {
+                console.warn("[Supabase] Aviso ao liberar aparelho anterior do mesmo forno:", errPrevDev);
             }
         }
     } catch (err) {
@@ -1005,6 +1032,19 @@ async function salvarVinculoDispositivo(e) {
 
     // Atualiza estado local
     const devices = getDevices();
+    if (isVinculado && ceramicaId) {
+        devices.forEach(d => {
+            const dSerial = d.serial || d.numeroSerie;
+            if (dSerial !== serial && (d.ceramicaId === ceramicaId || d.ceramica_id === ceramicaId) && Number(d.moduloNum) === Number(moduloNum)) {
+                d.status = "Disponível";
+                d.ceramicaId = null;
+                d.ceramicaNome = "Em Estoque";
+                d.moduloNum = null;
+                d.fornoId = null;
+            }
+        });
+    }
+
     const target = devices.find(d => d.serial === serial || d.numeroSerie === serial);
     if (target) {
         target.status = status;
@@ -1012,8 +1052,8 @@ async function salvarVinculoDispositivo(e) {
         target.ceramicaNome = isVinculado && selectedClient ? selectedClient.nome : "Em Estoque";
         target.moduloNum = isVinculado ? moduloNum : null;
         target.fornoId = isVinculado ? moduloNum : null;
-        saveDevices(devices);
     }
+    saveDevices(devices);
 
     if (submitBtn) {
         submitBtn.disabled = false;
@@ -1025,7 +1065,7 @@ async function salvarVinculoDispositivo(e) {
     renderDashboardGeral();
 
     if (isVinculado && selectedClient) {
-        alert(`Dispositivo ${serial} associado com sucesso!\n\nCerâmica: ${selectedClient.nome}\nForno: ${moduloNum}\n\nAgora todas as leituras térmicas deste aparelho pertencem exclusivamente a esta Cerâmica.`);
+        alert(`Dispositivo ${serial} associado com sucesso!\n\nCerâmica: ${selectedClient.nome}\nForno: ${moduloNum}\n\nAgora apenas as informações e leituras térmicas do ${serial} serão extraídas do banco para esta Cerâmica.`);
     } else {
         alert(`Dispositivo ${serial} atualizado.`);
     }

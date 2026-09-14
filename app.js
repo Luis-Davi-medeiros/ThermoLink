@@ -388,7 +388,6 @@ async function realizarLogin(e) {
     }
 
     if (found) {
-        // Garante o ID da Cerâmica vinculada ao usuário e status atualizado
         if (found.role === "client") {
             try {
                 let query = sb.from("ceramicas").select("id, nome, status, motivo_bloqueio");
@@ -406,7 +405,6 @@ async function realizarLogin(e) {
                 }
             } catch (e) {}
 
-            // Fallback de status e motivo no localStorage administrativo
             const localClients = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
             const matched = localClients.find(c => 
                 (found.ceramicaId && c.id === found.ceramicaId) || 
@@ -433,7 +431,6 @@ async function realizarLogin(e) {
 
         $("loginError").classList.add("hidden");
 
-        // Sessão persistida com dados de identificação e status de bloqueio
         const sessao = {
             username: found.username,
             name: found.name,
@@ -444,7 +441,6 @@ async function realizarLogin(e) {
             loginAt: new Date().toISOString()
         };
 
-        // Só persiste se "Lembrar neste celular" estiver marcado
         if ($("rememberMe").checked) {
             localStorage.setItem("thermolink_active_session", JSON.stringify(sessao));
         }
@@ -460,13 +456,13 @@ async function realizarLogin(e) {
 function iniciarPainelUsuario(user, usarSplash = false) {
     state.currentUser = user;
 
-    // Registra sessão ativa e telemetria de acesso (com proteção anti-duplicação na mesma aba)
+    // Registra sessão ativa e telemetria de acesso
     if (sessionStorage.getItem("thermolink_session_recorded") !== user.username) {
         sessionStorage.setItem("thermolink_session_recorded", user.username);
         AccessTelemetry.registrarAcesso(user, false);
     }
 
-    // Sincroniza status de bloqueio e motivo mais recente do armazenamento administrativo
+    // Sincroniza status de bloqueio e motivo mais recente
     if (user.role !== "admin" && !user.isImpersonateMode) {
         const clientsAdmin = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
         const clientRecord = clientsAdmin.find(c => 
@@ -488,15 +484,12 @@ function iniciarPainelUsuario(user, usarSplash = false) {
 
     $("loginScreen").classList.add("hidden");
 
-    // Entrada: splash com a logo (2,5s + fade suave) ou direto após o login
     const abrirApp = () => {
         $("splashScreen").classList.add("hidden");
         $("mainApp").classList.remove("hidden");
 
-        // Garante que o aplicativo sempre abra diretamente na tela principal dos Fornos
         voltarListaFornos();
 
-        // Se a conta do cliente estiver BLOQUEADA, exibe a notificação na frente e oculta dados
         if (user.role !== "admin" && !user.isImpersonateMode && user.status === "Bloqueado") {
             const overlay = $("clientBlockedOverlay");
             if (overlay) {
@@ -528,7 +521,6 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         abrirApp();
     }
 
-    // Banner de Impersonation (Modo Suporte do Administrador)
     const impBanner = $("impersonateBanner");
     if (impBanner) {
         if (user.isImpersonateMode) {
@@ -539,7 +531,6 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         }
     }
 
-    // Atualiza cabeçalho e perfil
     $("currentUserDisplay").textContent = user.name || user.username;
     $("profileName").textContent = user.name || user.username;
     $("profileRole").textContent = user.role === "admin" ? "Administrador Master" : "Acesso Cliente Cerâmica";
@@ -718,24 +709,33 @@ async function carregarFornosELeituras() {
             }
         }
 
-        // 2. CARREGA APENAS AS LEITURAS DESTA CERÂMICA / APARELHOS
+        // 2. CARREGA APENAS AS LEITURAS DESTE(S) APARELHO(S) VINCULADO(S)
         let leiturasQuery = sb
             .from("leituras")
             .select("id, dispositivo_id, forno_id, modulo_alutal, canal_1, canal_2, numero_serie, ceramica_id, created_at, data_hora");
 
         if (state.currentUser && state.currentUser.role !== "admin") {
-            const cid = state.currentUser.ceramicaId;
-            const orFilters = [`ceramica_id.eq.${cid}`];
+            const devFilters = [];
             if (allowedSerials.length > 0) {
-                orFilters.push(`numero_serie.in.(${allowedSerials.join(',')})`);
+                devFilters.push(`numero_serie.in.(${allowedSerials.join(',')})`);
             }
             if (allowedDeviceIds.length > 0) {
-                orFilters.push(`dispositivo_id.in.(${allowedDeviceIds.join(',')})`);
+                devFilters.push(`dispositivo_id.in.(${allowedDeviceIds.join(',')})`);
             }
-            leiturasQuery = leiturasQuery.or(orFilters.join(','));
+
+            // Puxa ESTRITAMENTE as leituras geradas pelo dispositivo vinculado (ex: THX-00002)
+            if (devFilters.length > 0) {
+                leiturasQuery = leiturasQuery.or(devFilters.join(','));
+            } else {
+                state.ovens = [];
+                state.readings = new Map();
+                updateLivePill(true);
+                renderListaFornos();
+                return;
+            }
         }
 
-        const { data: leiturasData, error } = await leiturasQuery
+        const { data: rawLeiturasData, error } = await leiturasQuery
             .order("created_at", { ascending: false })
             .limit(1000);
 
@@ -744,6 +744,16 @@ async function carregarFornosELeituras() {
             updateLivePill(false);
             return;
         }
+
+        // Filtro estrito em memória: garante que apenas leituras do hardware vinculado entrem
+        const leiturasData = (rawLeiturasData || []).filter(r => {
+            if (state.currentUser && state.currentUser.role !== "admin") {
+                const sOk = r.numero_serie && allowedSerials.includes(r.numero_serie);
+                const idOk = r.dispositivo_id && allowedDeviceIds.includes(Number(r.dispositivo_id));
+                return sOk || idOk;
+            }
+            return true;
+        });
 
         updateLivePill(true);
 
@@ -771,19 +781,24 @@ async function carregarFornosELeituras() {
             // Se o ESP enviou leituras de módulos, usamos os módulos ativos
             let mods = Array.from(detectedModules).sort((a, b) => a - b);
             if (mods.length === 0) {
-                // Caso o aparelho esteja recém-vinculado sem envio ainda, exibe fornos iniciais
-                const defaultCount = primaryDev?.modulo_num ? Math.max(primaryDev.modulo_num, 4) : 4;
-                mods = Array.from({ length: defaultCount }, (_, i) => i + 1);
+                // Caso o aparelho esteja recém-vinculado sem envio ainda, exibe o forno configurado no aparelho
+                const configuredMods = clientDevices
+                    .map(d => Number(d.modulo_num || d.forno_id || 1))
+                    .filter(n => Number.isFinite(n) && n > 0);
+                mods = configuredMods.length > 0 ? Array.from(new Set(configuredMods)).sort((a, b) => a - b) : [1];
             }
 
-            state.ovens = mods.map(m => ({
-                id: m,
-                numero: m,
-                nome: `Forno ${String(m).padStart(2, '0')}`,
-                dispositivo_serial: serialLabel,
-                modelo: primaryDev?.modelo || "TLK-ESP8266-ALUTAL",
-                ativo: true
-            }));
+            state.ovens = mods.map(m => {
+                const devMatched = clientDevices.find(d => Number(d.modulo_num || d.forno_id) === Number(m)) || primaryDev;
+                return {
+                    id: m,
+                    numero: m,
+                    nome: `Forno ${String(m).padStart(2, '0')}`,
+                    dispositivo_serial: devMatched ? (devMatched.serial || devMatched.numero_serie) : serialLabel,
+                    modelo: devMatched?.modelo || primaryDev?.modelo || "TLK-ESP8266-ALUTAL",
+                    ativo: true
+                };
+            });
         } else {
             // Modo Master Admin: exibe os módulos detectados ou de 1 a 31
             const allMods = detectedModules.size > 0
@@ -825,15 +840,19 @@ async function getHistoricoModulo(modulo, limit = 1000) {
             .eq("modulo_alutal", modulo);
 
         if (state.currentUser && state.currentUser.role !== "admin") {
-            const cid = state.currentUser.ceramicaId;
-            const orList = [`ceramica_id.eq.${cid}`];
+            const devFilters = [];
             if (state.allowedSerials && state.allowedSerials.length > 0) {
-                orList.push(`numero_serie.in.(${state.allowedSerials.join(',')})`);
+                devFilters.push(`numero_serie.in.(${state.allowedSerials.join(',')})`);
             }
             if (state.allowedDeviceIds && state.allowedDeviceIds.length > 0) {
-                orList.push(`dispositivo_id.in.(${state.allowedDeviceIds.join(',')})`);
+                devFilters.push(`dispositivo_id.in.(${state.allowedDeviceIds.join(',')})`);
             }
-            q = q.or(orList.join(','));
+
+            if (devFilters.length > 0) {
+                q = q.or(devFilters.join(','));
+            } else {
+                return [];
+            }
         }
 
         const { data, error } = await q
@@ -841,7 +860,17 @@ async function getHistoricoModulo(modulo, limit = 1000) {
             .limit(limit);
 
         if (error) return [];
-        return (data || []).reverse();
+
+        const filtered = (data || []).filter(r => {
+            if (state.currentUser && state.currentUser.role !== "admin") {
+                const sOk = r.numero_serie && state.allowedSerials?.includes(r.numero_serie);
+                const idOk = r.dispositivo_id && state.allowedDeviceIds?.includes(Number(r.dispositivo_id));
+                return sOk || idOk;
+            }
+            return true;
+        });
+
+        return filtered.reverse();
     } catch {
         return [];
     }
