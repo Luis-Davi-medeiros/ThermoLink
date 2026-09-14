@@ -143,18 +143,13 @@
                 </button>
                 <div class="header-brand-info">
                     <div id="headerTitle" class="header-title">ThermoLink</div>
-                     <div id="headerSubtitle" class="header-subtitle">
-                         <span class="user-chip" id="currentUserDisplay">Cerâmica</span>
-                         <span class="company-chip" id="empresaNome" style="margin-left:8px; color:#a0aec0; font-size:0.9em;">Empresa</span>
-                     </div>
+                    <div id="headerSubtitle" class="header-subtitle">
+                        <span class="user-chip" id="currentUserDisplay">Cerâmica</span>
+                    </div>
                 </div>
             </div>
 
             <div class="header-right">
-                <div class="live-pill" id="liveSyncPill" title="Sincronização em tempo real">
-                    <span class="pulse-dot"></span>
-                    <span class="live-label">ONLINE</span>
-                </div>
                 <button class="header-icon-btn" onclick="atualizarManual()" title="Atualizar dados agora">
                     <i class="fa-solid fa-rotate" id="refreshIcon"></i>
                 </button>
@@ -189,24 +184,6 @@
              ANÁLISE DETALHADA DO FORNO SELECIONADO (EXCLUSIVO DO FORNO ABERTO)
         ===================================================== -->
         <section id="screenAnaliseForno" class="screen-view hidden">
-
-            <!-- FILTRO DE PERÍODO RÁPIDO & PRÁTICO -->
-            <div class="card-dark analise-filter-bar">
-                <div class="analise-filter-header">
-                    <div class="analise-filter-title">
-                        <i class="fa-regular fa-clock text-orange"></i>
-                        <span>Período da Curva:</span>
-                    </div>
-                    <span class="analise-filter-counter" id="anStatCountPill">-- leituras</span>
-                </div>
-                <div class="filter-pill-scroll" id="anTimeFilter">
-                    <button class="pill-btn" onclick="filtrarTempoAnalise(6, this)">6h</button>
-                    <button class="pill-btn" onclick="filtrarTempoAnalise(24, this)">24h</button>
-                    <button class="pill-btn" onclick="filtrarTempoAnalise(48, this)">48h</button>
-                    <button class="pill-btn" onclick="filtrarTempoAnalise(72, this)">72h</button>
-                    <button class="pill-btn active" onclick="filtrarTempoAnalise('all', this)">Tudo</button>
-                </div>
-            </div>
 
             <!-- RESUMO ESTATÍSTICO DE QUEIMA (KPIS) -->
             <div class="analysis-stats-grid">
@@ -247,7 +224,6 @@
                                 <span>Ver de Lado</span>
                             </button>
                         </div>
-                        <div class="chart-sub" id="anChartSub">Análise contínua das temperaturas</div>
                     </div>
 
                     <!-- Controles de Canais -->
