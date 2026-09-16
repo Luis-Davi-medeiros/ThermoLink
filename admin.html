@@ -245,7 +245,16 @@
                                 <h3>Volume de Leituras Trafegadas (24 Horas)</h3>
                                 <p>Monitoramento de chamadas e consumo do banco de dados Supabase</p>
                             </div>
-                            <div class="tag-pill">Tempo Real</div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <div class="tag-pill" id="trafficStatsBadge" title="Total de leituras nas últimas 24 horas">
+                                    <i class="fa-solid fa-database" style="color: var(--orange); margin-right: 4px;"></i>
+                                    <span id="trafficTotal24h">Calculando...</span>
+                                </div>
+                                <div class="tag-pill tag-pill-orange">
+                                    <span class="live-dot-green" style="margin-right: 4px;"></span>
+                                    <span>Tempo Real</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="traffic-chart-wrapper">
                             <canvas id="trafficChartCanvas"></canvas>
