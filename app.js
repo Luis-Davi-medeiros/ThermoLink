@@ -54,7 +54,11 @@ const state = {
     currentDetailHistory: [],
     currentAnalysisRawHistory: [],
     currentAnalysisFilteredHistory: [],
-    isPolling: false
+    isPolling: false,
+    realtimeChannel: null,
+    allowedSerials: [],
+    allowedDeviceIds: [],
+    clientDevices: []
 };
 
 const $ = (id) => document.getElementById(id);
@@ -99,260 +103,6 @@ function toggleSenha(inputId) {
     }
 }
 
-// ==========================================================================
-// MONITORAMENTO & TELEMETRIA DE ACESSO DO USUÁRIO
-// ==========================================================================
-const AccessTelemetry = {
-    heartbeatTimer: null,
-    currentSessionToken: null,
-
-    detectarDispositivo() {
-        const ua = navigator.userAgent || "";
-        const isTouch = navigator.maxTouchPoints > 0;
-        const width = window.screen?.width || window.innerWidth;
-
-        if (/iPad/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
-            return "Tablet (iPad)";
-        }
-        if (/Tablet|Android/i.test(ua) && !/Mobile/i.test(ua)) {
-            return "Tablet";
-        }
-        if (/iPhone/i.test(ua)) {
-            return "Smartphone (iPhone)";
-        }
-        if (/Android/i.test(ua) && /Mobile/i.test(ua)) {
-            return "Smartphone (Android)";
-        }
-        if (/Mobile|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || (isTouch && width <= 768)) {
-            return "Dispositivo Móvel";
-        }
-        if (width <= 1024 && isTouch) {
-            return "Tablet / Touch";
-        }
-        return "Computador / Desktop";
-    },
-
-    detectarNavegador() {
-        const ua = navigator.userAgent || "";
-        let browser = "Navegador Web";
-        let version = "";
-
-        if (/Edg\/([0-9\.]+)/i.test(ua)) {
-            browser = "Microsoft Edge";
-            version = RegExp.$1.split(".")[0];
-        } else if (/OPR\/([0-9\.]+)/i.test(ua) || /Opera/i.test(ua)) {
-            browser = "Opera";
-            version = RegExp.$1.split(".")[0];
-        } else if (/SamsungBrowser\/([0-9\.]+)/i.test(ua)) {
-            browser = "Samsung Internet";
-            version = RegExp.$1.split(".")[0];
-        } else if (/Chrome\/([0-9\.]+)/i.test(ua)) {
-            browser = "Google Chrome";
-            version = RegExp.$1.split(".")[0];
-        } else if (/Version\/([0-9\.]+).*Safari/i.test(ua)) {
-            browser = "Safari";
-            version = RegExp.$1.split(".")[0];
-        } else if (/Firefox\/([0-9\.]+)/i.test(ua)) {
-            browser = "Mozilla Firefox";
-            version = RegExp.$1.split(".")[0];
-        }
-        return version ? `${browser} ${version}` : browser;
-    },
-
-    detectarSO() {
-        const ua = navigator.userAgent || "";
-        if (/Windows NT 10.0|Windows NT 11.0/i.test(ua)) return "Windows 10/11";
-        if (/Windows NT 6.3/i.test(ua)) return "Windows 8.1";
-        if (/Windows NT 6.1/i.test(ua)) return "Windows 7";
-        if (/Windows/i.test(ua)) return "Windows";
-        if (/Android/i.test(ua)) {
-            const m = ua.match(/Android\s([0-9\.]+)/i);
-            return m ? `Android ${m[1].split(".")[0]}` : "Android";
-        }
-        if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
-            return "iOS / iPadOS";
-        }
-        if (/Macintosh|Mac OS X/i.test(ua)) return "macOS";
-        if (/Linux/i.test(ua)) return "Linux";
-        return "Outro SO";
-    },
-
-    async obterIpAcesso() {
-        const cached = sessionStorage.getItem("thermolink_cached_ip");
-        if (cached && cached !== "Não identificado") return cached;
-
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2500);
-            const resp = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (resp.ok) {
-                const data = await resp.json();
-                if (data && data.ip) {
-                    sessionStorage.setItem("thermolink_cached_ip", data.ip);
-                    return data.ip;
-                }
-            }
-        } catch (e) {
-            try {
-                const controller2 = new AbortController();
-                const timeoutId2 = setTimeout(() => controller2.abort(), 2000);
-                const resp2 = await fetch("https://ipapi.co/json/", { signal: controller2.signal });
-                clearTimeout(timeoutId2);
-                if (resp2.ok) {
-                    const data2 = await resp2.json();
-                    if (data2 && data2.ip) {
-                        sessionStorage.setItem("thermolink_cached_ip", data2.ip);
-                        return data2.ip;
-                    }
-                }
-            } catch (e2) {}
-        }
-        return "Não identificado";
-    },
-
-    async registrarAcesso(user, isNovoLogin = false) {
-        if (!user || !user.username) return;
-        if (user.isImpersonateMode) return;
-
-        let token = sessionStorage.getItem("thermolink_session_token");
-        if (!token || isNovoLogin) {
-            token = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-            sessionStorage.setItem("thermolink_session_token", token);
-        }
-        this.currentSessionToken = token;
-
-        const dev = this.detectarDispositivo();
-        const nav = this.detectarNavegador();
-        const so = this.detectarSO();
-        const ip = await this.obterIpAcesso();
-        const agoraIso = new Date().toISOString();
-
-        // Incrementa contagem de acessos
-        let totalAcessos = 1;
-        const accessMap = JSON.parse(localStorage.getItem("thermolink_user_access_count") || "{}");
-        const uKey = user.username.toLowerCase();
-        accessMap[uKey] = (accessMap[uKey] || 0) + 1;
-        totalAcessos = accessMap[uKey];
-        localStorage.setItem("thermolink_user_access_count", JSON.stringify(accessMap));
-
-        // Registro local para auditoria instantânea / fallback
-        const localAudit = JSON.parse(localStorage.getItem("thermolink_audit_logs") || "[]");
-        localAudit.unshift({
-            session_token: token,
-            usuario: user.username,
-            nome: user.name || user.username,
-            ceramica_id: user.ceramicaId || null,
-            role: user.role || "client",
-            login_em: agoraIso,
-            ultimo_acesso: agoraIso,
-            quantidade_acessos: totalAcessos,
-            dispositivo: dev,
-            navegador: nav,
-            sistema_operacional: so,
-            ip_acesso: ip,
-            user_agent: navigator.userAgent
-        });
-        if (localAudit.length > 200) localAudit.length = 200;
-        localStorage.setItem("thermolink_audit_logs", JSON.stringify(localAudit));
-
-        // Sincronização com o Supabase
-        try {
-            const { data: sessaoExistente } = await sb
-                .from("acessos_usuarios")
-                .select("id, quantidade_acessos")
-                .eq("session_token", token)
-                .maybeSingle();
-
-            if (sessaoExistente) {
-                await sb
-                    .from("acessos_usuarios")
-                    .update({
-                        ultimo_acesso: agoraIso,
-                        ip_acesso: ip !== "Não identificado" ? ip : undefined
-                    })
-                    .eq("id", sessaoExistente.id);
-            } else {
-                await sb
-                    .from("acessos_usuarios")
-                    .insert([{
-                        session_token: token,
-                        usuario: user.username,
-                        nome: user.name || user.username,
-                        ceramica_id: user.ceramicaId || null,
-                        role: user.role || "client",
-                        login_em: agoraIso,
-                        ultimo_acesso: agoraIso,
-                        quantidade_acessos: totalAcessos,
-                        dispositivo: dev,
-                        navegador: nav,
-                        sistema_operacional: so,
-                        ip_acesso: ip,
-                        user_agent: navigator.userAgent
-                    }]);
-            }
-
-            if (user.ceramicaId) {
-                await sb
-                    .from("ceramicas")
-                    .update({
-                        ultimo_acesso: agoraIso,
-                        total_acessos: totalAcessos
-                    })
-                    .eq("id", user.ceramicaId);
-            }
-        } catch (err) {
-            console.warn("[AccessTelemetry] Sincronização offline/cache:", err);
-        }
-
-        this.iniciarHeartbeat(user, token);
-    },
-
-    iniciarHeartbeat(user, token) {
-        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-
-        this.heartbeatTimer = setInterval(async () => {
-            if (!state.currentUser || document.visibilityState === "hidden") return;
-
-            const agora = new Date().toISOString();
-            try {
-                if (token) {
-                    await sb
-                        .from("acessos_usuarios")
-                        .update({ ultimo_acesso: agora })
-                        .eq("session_token", token);
-                }
-
-                if (user.ceramicaId) {
-                    await sb
-                        .from("ceramicas")
-                        .update({ ultimo_acesso: agora })
-                        .eq("id", user.ceramicaId);
-                }
-            } catch (e) {}
-        }, 90000);
-    },
-
-    encerrarSessao() {
-        if (this.heartbeatTimer) {
-            clearInterval(this.heartbeatTimer);
-            this.heartbeatTimer = null;
-        }
-        const token = sessionStorage.getItem("thermolink_session_token");
-        if (token) {
-            try {
-                sb.from("acessos_usuarios")
-                    .update({ ultimo_acesso: new Date().toISOString() })
-                    .eq("session_token", token)
-                    .then(() => {});
-            } catch (e) {}
-        }
-        sessionStorage.removeItem("thermolink_session_token");
-        sessionStorage.removeItem("thermolink_session_recorded");
-        this.currentSessionToken = null;
-    }
-};
-
 async function realizarLogin(e) {
     e.preventDefault();
     const userVal = $("loginUser").value.trim().toLowerCase();
@@ -388,6 +138,7 @@ async function realizarLogin(e) {
     }
 
     if (found) {
+        // Garante o ID da Cerâmica vinculada ao usuário e status atualizado
         if (found.role === "client") {
             try {
                 let query = sb.from("ceramicas").select("id, nome, status, motivo_bloqueio");
@@ -405,6 +156,7 @@ async function realizarLogin(e) {
                 }
             } catch (e) {}
 
+            // Fallback de status e motivo no localStorage administrativo
             const localClients = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
             const matched = localClients.find(c => 
                 (found.ceramicaId && c.id === found.ceramicaId) || 
@@ -431,6 +183,7 @@ async function realizarLogin(e) {
 
         $("loginError").classList.add("hidden");
 
+        // Sessão persistida com dados de identificação e status de bloqueio
         const sessao = {
             username: found.username,
             name: found.name,
@@ -441,12 +194,12 @@ async function realizarLogin(e) {
             loginAt: new Date().toISOString()
         };
 
+        // Só persiste se "Lembrar neste celular" estiver marcado
         if ($("rememberMe").checked) {
             localStorage.setItem("thermolink_active_session", JSON.stringify(sessao));
         }
 
         iniciarPainelUsuario(sessao, false);
-        AccessTelemetry.registrarAcesso(sessao, true);
     } else {
         $("loginError").textContent = "Usuário ou senha incorretos.";
         $("loginError").classList.remove("hidden");
@@ -456,13 +209,7 @@ async function realizarLogin(e) {
 function iniciarPainelUsuario(user, usarSplash = false) {
     state.currentUser = user;
 
-    // Registra sessão ativa e telemetria de acesso
-    if (sessionStorage.getItem("thermolink_session_recorded") !== user.username) {
-        sessionStorage.setItem("thermolink_session_recorded", user.username);
-        AccessTelemetry.registrarAcesso(user, false);
-    }
-
-    // Sincroniza status de bloqueio e motivo mais recente
+    // Sincroniza status de bloqueio e motivo mais recente do armazenamento administrativo
     if (user.role !== "admin" && !user.isImpersonateMode) {
         const clientsAdmin = JSON.parse(localStorage.getItem("thermolink_clients_admin") || "[]");
         const clientRecord = clientsAdmin.find(c => 
@@ -484,12 +231,15 @@ function iniciarPainelUsuario(user, usarSplash = false) {
 
     $("loginScreen").classList.add("hidden");
 
+    // Entrada: splash com a logo (2,5s + fade suave) ou direto após o login
     const abrirApp = () => {
         $("splashScreen").classList.add("hidden");
         $("mainApp").classList.remove("hidden");
 
+        // Garante que o aplicativo sempre abra diretamente na tela principal dos Fornos
         voltarListaFornos();
 
+        // Se a conta do cliente estiver BLOQUEADA, exibe a notificação na frente e oculta dados
         if (user.role !== "admin" && !user.isImpersonateMode && user.status === "Bloqueado") {
             const overlay = $("clientBlockedOverlay");
             if (overlay) {
@@ -507,6 +257,7 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         } else {
             $("clientBlockedOverlay")?.classList.add("hidden");
             carregarFornosELeituras();
+            iniciarRealtimeLeituras();
         }
     };
 
@@ -521,6 +272,7 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         abrirApp();
     }
 
+    // Banner de Impersonation (Modo Suporte do Administrador)
     const impBanner = $("impersonateBanner");
     if (impBanner) {
         if (user.isImpersonateMode) {
@@ -531,6 +283,7 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         }
     }
 
+    // Atualiza cabeçalho e perfil
     $("currentUserDisplay").textContent = user.name || user.username;
     $("profileName").textContent = user.name || user.username;
     $("profileRole").textContent = user.role === "admin" ? "Administrador Master" : "Acesso Cliente Cerâmica";
@@ -619,6 +372,7 @@ async function verificarDesbloqueio() {
             $("clientBlockedOverlay")?.classList.add("hidden");
             alert("Acesso liberado! Seus fornos e telemetria estão sendo carregados.");
             await carregarFornosELeituras();
+            iniciarRealtimeLeituras();
         } else {
             alert("Seu acesso ainda consta como suspenso pela administração.\nCaso já tenha efetuado a regularização, aguarde a liberação pelo administrador.");
         }
@@ -636,7 +390,7 @@ function sairModoSuporte() {
 }
 
 function realizarLogout() {
-    AccessTelemetry.encerrarSessao();
+    pararRealtimeLeituras();
     localStorage.removeItem("thermolink_active_session");
     state.currentUser = null;
     $("mainApp").classList.add("hidden");
@@ -674,7 +428,7 @@ async function carregarFornosELeituras() {
             try {
                 const { data: devs, error: errDevs } = await sb
                     .from("dispositivos")
-                    .select("id, serial, numero_serie, modelo, modulo_num, forno_id, status, ceramica_id")
+                    .select("id, serial, numero_serie, modelo, modulo_num, forno_id, status, ceramica_id, firmware_version, firmware, uptime, ip")
                     .eq("ceramica_id", cid)
                     .eq("status", "Vinculado");
 
@@ -698,6 +452,21 @@ async function carregarFornosELeituras() {
             state.allowedDeviceIds = allowedDeviceIds;
             state.clientDevices = clientDevices;
 
+            // Atualiza informações de Hardware e Firmware na aba "Sobre o ThermoLink"
+            const primaryDev = clientDevices[0];
+            if ($("infoHardwareSerial")) {
+                $("infoHardwareSerial").textContent = primaryDev ? (primaryDev.serial || primaryDev.numero_serie || "--") : "Nenhum";
+            }
+            if ($("infoHardwareFirmware")) {
+                const fw = primaryDev ? (primaryDev.firmware_version || primaryDev.firmware || "v4.5.5") : "--";
+                const isAtualizado = fw.includes("4.5");
+                $("infoHardwareFirmware").innerHTML = isAtualizado
+                    ? `<span style="color: #22c55e;"><i class="fa-solid fa-circle-check"></i> ${fw} (Atualizado)</span>`
+                    : `<span style="color: #f59e0b;"><i class="fa-solid fa-cloud-arrow-down"></i> ${fw} (Pendente)</span>`;
+            }
+
+
+
             // SE A CERÂMICA NÃO POSSUI DISPOSITIVO VINCULADO:
             // Não carrega dados de outros aparelhos nem exibe fornos de terceiros!
             if (clientDevices.length === 0) {
@@ -709,33 +478,24 @@ async function carregarFornosELeituras() {
             }
         }
 
-        // 2. CARREGA APENAS AS LEITURAS DESTE(S) APARELHO(S) VINCULADO(S)
+        // 2. CARREGA APENAS AS LEITURAS DESTA CERÂMICA / APARELHOS
         let leiturasQuery = sb
             .from("leituras")
             .select("id, dispositivo_id, forno_id, modulo_alutal, canal_1, canal_2, numero_serie, ceramica_id, created_at, data_hora");
 
         if (state.currentUser && state.currentUser.role !== "admin") {
-            const devFilters = [];
+            const cid = state.currentUser.ceramicaId;
+            const orFilters = [`ceramica_id.eq.${cid}`];
             if (allowedSerials.length > 0) {
-                devFilters.push(`numero_serie.in.(${allowedSerials.join(',')})`);
+                orFilters.push(`numero_serie.in.(${allowedSerials.join(',')})`);
             }
             if (allowedDeviceIds.length > 0) {
-                devFilters.push(`dispositivo_id.in.(${allowedDeviceIds.join(',')})`);
+                orFilters.push(`dispositivo_id.in.(${allowedDeviceIds.join(',')})`);
             }
-
-            // Puxa ESTRITAMENTE as leituras geradas pelo dispositivo vinculado (ex: THX-00002)
-            if (devFilters.length > 0) {
-                leiturasQuery = leiturasQuery.or(devFilters.join(','));
-            } else {
-                state.ovens = [];
-                state.readings = new Map();
-                updateLivePill(true);
-                renderListaFornos();
-                return;
-            }
+            leiturasQuery = leiturasQuery.or(orFilters.join(','));
         }
 
-        const { data: rawLeiturasData, error } = await leiturasQuery
+        const { data: leiturasData, error } = await leiturasQuery
             .order("created_at", { ascending: false })
             .limit(1000);
 
@@ -744,16 +504,6 @@ async function carregarFornosELeituras() {
             updateLivePill(false);
             return;
         }
-
-        // Filtro estrito em memória: garante que apenas leituras do hardware vinculado entrem
-        const leiturasData = (rawLeiturasData || []).filter(r => {
-            if (state.currentUser && state.currentUser.role !== "admin") {
-                const sOk = r.numero_serie && allowedSerials.includes(r.numero_serie);
-                const idOk = r.dispositivo_id && allowedDeviceIds.includes(Number(r.dispositivo_id));
-                return sOk || idOk;
-            }
-            return true;
-        });
 
         updateLivePill(true);
 
@@ -781,24 +531,20 @@ async function carregarFornosELeituras() {
             // Se o ESP enviou leituras de módulos, usamos os módulos ativos
             let mods = Array.from(detectedModules).sort((a, b) => a - b);
             if (mods.length === 0) {
-                // Caso o aparelho esteja recém-vinculado sem envio ainda, exibe o forno configurado no aparelho
-                const configuredMods = clientDevices
-                    .map(d => Number(d.modulo_num || d.forno_id || 1))
-                    .filter(n => Number.isFinite(n) && n > 0);
-                mods = configuredMods.length > 0 ? Array.from(new Set(configuredMods)).sort((a, b) => a - b) : [1];
+                // Caso o aparelho esteja recém-vinculado sem envio ainda, exibe fornos iniciais
+                const defaultCount = primaryDev?.modulo_num ? Math.max(primaryDev.modulo_num, 4) : 4;
+                mods = Array.from({ length: defaultCount }, (_, i) => i + 1);
             }
 
-            state.ovens = mods.map(m => {
-                const devMatched = clientDevices.find(d => Number(d.modulo_num || d.forno_id) === Number(m)) || primaryDev;
-                return {
-                    id: m,
-                    numero: m,
-                    nome: `Forno ${String(m).padStart(2, '0')}`,
-                    dispositivo_serial: devMatched ? (devMatched.serial || devMatched.numero_serie) : serialLabel,
-                    modelo: devMatched?.modelo || primaryDev?.modelo || "TLK-ESP8266-ALUTAL",
-                    ativo: true
-                };
-            });
+            state.ovens = mods.map(m => ({
+                id: m,
+                numero: m,
+                nome: `Forno ${String(m).padStart(2, '0')}`,
+                dispositivo_serial: serialLabel,
+                dispositivo_firmware: primaryDev?.firmware_version || primaryDev?.firmware || "v4.5.1",
+                modelo: primaryDev?.modelo || "TLK-ESP8266-ALUTAL",
+                ativo: true
+            }));
         } else {
             // Modo Master Admin: exibe os módulos detectados ou de 1 a 31
             const allMods = detectedModules.size > 0
@@ -832,6 +578,149 @@ async function carregarFornosELeituras() {
     }
 }
 
+// ==========================================================================
+// 2.1 SINCRONIZAÇÃO EM TEMPO REAL VIA SUPABASE REALTIME (WEBSOCKETS)
+// ==========================================================================
+
+function pararRealtimeLeituras() {
+    if (state.realtimeChannel) {
+        try {
+            sb.removeChannel(state.realtimeChannel);
+        } catch (e) {
+            console.warn("[Realtime] Falha ao encerrar canal:", e);
+        }
+        state.realtimeChannel = null;
+    }
+}
+
+function iniciarRealtimeLeituras() {
+    pararRealtimeLeituras();
+
+    if (!state.currentUser || state.currentUser.status === "Bloqueado") return;
+
+    try {
+        state.realtimeChannel = sb
+            .channel('thermolink-realtime-leituras')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'leituras' },
+                (payload) => {
+                    if (payload && payload.new) {
+                        processarLeituraRealtime(payload.new);
+                    }
+                }
+            )
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log('[Realtime] Conectado e escutando novas leituras em tempo real.');
+                    updateLivePill(true);
+                } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                    console.warn('[Realtime] Status do canal:', status);
+                }
+            });
+    } catch (err) {
+        console.warn("[Realtime] Não foi possível iniciar WebSocket Realtime:", err);
+    }
+}
+
+function processarLeituraRealtime(novaLeitura) {
+    if (!novaLeitura || !state.currentUser) return;
+    if (state.currentUser.status === "Bloqueado") return;
+
+    // Filtra para o cliente logado se não for admin
+    if (state.currentUser.role !== "admin") {
+        const cid = state.currentUser.ceramicaId;
+        const serial = novaLeitura.numero_serie;
+        const dispId = Number(novaLeitura.dispositivo_id);
+
+        const pertenceCeramica = cid && novaLeitura.ceramica_id === cid;
+        const pertenceSerial = Array.isArray(state.allowedSerials) && state.allowedSerials.includes(serial);
+        const pertenceId = Array.isArray(state.allowedDeviceIds) && state.allowedDeviceIds.includes(dispId);
+
+        if (!pertenceCeramica && !pertenceSerial && !pertenceId) {
+            return;
+        }
+    }
+
+    const mod = Number(novaLeitura.modulo_alutal || novaLeitura.forno_id || 1);
+    if (!Number.isFinite(mod)) return;
+
+    // Atualiza mapa de últimas leituras
+    state.readings.set(mod, novaLeitura);
+
+    // Adiciona o forno na lista caso seja novo
+    let fornoExistente = state.ovens.find(o => Number(o.numero) === mod);
+    if (!fornoExistente) {
+        const serialLabel = novaLeitura.numero_serie || "THX";
+        state.ovens.push({
+            id: mod,
+            numero: mod,
+            nome: `Forno ${String(mod).padStart(2, '0')}`,
+            dispositivo_serial: serialLabel,
+            modelo: "TLK-ESP8266-ALUTAL",
+            ativo: true
+        });
+        state.ovens.sort((a, b) => Number(a.numero) - Number(b.numero));
+    }
+
+    updateLivePill(true);
+
+    // Dispara checagem imediata de limites térmicos (alertas, som e vibração sem atraso)
+    if (window.ThermoAlertas) {
+        window.ThermoAlertas.verificarLeituras();
+    }
+
+    // Se estiver na tela de lista de fornos, atualiza os cards
+    if (state.selectedModule === null) {
+        renderListaFornos();
+    } else if (state.analysisModule === mod || state.selectedModule === mod) {
+        // Se estiver com este forno aberto na tela de análise
+        atualizarFaixaResumoAnalise(mod);
+
+        // Adiciona ao histórico cru em memória
+        if (Array.isArray(state.currentAnalysisRawHistory)) {
+            const jaExiste = state.currentAnalysisRawHistory.some(r => r.id && r.id === novaLeitura.id);
+            if (!jaExiste) {
+                state.currentAnalysisRawHistory.push(novaLeitura);
+                if (state.currentAnalysisRawHistory.length > 1000) {
+                    state.currentAnalysisRawHistory.shift();
+                }
+
+                // Atualiza dados dos gráficos suavemente sem recriar
+                const d = new Date(novaLeitura.created_at || Date.now());
+                const label = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                const c1 = numVal(novaLeitura.canal_1);
+                const c2 = numVal(novaLeitura.canal_2);
+
+                if (state.analysisChart && state.analysisChart.data) {
+                    state.analysisChart.data.labels.push(label);
+                    if (state.analysisChart.data.datasets[0]) state.analysisChart.data.datasets[0].data.push(c1);
+                    if (state.analysisChart.data.datasets[1]) state.analysisChart.data.datasets[1].data.push(c2);
+                    if (state.analysisChart.data.labels.length > 1000) {
+                        state.analysisChart.data.labels.shift();
+                        state.analysisChart.data.datasets.forEach(ds => ds.data.shift());
+                    }
+                    state.analysisChart.update('none');
+                }
+
+                if (state.landscapeChart && state.landscapeChart.data) {
+                    state.landscapeChart.data.labels.push(label);
+                    if (state.landscapeChart.data.datasets[0]) state.landscapeChart.data.datasets[0].data.push(c1);
+                    if (state.landscapeChart.data.datasets[1]) state.landscapeChart.data.datasets[1].data.push(c2);
+                    if (state.landscapeChart.data.labels.length > 1000) {
+                        state.landscapeChart.data.labels.shift();
+                        state.landscapeChart.data.datasets.forEach(ds => ds.data.shift());
+                    }
+                    state.landscapeChart.update('none');
+                }
+
+                // Atualiza inspector e estatísticas
+                atualizarInspectorAnalise(novaLeitura);
+            }
+        }
+    }
+}
+
 async function getHistoricoModulo(modulo, limit = 1000) {
     try {
         let q = sb
@@ -840,19 +729,15 @@ async function getHistoricoModulo(modulo, limit = 1000) {
             .eq("modulo_alutal", modulo);
 
         if (state.currentUser && state.currentUser.role !== "admin") {
-            const devFilters = [];
+            const cid = state.currentUser.ceramicaId;
+            const orList = [`ceramica_id.eq.${cid}`];
             if (state.allowedSerials && state.allowedSerials.length > 0) {
-                devFilters.push(`numero_serie.in.(${state.allowedSerials.join(',')})`);
+                orList.push(`numero_serie.in.(${state.allowedSerials.join(',')})`);
             }
             if (state.allowedDeviceIds && state.allowedDeviceIds.length > 0) {
-                devFilters.push(`dispositivo_id.in.(${state.allowedDeviceIds.join(',')})`);
+                orList.push(`dispositivo_id.in.(${state.allowedDeviceIds.join(',')})`);
             }
-
-            if (devFilters.length > 0) {
-                q = q.or(devFilters.join(','));
-            } else {
-                return [];
-            }
+            q = q.or(orList.join(','));
         }
 
         const { data, error } = await q
@@ -860,17 +745,7 @@ async function getHistoricoModulo(modulo, limit = 1000) {
             .limit(limit);
 
         if (error) return [];
-
-        const filtered = (data || []).filter(r => {
-            if (state.currentUser && state.currentUser.role !== "admin") {
-                const sOk = r.numero_serie && state.allowedSerials?.includes(r.numero_serie);
-                const idOk = r.dispositivo_id && state.allowedDeviceIds?.includes(Number(r.dispositivo_id));
-                return sOk || idOk;
-            }
-            return true;
-        });
-
-        return filtered.reverse();
+        return (data || []).reverse();
     } catch {
         return [];
     }
@@ -941,7 +816,10 @@ function renderListaFornos() {
                 <div class="kiln-top-meta">
                     <div class="kiln-card-title-box">
                         <h3 class="kiln-card-title">${escapeHtml(nomeForno)}</h3>
-                        ${o.dispositivo_serial ? `<span class="kiln-card-serial"><i class="fa-solid fa-microchip"></i> ${escapeHtml(o.dispositivo_serial)}</span>` : ''}
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:2px;">
+                            ${o.dispositivo_serial ? `<span class="kiln-card-serial"><i class="fa-solid fa-microchip"></i> ${escapeHtml(o.dispositivo_serial)}</span>` : ''}
+                            ${o.dispositivo_firmware ? `<span class="kiln-card-fw" style="font-size:11px; color:#22c55e; font-weight:700;"><i class="fa-solid fa-circle-check"></i> ${escapeHtml(o.dispositivo_firmware)}</span>` : ''}
+                        </div>
                     </div>
                     <span class="status-indicator-badge ${online ? 'is-online' : 'is-standby'}">
                         <span class="pulse-dot"></span>
