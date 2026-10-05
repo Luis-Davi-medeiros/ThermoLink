@@ -2,8 +2,13 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#07121f">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <title>ThermoLink • Painel Master Admin</title>
 
     <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
@@ -71,7 +76,8 @@
 <div class="admin-layout" id="adminMainLayout">
 
     <!-- SIDEBAR DE NAVEGAÇÃO -->
-    <aside class="admin-sidebar">
+    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebarMobile()"></div>
+    <aside class="admin-sidebar" id="adminSidebar">
         <div class="sidebar-header">
             <div class="brand-badge-box">
                 <i class="fa-solid fa-fire-flame-curved"></i>
@@ -80,28 +86,36 @@
                 <div class="brand-title">ThermoLink</div>
                 <div class="brand-tag">MASTER ADMIN</div>
             </div>
+            <button class="btn-sidebar-close-mobile" onclick="toggleSidebarMobile()" aria-label="Fechar Menu">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
         </div>
 
         <nav class="sidebar-nav">
             <div class="nav-section-label">GERAL & NEGÓCIOS</div>
-            <button class="nav-btn active" onclick="trocarSecaoAdmin('dashboard')">
+            <button class="nav-btn active" data-secao="dashboard" onclick="trocarSecaoAdmin('dashboard')">
                 <i class="fa-solid fa-chart-pie"></i>
                 <span>Dashboard Geral</span>
             </button>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('clientes')">
+            <button class="nav-btn" data-secao="clientes" onclick="trocarSecaoAdmin('clientes')">
                 <i class="fa-solid fa-industry"></i>
                 <span>Cerâmicas & Clientes</span>
                 <span class="nav-badge" id="sidebarBadgeClients">3</span>
             </button>
 
             <div class="nav-section-label">HARDWARE & PRODUÇÃO</div>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('dispositivos')">
+            <button class="nav-btn" data-secao="dispositivos" onclick="trocarSecaoAdmin('dispositivos')">
                 <i class="fa-solid fa-microchip"></i>
                 <span>Fábrica & QR Codes</span>
             </button>
 
             <div class="nav-section-label">GESTÃO & SISTEMA</div>
-            <button class="nav-btn" onclick="trocarSecaoAdmin('planos')">
+            <button class="nav-btn" data-secao="atividade" onclick="trocarSecaoAdmin('atividade')">
+                <i class="fa-solid fa-users-viewfinder"></i>
+                <span>Atividade dos Usuários</span>
+                <span class="nav-badge nav-badge-green" id="sidebarBadgeOnline">--</span>
+            </button>
+            <button class="nav-btn" data-secao="planos" onclick="trocarSecaoAdmin('planos')">
                 <i class="fa-solid fa-sliders"></i>
                 <span>Planos & Retenção</span>
             </button>
@@ -231,7 +245,16 @@
                                 <h3>Volume de Leituras Trafegadas (24 Horas)</h3>
                                 <p>Monitoramento de chamadas e consumo do banco de dados Supabase</p>
                             </div>
-                            <div class="tag-pill">Tempo Real</div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <div class="tag-pill" id="trafficStatsBadge" title="Total de leituras nas últimas 24 horas">
+                                    <i class="fa-solid fa-database" style="color: var(--orange); margin-right: 4px;"></i>
+                                    <span id="trafficTotal24h">Calculando...</span>
+                                </div>
+                                <div class="tag-pill tag-pill-orange">
+                                    <span class="live-dot-green" style="margin-right: 4px;"></span>
+                                    <span>Tempo Real</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="traffic-chart-wrapper">
                             <canvas id="trafficChartCanvas"></canvas>
@@ -338,44 +361,6 @@
                             <span class="pill-label text-orange">Em Estoque (Prontos)</span>
                             <strong class="text-orange" id="sumDevStock">--</strong>
                         </div>
-                        <div class="dev-summary-pill">
-                            <span class="pill-label text-blue"><i class="fa-solid fa-code-commit"></i> Atualizados (<span id="lblSumLatestFw">v4.5.6</span>)</span>
-                            <strong style="color: #38bdf8;" id="sumDevUpToDate">--</strong>
-                        </div>
-                    </div>
-
-                    <!-- CENTRAL REMOTA DE VERSÕES DE FIRMWARE -->
-                    <div style="margin: 20px 0; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 18px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(56, 189, 248, 0.15); display: flex; align-items: center; justify-content: center; color: #38bdf8; font-size: 16px;">
-                                    <i class="fa-solid fa-cloud-arrow-down"></i>
-                                </div>
-                                <div>
-                                    <h4 style="margin: 0; font-size: 15px; color: #fff; font-weight: 700;">Status Remoto de Versões (OTA)</h4>
-                                    <span style="font-size: 12px; color: #94a3b8;">Monitoramento em tempo real do firmware em execução em cada hardware</span>
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                                <a href="https://github.com/Luis-Davi-medeiros/ESP8266_ATUALIZA-OE_ThermoLink/releases" target="_blank" style="text-decoration: none; color: inherit;" title="Abrir releases no GitHub">
-                                    <span style="font-size: 12px; color: #94a3b8; background: rgba(255,255,255,0.05); padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"><i class="fa-brands fa-github"></i> Release Oficial: <b id="lblReleaseAtualGitHub" style="color: #22c55e;">v4.5.6</b></span>
-                                </a>
-
-                                <button class="btn-primary-admin" style="padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;" onclick="buscarReleaseAtualGitHub(true)" title="Puxar release mais recente do GitHub agora">
-                                    <i class="fa-brands fa-github" id="iconPuxarGit"></i>
-                                    <span>Puxar do Git</span>
-                                </button>
-                                <button class="btn-primary-admin" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15);" onclick="carregarDadosSupabase()" title="Recarregar telemetria dos aparelhos">
-                                    <i class="fa-solid fa-arrows-rotate"></i>
-                                </button>
-                            </div>
-                        </div>
-
-
-                        <!-- CARDS DINÂMICOS DE HARDWARE -->
-                        <div id="deviceFirmwareStatusGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
-                            <div style="color: #64748b; font-size: 13px;">Carregando status dos aparelhos...</div>
-                        </div>
                     </div>
 
                     <!-- TABELA DE DISPOSITIVOS -->
@@ -388,8 +373,6 @@
                                     <th>Status Estoque</th>
                                     <th>Cerâmica Vinculada</th>
                                     <th>Forno Associado</th>
-                                    <th>Versão Firmware</th>
-                                    <th>Telemetria / Uptime</th>
                                     <th>Data Fabricação</th>
                                     <th style="text-align: right;">QR Code & Controle</th>
                                 </tr>
@@ -403,7 +386,177 @@
 
             </section>
 
+            <!-- ========================================================
+                 SEÇÃO 4: MONITORAMENTO DE ATIVIDADE DOS USUÁRIOS
+            ========================================================= -->
+            <section id="secAtividade" class="admin-section hidden">
+                
+                <!-- CARDS DE KPIS DE ATIVIDADE -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-online-pulse">
+                            <i class="fa-solid fa-users"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Usuários Online Agora</span>
+                            <div class="kpi-value text-green" id="kpiUsersOnline">0</div>
+                            <div class="kpi-trend trend-green">
+                                <span class="live-dot-green"></span>
+                                <span>Ativos nos últimos 5 min</span>
+                            </div>
+                        </div>
+                    </div>
 
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-access-count">
+                            <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Total de Acessos Registrados</span>
+                            <div class="kpi-value" id="kpiTotalAccesses">--</div>
+                            <div class="kpi-trend trend-neutral">
+                                <i class="fa-regular fa-calendar-check"></i>
+                                <span id="kpiPeriodAccessSub">Período: 7 dias</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-active-users">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Usuários Ativos no Período</span>
+                            <div class="kpi-value text-blue" id="kpiActiveUsersCount">--</div>
+                            <div class="kpi-trend trend-neutral">
+                                <i class="fa-solid fa-industry"></i>
+                                <span id="kpiActivePercentSub">Engajamento ativo</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box icon-peak-hour">
+                            <i class="fa-solid fa-fire-burner"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Horário de Maior Atividade</span>
+                            <div class="kpi-value text-orange" id="kpiPeakHour">--</div>
+                            <div class="kpi-trend trend-neutral">
+                                <i class="fa-solid fa-chart-simple"></i>
+                                <span>Pico de monitoramento</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GRÁFICOS: ACESSOS POR DIA & HORÁRIOS DE ATIVIDADE -->
+                <div class="dashboard-duo-grid">
+                    <div class="panel-box">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Quantidade de Acessos por Dia</h3>
+                                <p>Volume diário de entradas no sistema no período selecionado</p>
+                            </div>
+                            <div class="tag-pill" id="badgeChartDailyPeriod">Últimos 7 dias</div>
+                        </div>
+                        <div class="chart-wrapper-admin">
+                            <canvas id="dailyAccessChartCanvas"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel-box">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Horários de Maior Atividade (24 Horas)</h3>
+                                <p>Distribuição das entradas ao longo do dia para identificar picos de uso</p>
+                            </div>
+                            <div class="tag-pill tag-pill-orange">Turnos Operacionais</div>
+                        </div>
+                        <div class="chart-wrapper-admin">
+                            <canvas id="hourlyDistributionChartCanvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAINEL PRINCIPAL: TABELA DE USUÁRIOS E HISTÓRICO DE ACESSOS -->
+                <div class="panel-box">
+                    <div class="panel-header">
+                        <div>
+                            <h3>Usuários & Registro de Acessos ao Sistema</h3>
+                            <p>Acompanhe status online/offline, data do último acesso, frequência, dispositivos e IPs</p>
+                        </div>
+                        <div class="panel-actions-header">
+                            <button class="btn-secondary-admin" onclick="carregarAcessosUsuariosSupabase(true)">
+                                <i class="fa-solid fa-rotate" id="refreshAccessesIcon"></i>
+                                <span>Atualizar Acessos</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- BARRA DE FERRAMENTAS, FILTROS DE PERÍODO & BUSCA -->
+                    <div class="activity-toolbar">
+                        <!-- Filtros por Período -->
+                        <div class="filter-group-segmented">
+                            <span class="filter-group-label"><i class="fa-regular fa-calendar"></i> Período:</span>
+                            <div class="filter-pills">
+                                <button class="filter-pill" id="btnPeriodToday" onclick="filtrarPeriodoAtividade('today', this)">Hoje</button>
+                                <button class="filter-pill active" id="btnPeriod7d" onclick="filtrarPeriodoAtividade('7d', this)">7 Dias</button>
+                                <button class="filter-pill" id="btnPeriod30d" onclick="filtrarPeriodoAtividade('30d', this)">30 Dias</button>
+                                <button class="filter-pill" id="btnPeriodCustom" onclick="filtrarPeriodoAtividade('custom', this)">Personalizado</button>
+                            </div>
+                        </div>
+
+                        <!-- Inputs de data personalizada (revelados quando 'Personalizado' está ativo) -->
+                        <div class="custom-date-inputs hidden" id="boxCustomDates">
+                            <input type="date" id="activityStartDate" title="Data Inicial">
+                            <span>até</span>
+                            <input type="date" id="activityEndDate" title="Data Final">
+                            <button class="btn-filter-apply" onclick="aplicarFiltroDataPersonalizada()">Aplicar</button>
+                        </div>
+
+                        <!-- Ordenação -->
+                        <div class="sort-group">
+                            <span class="filter-group-label"><i class="fa-solid fa-arrow-down-wide-short"></i> Ordenar:</span>
+                            <select id="activitySortSelect" class="admin-select" onchange="alterarOrdenacaoAtividade(this.value)">
+                                <option value="lastAccessDesc">Último Acesso (Mais recente)</option>
+                                <option value="lastAccessAsc">Último Acesso (Mais antigo)</option>
+                                <option value="accessCountDesc">Quantidade de Acessos (Maior)</option>
+                                <option value="accessCountAsc">Quantidade de Acessos (Menor)</option>
+                                <option value="nameAsc">Nome do Usuário (A-Z)</option>
+                            </select>
+                        </div>
+
+                        <!-- Busca Textual -->
+                        <div class="search-input-group search-flex-grow">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="activitySearchInput" placeholder="Buscar por usuário, cerâmica, IP ou dispositivo..." oninput="filtrarTabelaAtividade(this.value)">
+                        </div>
+                    </div>
+
+                    <!-- TABELA DE USUÁRIOS & ACESSOS -->
+                    <div class="admin-table-wrapper">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Usuário / Cerâmica</th>
+                                    <th>Status de Conexão</th>
+                                    <th>Último Acesso</th>
+                                    <th>Data de Login</th>
+                                    <th>Qtd. Acessos</th>
+                                    <th>Dispositivo & Navegador</th>
+                                    <th>IP de Acesso</th>
+                                    <th style="text-align: right;">Auditoria</th>
+                                </tr>
+                            </thead>
+                            <tbody id="userActivityTableBody">
+                                <!-- Preenchido dinamicamente via admin.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </section>
 
             <!-- ========================================================
                  SEÇÃO 5: CONFIGURAÇÕES DE PLANOS, LIMITES E FATURAMENTO
@@ -478,6 +631,30 @@
 
 
         </div>
+
+        <!-- BARRA DE NAVEGAÇÃO INFERIOR EXCLUSIVA PARA CELULAR -->
+        <nav class="admin-mobile-nav" id="adminMobileNav">
+            <button class="mobile-nav-item active" data-secao="dashboard" onclick="trocarSecaoAdmin('dashboard')">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>Geral</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="clientes" onclick="trocarSecaoAdmin('clientes')">
+                <i class="fa-solid fa-industry"></i>
+                <span>Clientes</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="dispositivos" onclick="trocarSecaoAdmin('dispositivos')">
+                <i class="fa-solid fa-microchip"></i>
+                <span>Fábrica</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="atividade" onclick="trocarSecaoAdmin('atividade')">
+                <i class="fa-solid fa-users-viewfinder"></i>
+                <span>Acessos</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="planos" onclick="trocarSecaoAdmin('planos')">
+                <i class="fa-solid fa-sliders"></i>
+                <span>Planos</span>
+            </button>
+        </nav>
 
     </main>
 
@@ -706,8 +883,47 @@
     </div>
 </div>
 
+<!-- MODAL 4: HISTÓRICO COMPLETO DE SESSÕES DO USUÁRIO -->
+<div id="modalHistoricoSessoes" class="modal-overlay hidden" onclick="fecharModalAdmin('modalHistoricoSessoes', event)">
+    <div class="modal-dialog modal-dialog-lg" onclick="event.stopPropagation()">
+        <div class="modal-dialog-header">
+            <div>
+                <h3 id="modalHistTitle"><i class="fa-solid fa-clock-rotate-left text-orange"></i> Histórico Detalhado de Acessos</h3>
+                <p id="modalHistSubtitle" class="modal-subheading">Registros de logins e sessões rastreadas</p>
+            </div>
+            <button class="btn-close-modal" onclick="fecharModalAdmin('modalHistoricoSessoes', null)"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <div class="user-hist-summary" id="modalHistUserSummary">
+            <!-- Gerado dinamicamente -->
+        </div>
+
+        <div class="admin-table-wrapper" style="max-height: 380px; overflow-y: auto;">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Data & Horário do Login</th>
+                        <th>Último Contato / Duração</th>
+                        <th>Dispositivo</th>
+                        <th>Navegador & SO</th>
+                        <th>Endereço IP</th>
+                    </tr>
+                </thead>
+                <tbody id="userHistTableBody">
+                    <!-- Gerado dinamicamente -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="modal-dialog-actions">
+            <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalHistoricoSessoes', null)">Fechar</button>
+        </div>
+    </div>
+</div>
+
 <!-- Scripts do Painel Master -->
 <script src="admin.js"></script>
 
 </body>
 </html>
+
