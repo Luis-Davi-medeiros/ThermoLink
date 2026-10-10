@@ -115,10 +115,6 @@
                 <span>Atividade dos Usuários</span>
                 <span class="nav-badge nav-badge-green" id="sidebarBadgeOnline">--</span>
             </button>
-            <button class="nav-btn" data-secao="planos" onclick="trocarSecaoAdmin('planos')">
-                <i class="fa-solid fa-sliders"></i>
-                <span>Planos & Retenção</span>
-            </button>
 
             <div class="nav-section-label">COMUNICAÇÃO & RELATÓRIOS</div>
             <button class="nav-btn" data-secao="whatsapp" onclick="trocarSecaoAdmin('whatsapp')">
@@ -213,32 +209,21 @@
                                 <span id="kpiOnlineDevicesCount">-- transmitindo</span>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="kpi-card">
-                        <div class="kpi-icon-box icon-revenue">
-                            <i class="fa-solid fa-dollar-sign"></i>
+                    </div>                    <div class="kpi-card kpi-card-clickable" id="kpiCardAparelhosOnline" onclick="abrirModalStatusAparelhos()" title="Clique para ver detalhes dos aparelhos Online, Cerâmicas e Tempo em Bypass">
+                        <div class="kpi-icon-box icon-online-status">
+                            <i class="fa-solid fa-tower-broadcast"></i>
                         </div>
                         <div class="kpi-body">
-                            <span class="kpi-label">Faturamento Estimado (MRR)</span>
-                            <div class="kpi-value text-green" id="kpiTotalRevenue">R$ --</div>
-                            <div class="kpi-trend trend-neutral">
-                                <i class="fa-regular fa-credit-card"></i>
-                                <span>Mensalidades SaaS</span>
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                <span class="kpi-label">Aparelhos Online (&le; 10 min)</span>
+                                <span class="kpi-click-hint"><i class="fa-solid fa-arrow-up-right-from-square"></i> Detalhes</span>
                             </div>
-                        </div>
-                    </div>
-
-                    <div class="kpi-card">
-                        <div class="kpi-icon-box icon-alerts">
-                            <i class="fa-solid fa-bell"></i>
-                        </div>
-                        <div class="kpi-body">
-                            <span class="kpi-label">Alertas Críticos (24h)</span>
-                            <div class="kpi-value text-orange" id="kpiTotalAlerts">0</div>
-                            <div class="kpi-trend trend-neutral">
-                                <i class="fa-solid fa-shield-check"></i>
-                                <span>Sensores e Faixas</span>
+                            <div class="kpi-value text-green" id="kpiAparelhosOnlineValue">
+                                <span id="kpiOnlineCount">--</span> <span style="font-size: 15px; font-weight: 700; color: #94a3b8;">Online</span>
+                            </div>
+                            <div class="kpi-trend trend-neutral" id="kpiOnlineBypassTrend">
+                                <span class="live-dot-green" style="margin-right: 4px;"></span>
+                                <span id="kpiOnlineSummary">Calculando...</span>
                             </div>
                         </div>
                     </div>
@@ -275,16 +260,28 @@
                         </div>
                     </div>
 
-                    <div class="panel-box recent-clients-panel">
+                    <div class="panel-box firmware-panel">
                         <div class="panel-header">
                             <div>
-                                <h3>Atividade Recente das Cerâmicas</h3>
-                                <p>Últimos acessos e transmissão dos fornos</p>
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <h3>Firmware & Versões dos Dispositivos</h3>
+                                    <span class="tag-pill tag-pill-cyan" id="badgeLatestGithubRelease" title="Versão oficial mais recente no GitHub Releases">
+                                        <i class="fa-brands fa-github"></i> <span id="latestReleaseTag">v4.5.7</span>
+                                    </span>
+                                </div>
+                                <p>Auditoria de versões instaladas vs. release mais recente no GitHub</p>
                             </div>
-                            <button class="btn-text-action" onclick="trocarSecaoAdmin('clientes')">Ver Todas</button>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <a href="https://github.com/Luis-Davi-medeiros/ESP8266_ATUALIZA-OE_ThermoLink/releases" target="_blank" rel="noopener noreferrer" class="btn-icon-subtle" title="Abrir Releases no GitHub" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #94a3b8; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.2s;">
+                                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 11px;"></i>
+                                </a>
+                                <button class="btn-icon-subtle" onclick="sincronizarVersoesFirmwareDispositivos(true)" title="Recarregar versões dos dispositivos" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #94a3b8; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;">
+                                    <i class="fa-solid fa-rotate" id="refreshFirmwareIcon"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div class="activity-feed-list" id="activityFeedList">
-                            <!-- Gerado dinamicamente -->
+                        <div class="firmware-device-list" id="firmwareDeviceList" style="display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow-y: auto; padding-right: 4px;">
+                            <!-- Gerado dinamicamente via admin.js -->
                         </div>
                     </div>
                 </div>
@@ -572,75 +569,6 @@
 
             </section>
 
-            <!-- ========================================================
-                 SEÇÃO 5: CONFIGURAÇÕES DE PLANOS, LIMITES E FATURAMENTO
-            ========================================================= -->
-            <section id="secPlanos" class="admin-section hidden">
-                
-                <div class="panel-box">
-                    <div class="panel-header">
-                        <div>
-                            <h3>Planos, Limites e Retenção do Banco de Dados</h3>
-                            <p>Defina regras de faturamento, quantidade de fornos permitidos e tempo de expiração do histórico</p>
-                        </div>
-                    </div>
-
-                    <div class="plans-grid">
-                        <div class="plan-card">
-                            <div class="plan-card-header">
-                                <div>
-                                    <h4>Plano Básico</h4>
-                                    <span class="plan-subtitle">Pequenas Cerâmicas</span>
-                                </div>
-                                <div class="plan-price">R$ 149<span>/mês</span></div>
-                            </div>
-                            <ul class="plan-features">
-                                <li><i class="fa-solid fa-check text-green"></i> Até <b>2 Fornos</b> simultâneos</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Retenção de <b>3 Meses</b> de leituras</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Alertas por navegador</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Gráficos em tempo real</li>
-                            </ul>
-                            <button class="btn-plan-edit" onclick="editarPlano('basico')">Ajustar Regras</button>
-                        </div>
-
-                        <div class="plan-card plan-featured">
-                            <div class="plan-badge">MAIS POPULAR</div>
-                            <div class="plan-card-header">
-                                <div>
-                                    <h4>Plano Profissional</h4>
-                                    <span class="plan-subtitle">Médias Cerâmicas</span>
-                                </div>
-                                <div class="plan-price">R$ 299<span>/mês</span></div>
-                            </div>
-                            <ul class="plan-features">
-                                <li><i class="fa-solid fa-check text-green"></i> Até <b>6 Fornos</b> simultâneos</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Retenção de <b>6 Meses</b> de leituras</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Suporte técnico prioritário NOC</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Curva térmica multicanal (1000 pts)</li>
-                            </ul>
-                            <button class="btn-plan-edit btn-plan-primary" onclick="editarPlano('pro')">Ajustar Regras</button>
-                        </div>
-
-                        <div class="plan-card">
-                            <div class="plan-card-header">
-                                <div>
-                                    <h4>Plano Enterprise</h4>
-                                    <span class="plan-subtitle">Grandes Indústrias Cerâmicas</span>
-                                </div>
-                                <div class="plan-price">R$ 599<span>/mês</span></div>
-                            </div>
-                            <ul class="plan-features">
-                                <li><i class="fa-solid fa-check text-green"></i> <b>Fornos Ilimitados</b></li>
-                                <li><i class="fa-solid fa-check text-green"></i> Retenção de <b>12 Meses</b> de histórico</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Atualizações OTA prioritárias</li>
-                                <li><i class="fa-solid fa-check text-green"></i> Relatórios executivos de queima</li>
-                            </ul>
-                            <button class="btn-plan-edit" onclick="editarPlano('enterprise')">Ajustar Regras</button>
-                        </div>
-                    </div>
-                </div>
-
-            </section>
 
             <!-- ========================================================
                  SEÇÃO 6: WHATSAPP GATEWAY & RELATÓRIOS DIÁRIOS
@@ -1226,6 +1154,96 @@
                 <button type="submit" class="btn-admin-submit" style="background: linear-gradient(135deg, #10b981, #059669);">Salvar Contato</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- ========================================================
+     MODAL: STATUS DETALHADO DOS DISPOSITIVOS (ONLINE & BYPASS)
+========================================================= -->
+<div id="modalStatusAparelhos" class="modal-overlay hidden" onclick="fecharModalAdmin('modalStatusAparelhos', event)">
+    <div class="modal-dialog modal-dialog-lg" onclick="event.stopPropagation()" style="max-width: 860px; width: 95%;">
+        <div class="modal-dialog-header">
+            <div>
+                <h3><i class="fa-solid fa-tower-broadcast text-green" style="margin-right: 8px;"></i> Status de Transmissão dos Dispositivos</h3>
+                <p style="color: var(--text-muted); font-size: 12px; margin-top: 3px;">
+                    Monitoramento em tempo real dos últimos 10 minutos (Regra: Ativo &le; 10 min | Bypass &gt; 10 min)
+                </p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" class="btn-icon-subtle" onclick="atualizarStatusDispositivosOnline(true)" title="Recarregar status agora" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #94a3b8; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;">
+                    <i class="fa-solid fa-rotate" id="refreshStatusAparelhosIcon"></i>
+                </button>
+                <button type="button" class="btn-close-modal" onclick="fecharModalAdmin('modalStatusAparelhos', null)"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+
+        <!-- CARDS DE RESUMO RÁPIDO -->
+        <div class="status-summary-grid">
+            <div class="status-summary-card status-card-online">
+                <div class="status-summary-icon text-green"><i class="fa-solid fa-wifi"></i></div>
+                <div>
+                    <span class="status-summary-label">Dispositivos Online (&le; 10 min)</span>
+                    <b class="status-summary-num text-green" id="modalCountOnline">--</b>
+                </div>
+            </div>
+            <div class="status-summary-card status-card-bypass">
+                <div class="status-summary-icon text-yellow"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div>
+                    <span class="status-summary-label">Dispositivos em Bypass (&gt; 10 min)</span>
+                    <b class="status-summary-num text-yellow" id="modalCountBypass">--</b>
+                </div>
+            </div>
+            <div class="status-summary-card status-card-total">
+                <div class="status-summary-icon text-cyan"><i class="fa-solid fa-microchip"></i></div>
+                <div>
+                    <span class="status-summary-label">Total de Dispositivos</span>
+                    <b class="status-summary-num" id="modalCountTotal">--</b>
+                </div>
+            </div>
+        </div>
+
+        <!-- FILTROS E BUSCA -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 12px; flex-wrap: wrap;">
+            <div class="filter-pills" id="modalStatusFilterPills">
+                <button class="filter-pill active" id="btnFilterStatusTodos" onclick="filtrarModalAparelhos('todos', this)">Todos (<span id="filterCountTodos">0</span>)</button>
+                <button class="filter-pill" id="btnFilterStatusOnline" onclick="filtrarModalAparelhos('online', this)">🟢 Online (<span id="filterCountOnline">0</span>)</button>
+                <button class="filter-pill" id="btnFilterStatusBypass" onclick="filtrarModalAparelhos('bypass', this)">🟡 Em Bypass (<span id="filterCountBypass">0</span>)</button>
+            </div>
+            <div class="search-input-group" style="max-width: 280px; width: 100%;">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="modalSearchAparelhoInput" placeholder="Buscar cerâmica, serial..." oninput="filtrarModalAparelhosBusca(this.value)">
+            </div>
+        </div>
+
+        <!-- TABELA DE STATUS DOS APARELHOS -->
+        <div class="admin-table-wrapper" style="max-height: 380px; overflow-y: auto;">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Dispositivo / Serial</th>
+                        <th>Cerâmica Cliente</th>
+                        <th>Status Atual</th>
+                        <th>Última Transmissão</th>
+                        <th>Tempo Decorrido</th>
+                        <th>Temperaturas</th>
+                    </tr>
+                </thead>
+                <tbody id="modalAparelhosTableBody">
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                            <i class="fa-solid fa-spinner fa-spin" style="margin-right: 6px;"></i> Carregando telemetria dos aparelhos...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="modal-dialog-actions" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <small style="color: var(--text-muted); font-size: 11px;">
+                <i class="fa-solid fa-circle-info"></i> Sincronizado automaticamente a cada 20 segundos com o Supabase.
+            </small>
+            <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalStatusAparelhos', null)">Fechar</button>
+        </div>
     </div>
 </div>
 

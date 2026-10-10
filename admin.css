@@ -2280,4 +2280,231 @@ input:checked + .slider:before {
     color: white;
 }
 
+/* ==========================================================================
+   KPI CARD CLICÁVEL & MODAL STATUS APARELHOS (ONLINE & BYPASS)
+   ========================================================================== */
+.kpi-card-clickable {
+    cursor: pointer;
+    position: relative;
+    border-color: rgba(16, 185, 129, 0.25);
+    background: linear-gradient(145deg, var(--adm-card), rgba(16, 185, 129, 0.04));
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kpi-card-clickable:hover {
+    transform: translateY(-3px);
+    border-color: rgba(16, 185, 129, 0.5);
+    box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.15);
+}
+
+.kpi-click-hint {
+    font-size: 10px;
+    font-weight: 700;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    padding: 2px 7px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+}
+
+.kpi-card-clickable:hover .kpi-click-hint {
+    background: rgba(56, 189, 248, 0.2);
+    color: #ffffff;
+}
+
+.icon-online-status {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+/* Modal Status Summary Cards */
+.status-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+}
+
+.status-summary-card {
+    background: var(--adm-bg);
+    border: 1px solid var(--adm-border);
+    border-radius: var(--radius-md);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.status-card-online {
+    border-color: rgba(16, 185, 129, 0.35);
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.status-card-bypass {
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.05);
+}
+
+.status-card-total {
+    border-color: rgba(14, 165, 233, 0.35);
+    background: rgba(14, 165, 233, 0.05);
+}
+
+.status-summary-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.status-summary-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.status-summary-num {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+/* Badges de Status na Tabela */
+.badge-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.badge-status-online {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.badge-status-bypass {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge-status-estoque {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+/* ==========================================================================
+   PAINEL DE VERSÕES DE FIRMWARE DOS DISPOSITIVOS (OTA / GITHUB)
+   ========================================================================== */
+.tag-pill-cyan {
+    background: rgba(14, 165, 233, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(14, 165, 233, 0.35);
+}
+
+.firmware-device-item {
+    background: var(--adm-bg);
+    border: 1px solid var(--adm-border);
+    border-radius: var(--radius-sm);
+    padding: 11px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: all 0.2s ease;
+}
+
+.firmware-device-item:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.firmware-dev-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.firmware-dev-meta b {
+    color: #ffffff;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: monospace;
+}
+
+.firmware-dev-meta span {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.firmware-badge-updated {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.firmware-badge-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.btn-firmware-ota {
+    background: rgba(249, 115, 22, 0.15);
+    color: #fb923c;
+    border: 1px solid rgba(249, 115, 22, 0.3);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+    text-decoration: none;
+}
+
+.btn-firmware-ota:hover {
+    background: #f97316;
+    color: #ffffff;
+}
+
+
+
 

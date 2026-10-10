@@ -233,6 +233,7 @@ const adminState = {
     activeSection: "dashboard",
     clients: [],
     devices: [],
+    latestGithubRelease: "v4.5.7",
     trafficChart: null,
     clientFilterStatus: "all",
     clientSearchQuery: "",
@@ -314,6 +315,7 @@ async function carregarDadosSupabase() {
                     voltage: d.voltage || 5.05,
                     sensorC1: "OK",
                     sensorC2: "OK",
+                    firmware: d.firmware || d.firmware_version || "v4.5.7",
                     uptime: d.uptime || "--",
                     ultimoAcesso: d.ultimo_acesso
                 };
@@ -444,9 +446,6 @@ function trocarSecaoAdmin(secao) {
         pararPollingWhatsappAdmin();
         $("secAtividade")?.classList.remove("hidden");
         renderSecaoAtividade();
-    } else if (secao === "planos") {
-        pararPollingWhatsappAdmin();
-        $("secPlanos")?.classList.remove("hidden");
     } else if (secao === "whatsapp") {
         $("secWhatsapp")?.classList.remove("hidden");
         carregarSecaoWhatsappAdmin();
@@ -503,10 +502,6 @@ function renderDashboardGeral() {
     const devices = getDevices();
 
     // KPIs
-    const totalMRR = clients
-        .filter(c => c.status === "Ativo")
-        .reduce((acc, c) => acc + (Number(c.valorMensal) || 0), 0);
-
     const ativas = clients.filter(c => c.status === "Ativo");
     const onlineDevs = devices.filter(d => d.status === "Vinculado");
 
@@ -517,24 +512,9 @@ function renderDashboardGeral() {
     if ($("kpiTotalDevices")) $("kpiTotalDevices").textContent = devices.length;
     if ($("kpiOnlineDevicesCount")) $("kpiOnlineDevicesCount").textContent = `${onlineDevs.length} vinculados`;
 
-    if ($("kpiTotalRevenue")) $("kpiTotalRevenue").textContent = `R$ ${totalMRR.toLocaleString("pt-BR")}`;
-    if ($("kpiTotalAlerts")) $("kpiTotalAlerts").textContent = "0";
-
-    // Activity Feed
-    const feed = $("activityFeedList");
-    if (feed) {
-        feed.innerHTML = clients.map(c => `
-            <div class="activity-item">
-                <div class="act-info">
-                    <b>${escapeHtml(c.nome)}</b>
-                    <span>${c.status === "Ativo" ? "Sincronizando leituras térmicas" : "Acesso bloqueado temporariamente"}</span>
-                </div>
-                <div class="act-time">${c.ultimoAcesso}</div>
-            </div>
-        `).join("");
-    }
-
     renderTrafficChart();
+    atualizarStatusDispositivosOnline();
+    renderListaVersoesFirmware();
 }
 
 let isRenderingTrafficChart = false;
@@ -2307,17 +2287,383 @@ function abrirHistoricoUsuario(userParam) {
 }
 
 // ==========================================================================
-// 9. PLANOS & CENTRAL OTA
+// 9. CENTRAL OTA
 // ==========================================================================
-
-function editarPlano(planoKey) {
-    alert(`Configuração do plano ${planoKey.toUpperCase()}:\nAs regras de limites de fornos e retenção de banco de dados foram salvas e aplicadas a todas as cerâmicas vinculadas.`);
-}
 
 function abrirModalDeployOTA() {
     if (confirm("Deseja disparar a atualização de Firmware v4.0.0 via Over-The-Air (OTA) para todos os dispositivos ThermoLink conectados no Brasil?")) {
         alert("Comando de atualização remota disparado com sucesso!\nOs módulos farão o download da release mais recente no GitHub e reinicialização automática.");
     }
+}
+
+// ==========================================================================
+// 8. MONITORAMENTO DE DISPOSITIVOS ONLINE & BYPASS (< 10 MINUTOS)
+// ==========================================================================
+
+function formatarTempoDecorrido(timestamp) {
+    if (!timestamp) return "Nunca transmitiu";
+    const data = new Date(timestamp);
+    if (isNaN(data.getTime())) return "Data inválida";
+
+    const diffMs = Date.now() - data.getTime();
+    if (diffMs < 0) return "Agora mesmo";
+
+    const diffSeg = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSeg / 60);
+    const diffHoras = Math.floor(diffMin / 60);
+    const diffDias = Math.floor(diffHoras / 24);
+
+    if (diffSeg < 60) return `há ${diffSeg} seg`;
+    if (diffMin < 60) return `há ${diffMin} min`;
+    if (diffHoras < 24) {
+        const minRestantes = diffMin % 60;
+        return `há ${diffHoras}h ${minRestantes > 0 ? `${minRestantes}m` : ''}`.trim();
+    }
+    const horasRestantes = diffHoras % 24;
+    return `há ${diffDias} ${diffDias === 1 ? 'dia' : 'dias'}${horasRestantes > 0 ? ` e ${horasRestantes}h` : ''}`;
+}
+
+async function atualizarStatusDispositivosOnline(forcarAtualizacao = false) {
+    const refreshIcon = $("refreshStatusAparelhosIcon");
+    if (refreshIcon) refreshIcon.classList.add("fa-spin");
+
+    try {
+        const devices = adminState.devices && adminState.devices.length ? adminState.devices : (getDevices() || []);
+        const clients = adminState.clients && adminState.clients.length ? adminState.clients : (getClients() || []);
+        const clientMap = {};
+        clients.forEach(c => clientMap[c.id] = c);
+
+        // Busca no Supabase as leituras mais recentes para cada dispositivo
+        let leiturasRecentesMap = {};
+        if (typeof sb !== "undefined" && sb) {
+            try {
+                const { data: leituras } = await sb
+                    .from("leituras")
+                    .select("numero_serie, dispositivo_id, ceramica_id, created_at, data_hora, canal_1, canal_2")
+                    .order("created_at", { ascending: false })
+                    .limit(200);
+
+                if (leituras && leituras.length > 0) {
+                    leituras.forEach(l => {
+                        const s = l.numero_serie;
+                        const dId = l.dispositivo_id;
+                        if (s && !leiturasRecentesMap[s]) {
+                            leiturasRecentesMap[s] = l;
+                        }
+                        if (dId && !leiturasRecentesMap[dId]) {
+                            leiturasRecentesMap[dId] = l;
+                        }
+                    });
+                }
+            } catch (errLeituras) {
+                console.warn("[Admin] Aviso ao consultar leituras recentes:", errLeituras);
+            }
+        }
+
+        const now = Date.now();
+        let onlineCount = 0;
+        let bypassCount = 0;
+        let estoqueCount = 0;
+
+        const processados = devices.map(d => {
+            const serial = d.serial || d.numeroSerie || (d.id ? 'THX-' + String(d.id).padStart(5, '0') : '--');
+            const cli = clientMap[d.ceramicaId || d.ceramica_id];
+            const ceramicaNome = cli ? cli.nome : (d.ceramicaNome || (d.ceramicaId ? "Vinculado" : "Em Estoque"));
+            const responsavel = cli ? (cli.responsavel || "--") : "--";
+
+            // Encontra a data da última leitura
+            const leituraRecente = leiturasRecentesMap[serial] || leiturasRecentesMap[d.id];
+            let ultDataIso = leituraRecente ? (leituraRecente.created_at || leituraRecente.data_hora) : (d.ultimoAcesso || d.ultimo_acesso || d.ultimo_contato);
+            
+            let ultTimestamp = ultDataIso ? new Date(ultDataIso).getTime() : 0;
+            if (isNaN(ultTimestamp)) ultTimestamp = 0;
+
+            const diffMin = ultTimestamp > 0 ? Math.round((now - ultTimestamp) / 60000) : 999999;
+            const isVinculado = Boolean(d.ceramicaId || d.ceramica_id);
+
+            // Regra oficial solicitada pelo usuário:
+            // Online = enviou algum dado para o banco nos últimos 10 minutos (<= 10 min)
+            // Bypass = não enviou nos últimos 10 minutos (> 10 min)
+            const isOnline = isVinculado && diffMin <= 10;
+            const isBypass = isVinculado && !isOnline;
+
+            if (isOnline) onlineCount++;
+            else if (isBypass) bypassCount++;
+            else estoqueCount++;
+
+            return {
+                id: d.id,
+                serial,
+                modelo: d.modelo || "TLK-ESP8266-ALUTAL",
+                fornoId: d.fornoId || d.forno_id || d.moduloNum || d.modulo_num || 1,
+                ceramicaId: d.ceramicaId || d.ceramica_id,
+                ceramicaNome,
+                responsavel,
+                statusVinculo: isVinculado ? "Vinculado" : "Disponível",
+                isOnline,
+                isBypass,
+                isEstoque: !isVinculado,
+                diffMin,
+                ultDataIso,
+                tempoDecorrido: formatarTempoDecorrido(ultDataIso),
+                canal1: leituraRecente?.canal_1 !== undefined ? leituraRecente.canal_1 : null,
+                canal2: leituraRecente?.canal_2 !== undefined ? leituraRecente.canal_2 : null
+            };
+        });
+
+        // Ordena: Online primeiro, depois os com menor tempo de bypass, e por fim estoque
+        processados.sort((a, b) => {
+            if (a.isOnline && !b.isOnline) return -1;
+            if (!a.isOnline && b.isOnline) return 1;
+            return a.diffMin - b.diffMin;
+        });
+
+        adminState.deviceStatusList = processados;
+
+        // 1. Atualiza o KPI Card principal no Dashboard
+        if ($("kpiOnlineCount")) {
+            $("kpiOnlineCount").textContent = onlineCount;
+        }
+        if ($("kpiOnlineSummary")) {
+            $("kpiOnlineSummary").textContent = `${onlineCount} Online • ${bypassCount} em Bypass`;
+        }
+
+        // 2. Atualiza contadores do Modal
+        if ($("modalCountOnline")) $("modalCountOnline").textContent = onlineCount;
+        if ($("modalCountBypass")) $("modalCountBypass").textContent = bypassCount;
+        if ($("modalCountTotal")) $("modalCountTotal").textContent = devices.length;
+
+        if ($("filterCountTodos")) $("filterCountTodos").textContent = processados.length;
+        if ($("filterCountOnline")) $("filterCountOnline").textContent = onlineCount;
+        if ($("filterCountBypass")) $("filterCountBypass").textContent = bypassCount;
+
+        // 3. Renderiza tabela se o modal estiver aberto
+        renderTabelaModalAparelhos();
+
+    } catch (err) {
+        console.error("[Admin] Erro ao atualizar status de aparelhos online:", err);
+    } finally {
+        if (refreshIcon) refreshIcon.classList.remove("fa-spin");
+    }
+}
+
+function renderTabelaModalAparelhos() {
+    const tbody = $("modalAparelhosTableBody");
+    if (!tbody) return;
+
+    let lista = adminState.deviceStatusList || [];
+    const filtro = adminState.modalDeviceFilter || "todos";
+    const busca = (adminState.modalDeviceSearch || "").toLowerCase().trim();
+
+    if (filtro === "online") {
+        lista = lista.filter(d => d.isOnline);
+    } else if (filtro === "bypass") {
+        lista = lista.filter(d => d.isBypass);
+    }
+
+    if (busca) {
+        lista = lista.filter(d =>
+            d.serial.toLowerCase().includes(busca) ||
+            d.ceramicaNome.toLowerCase().includes(busca) ||
+            d.responsavel.toLowerCase().includes(busca) ||
+            (d.modelo && d.modelo.toLowerCase().includes(busca))
+        );
+    }
+
+    if (lista.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align: center; padding: 32px 16px; color: var(--text-muted);">
+                    <i class="fa-solid fa-circle-exclamation" style="font-size: 24px; color: #94a3b8; margin-bottom: 8px; display: block;"></i>
+                    Nenhum dispositivo encontrado para o filtro selecionado.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = lista.map(d => {
+        let badgeHtml = "";
+        let tempoClass = "";
+
+        if (d.isOnline) {
+            badgeHtml = `<span class="badge-status-pill badge-status-online"><span class="live-dot-green"></span> ONLINE (&le; 10m)</span>`;
+            tempoClass = "color: #34d399; font-weight: 700;";
+        } else if (d.isBypass) {
+            badgeHtml = `<span class="badge-status-pill badge-status-bypass"><i class="fa-solid fa-triangle-exclamation"></i> EM BYPASS</span>`;
+            tempoClass = "color: #fbbf24; font-weight: 700;";
+        } else {
+            badgeHtml = `<span class="badge-status-pill badge-status-estoque"><i class="fa-solid fa-box"></i> Em Estoque</span>`;
+            tempoClass = "color: #94a3b8;";
+        }
+
+        const dataFormatada = d.ultDataIso ? new Date(d.ultDataIso).toLocaleString("pt-BR", {
+            day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"
+        }) : "--";
+
+        const tempStr = (d.canal1 !== null && d.canal2 !== null) 
+            ? `<span style="font-family: monospace; font-size: 12px; color: #fdba74;">C1: ${d.canal1}°C | C2: ${d.canal2}°C</span>`
+            : `<span style="color: #64748b; font-size: 11px;">--</span>`;
+
+        return `
+            <tr>
+                <td>
+                    <b style="color: #ffffff; font-family: monospace; font-size: 13px;">${escapeHtml(d.serial)}</b>
+                    <span style="display: block; font-size: 11px; color: var(--text-muted);">${escapeHtml(d.modelo)}</span>
+                </td>
+                <td>
+                    <b style="color: #e2e8f0; font-size: 13px;">${escapeHtml(d.ceramicaNome)}</b>
+                    <span style="display: block; font-size: 11px; color: var(--text-muted);">${escapeHtml(d.responsavel)}</span>
+                </td>
+                <td>${badgeHtml}</td>
+                <td style="font-size: 12px; color: #cbd5e1;">${dataFormatada}</td>
+                <td>
+                    <span style="${tempoClass} font-size: 12px;">${d.tempoDecorrido}</span>
+                </td>
+                <td>${tempStr}</td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function abrirModalStatusAparelhos() {
+    $("modalStatusAparelhos")?.classList.remove("hidden");
+    atualizarStatusDispositivosOnline(false);
+}
+
+function filtrarModalAparelhos(tipo, btn) {
+    adminState.modalDeviceFilter = tipo;
+    document.querySelectorAll("#modalStatusFilterPills .filter-pill").forEach(p => p.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+    renderTabelaModalAparelhos();
+}
+
+function filtrarModalAparelhosBusca(termo) {
+    adminState.modalDeviceSearch = termo;
+    renderTabelaModalAparelhos();
+}
+
+// ==========================================================================
+// 8.2 CENTRAL DE FIRMWARE & VERSÕES DOS DISPOSITIVOS (GITHUB RELEASES)
+// ==========================================================================
+
+const GITHUB_REPO_RELEASES_URL = "https://github.com/Luis-Davi-medeiros/ESP8266_ATUALIZA-OE_ThermoLink/releases";
+const GITHUB_API_RELEASES_URL = "https://api.github.com/repos/Luis-Davi-medeiros/ESP8266_ATUALIZA-OE_ThermoLink/releases";
+
+function normalizarVersao(v) {
+    if (!v) return "0.0.0";
+    return String(v).trim().toLowerCase().replace(/^v/, "");
+}
+
+function compararVersoes(vAtual, vNova) {
+    const p1 = normalizarVersao(vAtual).split('.').map(n => parseInt(n, 10) || 0);
+    const p2 = normalizarVersao(vNova).split('.').map(n => parseInt(n, 10) || 0);
+    const len = Math.max(p1.length, p2.length);
+    for (let i = 0; i < len; i++) {
+        const num1 = p1[i] || 0;
+        const num2 = p2[i] || 0;
+        if (num1 < num2) return -1; // Desatualizado / Pendente
+        if (num1 > num2) return 1;  // Mais recente
+    }
+    return 0; // Atualizado
+}
+
+async function carregarUltimaReleaseGithub() {
+    try {
+        const resp = await fetch(GITHUB_API_RELEASES_URL, {
+            headers: { "Accept": "application/vnd.github.v3+json" }
+        });
+        if (resp.ok) {
+            const releases = await resp.json();
+            if (Array.isArray(releases) && releases.length > 0) {
+                const latest = releases[0];
+                const tag = latest.tag_name || latest.name || "v4.5.7";
+                adminState.latestGithubRelease = tag;
+                if ($("latestReleaseTag")) $("latestReleaseTag").textContent = tag;
+            }
+        }
+    } catch (e) {
+        adminState.latestGithubRelease = adminState.latestGithubRelease || "v4.5.7";
+    }
+}
+
+async function sincronizarVersoesFirmwareDispositivos(forcar = false) {
+    const icon = $("refreshFirmwareIcon");
+    if (icon) icon.classList.add("fa-spin");
+
+    try {
+        await carregarUltimaReleaseGithub();
+        await carregarDadosSupabase();
+        renderListaVersoesFirmware();
+    } finally {
+        if (icon) icon.classList.remove("fa-spin");
+    }
+}
+
+function renderListaVersoesFirmware() {
+    const container = $("firmwareDeviceList");
+    if (!container) return;
+
+    const devices = adminState.devices && adminState.devices.length ? adminState.devices : (getDevices() || []);
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : (getClients() || []);
+    const clientMap = {};
+    clients.forEach(c => clientMap[c.id] = c);
+
+    const latestRelease = adminState.latestGithubRelease || "v4.5.7";
+    if ($("latestReleaseTag")) $("latestReleaseTag").textContent = latestRelease;
+
+    if (!devices || devices.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 24px 10px; color: var(--text-muted); font-size: 12px;">
+                <i class="fa-solid fa-microchip" style="font-size: 20px; margin-bottom: 6px; display: block;"></i>
+                Nenhum dispositivo encontrado no inventário.
+            </div>
+        `;
+        return;
+    }
+
+    const sortedDevs = [...devices].sort((a, b) => {
+        const idA = Number(a.id) || 0;
+        const idB = Number(b.id) || 0;
+        return idA - idB;
+    });
+
+    container.innerHTML = sortedDevs.map(d => {
+        const serial = d.serial || d.numeroSerie || (d.id ? 'THX-' + String(d.id).padStart(5, '0') : '--');
+        const cli = clientMap[d.ceramicaId || d.ceramica_id];
+        const ceramicaNome = cli ? cli.nome : (d.ceramicaNome || (d.ceramicaId ? "Vinculado" : "Em Estoque"));
+        const versaoAtual = d.firmware || d.firmwareVersion || "v4.5.7";
+
+        const cmp = compararVersoes(versaoAtual, latestRelease);
+        const isAtualizado = cmp >= 0;
+
+        let badgeHtml = "";
+        if (isAtualizado) {
+            badgeHtml = `
+                <span class="firmware-badge-updated" title="Dispositivo executando a versão oficial mais recente">
+                    <i class="fa-solid fa-circle-check"></i> ${escapeHtml(versaoAtual)} • Atualizado
+                </span>
+            `;
+        } else {
+            badgeHtml = `
+                <a href="${GITHUB_REPO_RELEASES_URL}" target="_blank" rel="noopener noreferrer" class="firmware-badge-pending" title="Atualização disponível no GitHub: clique para ver a release ${latestRelease}" style="text-decoration: none;">
+                    <i class="fa-solid fa-circle-arrow-up"></i> ${escapeHtml(versaoAtual)} ➜ ${latestRelease} (Pendente)
+                </a>
+            `;
+        }
+
+        return `
+            <div class="firmware-device-item">
+                <div class="firmware-dev-meta">
+                    <b><i class="fa-solid fa-microchip" style="color: var(--orange); font-size: 11px;"></i> ${escapeHtml(serial)}</b>
+                    <span>${escapeHtml(ceramicaNome)} • ${escapeHtml(d.modelo || "TLK-ESP8266-ALUTAL")}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    ${badgeHtml}
+                </div>
+            </div>
+        `;
+    }).join("");
 }
 
 // ==========================================================================
@@ -2392,6 +2738,7 @@ function inicializarPainelMaster() {
     renderNocTelemetria();
 
     // Sincroniza em background com o Supabase
+    carregarUltimaReleaseGithub();
     carregarDadosSupabase();
 
     // Polling a cada 20 segundos para manter dados atualizados se painel aberto
