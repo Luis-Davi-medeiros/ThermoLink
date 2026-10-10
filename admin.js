@@ -14,43 +14,69 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ==========================================================================
 const DEFAULT_CLIENTS = [
     {
-        id: "cli_1",
-        nome: "Cerâmica São José",
-        responsavel: "Carlos Eduardo",
-        cidade: "Tatuí - SP",
+        id: "cli_1791467023902",
+        nome: "Irmãos Rolim",
+        responsavel: "André Rolim",
+        cidade: "São João do Rio do Peixe - PB",
         plano: "Profissional",
         valorMensal: 299,
-        fornosCount: 4,
+        fornosCount: 6,
         status: "Ativo",
-        username: "ceramica",
+        username: "rolim",
         senha: "forno2026",
-        ultimoAcesso: "Hoje, 14:22"
+        ultimoAcesso: "Hoje, 17:30"
     },
     {
-        id: "cli_2",
-        nome: "Cerâmica Santa Rita",
-        responsavel: "Marcos Silva",
-        cidade: "Itu - SP",
+        id: "cli_1789336975029",
+        nome: "Nossa Senhora Aparecida",
+        responsavel: "Arim / Davi",
+        cidade: "Russas - CE",
+        plano: "Profissional",
+        valorMensal: 299,
+        fornosCount: 6,
+        status: "Ativo",
+        username: "aparecida",
+        senha: "forno2026",
+        ultimoAcesso: "Hoje, 16:15"
+    },
+    {
+        id: "cli_1789502544311",
+        nome: "Cerâmica LIMA",
+        responsavel: "Zé Maria",
+        cidade: "Russas - CE",
+        plano: "Profissional",
+        valorMensal: 299,
+        fornosCount: 6,
+        status: "Ativo",
+        username: "lima",
+        senha: "forno2026",
+        ultimoAcesso: "Hoje, 14:20"
+    },
+    {
+        id: "cli_1790975541876",
+        nome: "Cerâmica Telha Forte",
+        responsavel: "Luthiane",
+        cidade: "Russas - CE",
+        plano: "Profissional",
+        valorMensal: 299,
+        fornosCount: 6,
+        status: "Ativo",
+        username: "telhaforte",
+        senha: "forno2026",
+        ultimoAcesso: "Hoje, 10:45"
+    },
+    {
+        id: "cli_1791295582580",
+        nome: "Luis",
+        responsavel: "Luis",
+        cidade: "Russas - CE",
         plano: "Básico",
         valorMensal: 149,
         fornosCount: 2,
         status: "Ativo",
-        username: "santarita",
-        senha: "cer8492",
-        ultimoAcesso: "Hoje, 11:05"
-    },
-    {
-        id: "cli_3",
-        nome: "Cerâmica Paulista",
-        responsavel: "Roberto Souza",
-        cidade: "Rio Claro - SP",
-        plano: "Enterprise",
-        valorMensal: 599,
-        fornosCount: 8,
-        status: "Ativo",
-        username: "paulista",
-        senha: "cer3910",
-        ultimoAcesso: "Ontem, 19:40"
+        username: "luis",
+        senha: "forno2026",
+        ultimoAcesso: "Ontem, 20:00"
     }
 ];
 
@@ -309,6 +335,9 @@ async function carregarDadosSupabase() {
         if (adminState.activeSection === "atividade") {
             renderSecaoAtividade();
         }
+        if (adminState.activeSection === "whatsapp") {
+            renderCardsCeramicasWhatsappAdmin();
+        }
 
     } catch (err) {
         console.warn("[Admin Supabase] Falha ao carregar dados do Supabase:", err);
@@ -320,6 +349,9 @@ async function carregarDadosSupabase() {
         renderTabelaDispositivos();
         if (adminState.activeSection === "atividade") {
             renderSecaoAtividade();
+        }
+        if (adminState.activeSection === "whatsapp") {
+            renderCardsCeramicasWhatsappAdmin();
         }
     }
 }
@@ -379,6 +411,7 @@ function trocarSecaoAdmin(secao) {
     $("secDispositivos")?.classList.add("hidden");
     $("secAtividade")?.classList.add("hidden");
     $("secPlanos")?.classList.add("hidden");
+    $("secWhatsapp")?.classList.add("hidden");
 
     // Atualiza cabeçalho
     const titulos = {
@@ -386,7 +419,8 @@ function trocarSecaoAdmin(secao) {
         clientes: { h1: "Gestão de Cerâmicas", sub: "Controle de clientes, bloqueio por inadimplência e modo suporte" },
         dispositivos: { h1: "Fábrica & Hardware", sub: "Cadastro de números de série, geração de etiquetas adesivas e inventário" },
         atividade: { h1: "Atividade dos Usuários", sub: "Monitoramento em tempo real de acessos, dispositivos e horários de pico" },
-        planos: { h1: "Planos & Faturamento", sub: "Configuração de limites de fornos e tempo de retenção do banco de dados" }
+        planos: { h1: "Planos & Faturamento", sub: "Configuração de limites de fornos e tempo de retenção do banco de dados" },
+        whatsapp: { h1: "WhatsApp & Relatórios", sub: "Gestão de contatos de cerâmicas e automação de relatórios diários de queima" }
     };
 
     if (titulos[secao]) {
@@ -395,19 +429,28 @@ function trocarSecaoAdmin(secao) {
     }
 
     if (secao === "dashboard") {
+        pararPollingWhatsappAdmin();
         $("secDashboard")?.classList.remove("hidden");
         renderDashboardGeral();
     } else if (secao === "clientes") {
+        pararPollingWhatsappAdmin();
         $("secClientes")?.classList.remove("hidden");
         renderTabelaClientes();
     } else if (secao === "dispositivos") {
+        pararPollingWhatsappAdmin();
         $("secDispositivos")?.classList.remove("hidden");
         renderTabelaDispositivos();
     } else if (secao === "atividade") {
+        pararPollingWhatsappAdmin();
         $("secAtividade")?.classList.remove("hidden");
         renderSecaoAtividade();
     } else if (secao === "planos") {
+        pararPollingWhatsappAdmin();
         $("secPlanos")?.classList.remove("hidden");
+    } else if (secao === "whatsapp") {
+        $("secWhatsapp")?.classList.remove("hidden");
+        carregarSecaoWhatsappAdmin();
+        iniciarPollingWhatsappAdmin();
     }
 
     // Atualiza estado ativo na sidebar e na bottom bar móvel
@@ -2219,10 +2262,42 @@ function abrirModalDeployOTA() {
 // 9. SINCRONIZAÇÃO E MODAIS HELPERS
 // ==========================================================================
 
+function abrirModalAdmin(modalId) {
+    const el = $(modalId);
+    if (el) el.classList.remove("hidden");
+}
+
 function fecharModalAdmin(modalId, e) {
-    if (!e || e.target.id === modalId || e.currentTarget) {
-        $(modalId).classList.add("hidden");
+    if (!e || e.target.id === modalId) {
+        const el = $(modalId);
+        if (el) el.classList.add("hidden");
     }
+}
+
+function mostrarToastFeedback(msg, tipo = "success") {
+    let t = document.getElementById("adminGlobalToast");
+    if (!t) {
+        t = document.createElement("div");
+        t.id = "adminGlobalToast";
+        t.style.cssText = "position:fixed; bottom:24px; right:24px; padding:14px 20px; border-radius:10px; font-size:13px; font-weight:700; display:flex; align-items:center; gap:10px; box-shadow:0 10px 30px rgba(0,0,0,0.5); z-index:99999; transition:all 0.3s cubic-bezier(0.16,1,0.3,1); transform:translateY(30px); opacity:0;";
+        document.body.appendChild(t);
+    }
+    
+    const isSuccess = tipo === "success";
+    const isError = tipo === "error";
+    t.style.background = isSuccess ? "#064e3b" : (isError ? "#450a0a" : "#1e293b");
+    t.style.color = isSuccess ? "#6ee7b7" : (isError ? "#fca5a5" : "#93c5fd");
+    t.style.border = `1px solid ${isSuccess ? "#059669" : (isError ? "#dc2626" : "#3b82f6")}`;
+    t.innerHTML = `<i class="fa-solid ${isSuccess ? 'fa-circle-check' : (isError ? 'fa-circle-exclamation' : 'fa-circle-info')}"></i> <span>${escapeHtml(msg)}</span>`;
+    
+    t.style.transform = "translateY(0)";
+    t.style.opacity = "1";
+    
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => {
+        t.style.transform = "translateY(30px)";
+        t.style.opacity = "0";
+    }, 4000);
 }
 
 async function sincronizarDadosAdmin() {
@@ -2269,3 +2344,606 @@ function inicializarPainelMaster() {
 document.addEventListener("DOMContentLoaded", () => {
     verificarAuthMaster();
 });
+
+// ==========================================================================
+// 12. MÓDULO INTEGRADO: WHATSAPP GATEWAY & AUTOMAÇÃO DIÁRIA
+// ==========================================================================
+
+function getGatewayUrl() {
+    return localStorage.getItem("thermolink_wa_gateway_url") || "https://thermolink-whatsapp.onrender.com";
+}
+
+function salvarUrlGatewayAdmin() {
+    const input = $("waGatewayUrlInput");
+    const url = (input ? input.value : "").trim() || "https://thermolink-whatsapp.onrender.com";
+    localStorage.setItem("thermolink_wa_gateway_url", url);
+    mostrarToastFeedback("URL do Gateway WhatsApp salva!", "success");
+    carregarSecaoWhatsappAdmin();
+}
+
+let waAdminContatos = [];
+let waAdminConfig = {};
+let waAdminCeramicaFiltroAtivo = "all";
+let waAdminSearchQuery = "";
+let waPollingTimer = null;
+
+function iniciarPollingWhatsappAdmin() {
+    if (waPollingTimer) clearInterval(waPollingTimer);
+    waPollingTimer = setInterval(() => {
+        if (adminState.activeSection === "whatsapp") {
+            carregarStatusWhatsappAdmin(true);
+        }
+    }, 2500);
+}
+
+function pararPollingWhatsappAdmin() {
+    if (waPollingTimer) {
+        clearInterval(waPollingTimer);
+        waPollingTimer = null;
+    }
+}
+
+async function carregarStatusWhatsappAdmin(silent = false) {
+    const gatewayUrl = getGatewayUrl();
+    const statusEl = $("waAdminStatus");
+    const phoneEl = $("waAdminPhone");
+    const badgeEl = $("waAdminStatusBadge");
+    const subheaderEl = $("waAdminSubheader");
+    const qrBlock = $("waQrCodeBlock");
+    const connBlock = $("waConnectedBlock");
+    const qrImg = $("waAdminQrImage");
+    const qrLoading = $("waAdminQrLoading");
+    const connPhone = $("waConnectedPhoneDisplay");
+
+    try {
+        const res = await fetch(`${gatewayUrl}/api/status`);
+        if (!res.ok) throw new Error("Status HTTP " + res.status);
+        const data = await res.json();
+
+        if (data.status === "CONECTADO") {
+            if (statusEl) { statusEl.textContent = "Conectado"; statusEl.className = "kpi-value text-green"; }
+            const num = data.user?.id ? data.user.id.split(":")[0] : "Conectado";
+            if (phoneEl) phoneEl.textContent = `+${num}`;
+            if (badgeEl) { badgeEl.textContent = "Online"; badgeEl.className = "badge-status-online"; }
+            if (subheaderEl) subheaderEl.textContent = `Conectado ao chip +${num} • Pronto para disparos diários`;
+
+            if (qrBlock) qrBlock.style.display = "none";
+            if (connBlock) connBlock.style.display = "flex";
+            if (connPhone) connPhone.textContent = `+${num}`;
+        } else if (data.status === "AGUARDANDO_QR") {
+            if (statusEl) { statusEl.textContent = "Aguardando QR"; statusEl.className = "kpi-value text-orange"; }
+            if (phoneEl) phoneEl.textContent = "Escanear na Tela";
+            if (badgeEl) { badgeEl.textContent = "Escanear QR"; badgeEl.className = "tag-pill text-orange"; }
+            if (subheaderEl) subheaderEl.textContent = "Aguardando leitura do QR Code pelo celular";
+
+            if (qrBlock) qrBlock.style.display = "flex";
+            if (connBlock) connBlock.style.display = "none";
+
+            if (data.qrCodeDataUrl) {
+                if (qrImg) {
+                    if (qrImg.src !== data.qrCodeDataUrl) {
+                        qrImg.src = data.qrCodeDataUrl;
+                    }
+                    qrImg.style.display = "block";
+                }
+                if (qrLoading) qrLoading.style.display = "none";
+            }
+        } else {
+            if (statusEl) { statusEl.textContent = "Iniciando..."; statusEl.className = "kpi-value text-orange"; }
+            if (badgeEl) { badgeEl.textContent = "Iniciando"; badgeEl.className = "tag-pill"; }
+            if (qrBlock) qrBlock.style.display = "flex";
+            if (connBlock) connBlock.style.display = "none";
+            if (qrImg) qrImg.style.display = "none";
+            if (qrLoading) {
+                qrLoading.style.display = "block";
+                qrLoading.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size:32px; color:var(--orange); margin-bottom:10px;"></i><p>Iniciando motor WhatsApp e gerando QR Code...</p>`;
+            }
+        }
+
+        // Configurações
+        if (data.config) {
+            waAdminConfig = data.config;
+            if ($("waAdminCheckAuto")) $("waAdminCheckAuto").checked = Boolean(data.config.envio_automatico_ativo);
+            if ($("waAdminInputHorario")) $("waAdminInputHorario").value = data.config.horario_envio_diario || "18:00";
+            if ($("waAdminHorarioDisplay")) $("waAdminHorarioDisplay").textContent = data.config.horario_envio_diario || "18:00";
+            if ($("waAdminDisparadosHoje")) $("waAdminDisparadosHoje").textContent = data.config.total_enviados_hoje || 0;
+            if ($("waAdminStatusAuto")) {
+                $("waAdminStatusAuto").textContent = data.config.envio_automatico_ativo ? "Automação Ativa" : "Pausado";
+            }
+        }
+
+        // Logs
+        if (data.logs && $("waAdminLogsBox")) {
+            $("waAdminLogsBox").innerHTML = data.logs.map(l => `
+                <div style="padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display:flex; gap:8px;">
+                    <span style="color: #64748b;">[${escapeHtml(l.horario)}]</span>
+                    <span style="color: ${l.tipo === 'success' ? '#34d399' : l.tipo === 'error' ? '#f87171' : l.tipo === 'warn' ? '#fbbf24' : '#94a3b8'};">
+                        ${escapeHtml(l.mensagem)}
+                    </span>
+                </div>
+            `).join("");
+        }
+
+    } catch (e) {
+        if (!silent) console.warn("[WhatsApp Admin] Gateway indisponível:", e);
+        if (statusEl) { statusEl.textContent = "Offline"; statusEl.className = "kpi-value text-red"; }
+        if (badgeEl) { badgeEl.textContent = "Offline"; badgeEl.className = "tag-pill"; }
+        if (phoneEl) phoneEl.textContent = "Servidor Gateway Offline";
+        if (qrBlock) qrBlock.style.display = "flex";
+        if (connBlock) connBlock.style.display = "none";
+        if (qrImg) qrImg.style.display = "none";
+        if (qrLoading) {
+            qrLoading.style.display = "block";
+            qrLoading.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-orange" style="font-size:28px;"></i><p style="margin-top:8px;">Gateway offline.<br>Inicie o <b>iniciar_testes_whatsapp.bat</b> no seu computador.</p>`;
+        }
+    }
+}
+
+async function carregarSecaoWhatsappAdmin() {
+    const gatewayUrl = getGatewayUrl();
+    if ($("waGatewayUrlInput")) $("waGatewayUrlInput").value = gatewayUrl;
+    await carregarStatusWhatsappAdmin(false);
+    await carregarContatosWhatsappAdmin();
+}
+
+async function carregarContatosWhatsappAdmin() {
+    let contatos = [];
+    const gatewayUrl = getGatewayUrl();
+
+    // 1. Tenta carregar do Gateway
+    try {
+        const res = await fetch(`${gatewayUrl}/api/contatos`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.contatos) contatos = data.contatos;
+        }
+    } catch (e) {}
+
+    // 2. Se falhar ou estiver vazio, tenta localStorage (para funcionar no GitHub Pages)
+    if (!contatos || contatos.length === 0) {
+        const saved = localStorage.getItem("thermolink_wa_contatos");
+        if (saved) {
+            try { contatos = JSON.parse(saved); } catch (e) {}
+        }
+    }
+
+    // 3. Fallback inicial com as cerâmicas reais
+    if (!contatos || contatos.length === 0) {
+        contatos = [
+            {
+                id: "cont_1",
+                ceramica_id: "cli_1791467023902",
+                ceramica_nome: "Irmãos Rolim",
+                nome: "André Rolim",
+                cargo: "Proprietário",
+                telefone: "558894463836",
+                receber_relatorio: true
+            },
+            {
+                id: "cont_2",
+                ceramica_id: "cli_1789336975029",
+                ceramica_nome: "Nossa Senhora Aparecida",
+                nome: "Arim / Davi",
+                cargo: "Diretor / Gestor",
+                telefone: "558893157628",
+                receber_relatorio: true
+            }
+        ];
+    }
+
+    waAdminContatos = contatos;
+    localStorage.setItem("thermolink_wa_contatos", JSON.stringify(waAdminContatos));
+
+    if ($("waAdminTotalContatos")) $("waAdminTotalContatos").textContent = waAdminContatos.length;
+    if ($("waAdminContatosAtivos")) {
+        const ativos = waAdminContatos.filter(c => c.receber_relatorio).length;
+        $("waAdminContatosAtivos").textContent = `${ativos} ativos para envio`;
+    }
+
+    renderCardsCeramicasWhatsappAdmin();
+}
+
+function renderCardsCeramicasWhatsappAdmin() {
+    const container = $("waCeramicasCardsContainer");
+    const pillsContainer = $("waCeramicasFilterPills");
+    if (!container) return;
+
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+
+    // 1. Renderiza os Pills de filtro
+    if (pillsContainer) {
+        pillsContainer.innerHTML = `
+            <button class="filter-pill ${waAdminCeramicaFiltroAtivo === 'all' ? 'active' : ''}" onclick="filtrarCeramicaContatoAdmin('all', this)">Todas as Cerâmicas</button>
+            ${clients.map(c => `
+                <button class="filter-pill ${waAdminCeramicaFiltroAtivo === c.id ? 'active' : ''}" onclick="filtrarCeramicaContatoAdmin('${c.id}', this)">${escapeHtml(c.nome)}</button>
+            `).join('')}
+        `;
+    }
+
+    // 2. Filtra cerâmicas
+    let ceramicasExibir = clients;
+    if (waAdminCeramicaFiltroAtivo !== "all") {
+        ceramicasExibir = clients.filter(c => c.id === waAdminCeramicaFiltroAtivo);
+    }
+
+    const termo = (waAdminSearchQuery || "").toLowerCase();
+
+    // 3. Renderiza um Card para cada Cerâmica
+    let htmlCards = "";
+
+    ceramicasExibir.forEach(cer => {
+        // Contatos desta Cerâmica
+        let contatosDestaCeramica = waAdminContatos.filter(c => c.ceramica_id === cer.id);
+
+        if (termo) {
+            contatosDestaCeramica = contatosDestaCeramica.filter(c => 
+                (c.nome && c.nome.toLowerCase().includes(termo)) ||
+                (c.cargo && c.cargo.toLowerCase().includes(termo)) ||
+                (c.telefone && c.telefone.includes(termo)) ||
+                (cer.nome && cer.nome.toLowerCase().includes(termo))
+            );
+            if (!cer.nome.toLowerCase().includes(termo) && contatosDestaCeramica.length === 0) {
+                return;
+            }
+        }
+
+        const qtdContatos = contatosDestaCeramica.length;
+
+        htmlCards += `
+            <div class="panel-box" style="background: #091322; border: 1px solid #1a2c47; border-radius: 14px; padding: 18px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 14px; margin-bottom: 14px; flex-wrap: wrap; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 42px; height: 42px; border-radius: 10px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                            <i class="fa-solid fa-industry"></i>
+                        </div>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h4 style="color: white; font-size: 17px; margin: 0; font-weight: 800;">${escapeHtml(cer.nome)}</h4>
+                                <span class="tag-pill" style="background: rgba(255,255,255,0.05); color: #94a3b8; font-size: 11px;">
+                                    ${qtdContatos} ${qtdContatos === 1 ? 'número cadastrado' : 'números cadastrados'}
+                                </span>
+                            </div>
+                            <span style="color: var(--text-muted); font-size: 12px;">
+                                <i class="fa-solid fa-location-dot" style="margin-right: 4px;"></i> ${escapeHtml(cer.cidade || 'Não informada')} • Responsável Cadastrado: <b>${escapeHtml(cer.responsavel || '--')}</b>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}')" style="padding: 8px 14px; font-size: 12px;">
+                            <i class="fa-solid fa-plus"></i> Adicionar Contato para esta Cerâmica
+                        </button>
+                        <button class="btn-primary-admin" onclick="dispararRelatorioCeramicaAdmin('${cer.id}')" style="padding: 8px 14px; font-size: 12px; background: linear-gradient(135deg, #10b981, #059669);" title="Disparar relatório desta cerâmica para todos os números ativos dela">
+                            <i class="fa-solid fa-paper-plane"></i> Disparar para esta Cerâmica
+                        </button>
+                    </div>
+                </div>
+
+                <!-- LISTA DE CONTATOS DESTA CERÂMICA -->
+                ${qtdContatos === 0 ? `
+                    <div style="padding: 24px; text-align: center; background: rgba(0,0,0,0.2); border-radius: 10px; border: 1px dashed rgba(255,255,255,0.1);">
+                        <i class="fa-brands fa-whatsapp" style="font-size: 28px; color: #64748b; margin-bottom: 8px;"></i>
+                        <p style="color: var(--text-muted); font-size: 13px;">Nenhum número cadastrado para <b>${escapeHtml(cer.nome)}</b>.</p>
+                        <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}')" style="margin-top: 12px; padding: 6px 14px; font-size: 12px;">
+                            <i class="fa-solid fa-user-plus"></i> Cadastrar Primeiro Número
+                        </button>
+                    </div>
+                ` : `
+                    <div class="admin-table-wrapper" style="margin-top: 0;">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome do Contato</th>
+                                    <th>Cargo / Função</th>
+                                    <th>WhatsApp</th>
+                                    <th style="text-align: center;">Recebe Relatório Diário</th>
+                                    <th style="text-align: right;">Ações de Envio</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${contatosDestaCeramica.map(c => `
+                                    <tr>
+                                        <td><b>${escapeHtml(c.nome)}</b></td>
+                                        <td style="color: var(--text-muted);">${escapeHtml(c.cargo || 'Responsável')}</td>
+                                        <td>
+                                            <a href="https://wa.me/${c.telefone}" target="_blank" style="color: #34d399; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                                                <i class="fa-brands fa-whatsapp"></i> +${escapeHtml(c.telefone)}
+                                            </a>
+                                        </td>
+                                        <td style="text-align: center;">
+                                            <label class="switch">
+                                                <input type="checkbox" ${c.receber_relatorio ? 'checked' : ''} onchange="toggleRelatorioContatoAdmin('${c.id}')">
+                                                <span class="slider"></span>
+                                            </label>
+                                        </td>
+                                        <td style="text-align: right;">
+                                            <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+                                                <button class="btn-send-wa-row" onclick="dispararRelatorioIndividualAdmin('${c.id}')" title="Disparar relatório de ${escapeHtml(cer.nome)} para este número agora">
+                                                    <i class="fa-solid fa-paper-plane"></i> Enviar Agora
+                                                </button>
+                                                <button class="btn-action-icon" onclick="editarContatoWhatsappAdmin('${c.id}')" title="Editar Contato"><i class="fa-solid fa-pen"></i></button>
+                                                <button class="btn-action-icon btn-action-danger" onclick="excluirContatoWhatsappAdmin('${c.id}')" title="Excluir Contato"><i class="fa-solid fa-trash"></i></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `}
+            </div>
+        `;
+    });
+
+    if (!htmlCards) {
+        htmlCards = `<div style="text-align:center; padding:40px; color:#64748b;">Nenhuma cerâmica ou contato encontrado para a pesquisa.</div>`;
+    }
+
+    container.innerHTML = htmlCards;
+}
+
+function filtrarContatosWhatsappAdmin(busca) {
+    waAdminSearchQuery = busca || "";
+    renderCardsCeramicasWhatsappAdmin();
+}
+
+function filtrarCeramicaContatoAdmin(ceramicaId, btn) {
+    waAdminCeramicaFiltroAtivo = ceramicaId;
+    document.querySelectorAll("#waCeramicasFilterPills .filter-pill").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+    renderCardsCeramicasWhatsappAdmin();
+}
+
+async function salvarConfigWhatsappAdmin() {
+    const envio_automatico_ativo = $("waAdminCheckAuto")?.checked;
+    const horario_envio_diario = $("waAdminInputHorario")?.value;
+
+    const gatewayUrl = getGatewayUrl();
+    try {
+        const res = await fetch(`${gatewayUrl}/api/config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ envio_automatico_ativo, horario_envio_diario })
+        });
+        const data = await res.json();
+        if (data.success) {
+            mostrarToastFeedback("Configuração do envio diário salva com sucesso!", "success");
+            carregarSecaoWhatsappAdmin();
+        }
+    } catch (e) {
+        mostrarToastFeedback("Falha ao salvar configuração no gateway WhatsApp.", "error");
+    }
+}
+
+function abrirModalNovoContatoWhatsapp(ceramicaIdPreselecionada = null) {
+    $("waModalTitle").textContent = "Cadastrar Contato de WhatsApp";
+    $("waContatoId").value = "";
+    $("waContatoNome").value = "";
+    $("waContatoCargo").value = "Proprietário";
+    $("waContatoTelefone").value = "";
+    $("waContatoReceber").checked = true;
+
+    // Popula select de cerâmicas
+    const sel = $("waContatoCeramicaId");
+    sel.innerHTML = "";
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+    clients.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = `${c.nome} (${c.cidade || ''})`;
+        if (ceramicaIdPreselecionada && c.id === ceramicaIdPreselecionada) {
+            opt.selected = true;
+        }
+        sel.appendChild(opt);
+    });
+
+    abrirModalAdmin("modalContatoWhatsapp");
+}
+
+function editarContatoWhatsappAdmin(id) {
+    const c = waAdminContatos.find(x => x.id === id);
+    if (!c) return;
+
+    $("waModalTitle").textContent = "Editar Contato de WhatsApp";
+    $("waContatoId").value = c.id;
+    $("waContatoNome").value = c.nome;
+    $("waContatoCargo").value = c.cargo || "Responsável";
+    $("waContatoTelefone").value = c.telefone;
+    $("waContatoReceber").checked = Boolean(c.receber_relatorio);
+
+    const sel = $("waContatoCeramicaId");
+    sel.innerHTML = "";
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+    clients.forEach(cl => {
+        const opt = document.createElement("option");
+        opt.value = cl.id;
+        opt.textContent = `${cl.nome} (${cl.cidade || ''})`;
+        if (cl.id === c.ceramica_id) opt.selected = true;
+        sel.appendChild(opt);
+    });
+
+    abrirModalAdmin("modalContatoWhatsapp");
+}
+
+async function salvarContatoWhatsappAdmin(e) {
+    e.preventDefault();
+    const id = $("waContatoId").value;
+    const ceramica_id = $("waContatoCeramicaId").value;
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+    const cerObj = clients.find(c => c.id === ceramica_id);
+    const ceramica_nome = cerObj ? cerObj.nome : "Cerâmica";
+    const nome = $("waContatoNome").value.trim();
+    const cargo = $("waContatoCargo").value.trim();
+    const telefone = $("waContatoTelefone").value.trim().replace(/\D/g, "");
+    const receber_relatorio = $("waContatoReceber").checked;
+
+    if (!nome || !telefone) {
+        alert("Preencha o nome e o número de WhatsApp!");
+        return;
+    }
+
+    const body = { ceramica_id, ceramica_nome, nome, cargo, telefone, receber_relatorio };
+
+    // 1. Atualiza estado local imediatamente (funciona mesmo no GitHub Pages)
+    if (id) {
+        const idx = waAdminContatos.findIndex(c => c.id === id);
+        if (idx !== -1) waAdminContatos[idx] = { ...waAdminContatos[idx], ...body };
+    } else {
+        const novo = { id: "cont_" + Date.now(), ...body };
+        waAdminContatos.unshift(novo);
+    }
+    localStorage.setItem("thermolink_wa_contatos", JSON.stringify(waAdminContatos));
+
+    // Fecha o modal e atualiza a interface NA HORA
+    fecharModalAdmin("modalContatoWhatsapp", null);
+    mostrarToastFeedback(id ? "Contato atualizado com sucesso!" : "Novo contato adicionado!", "success");
+    renderCardsCeramicasWhatsappAdmin();
+
+    // 2. Dispara sync com Gateway em background (se online)
+    const gatewayUrl = getGatewayUrl();
+    try {
+        const url = id ? `${gatewayUrl}/api/contatos/${id}` : `${gatewayUrl}/api/contatos`;
+        const method = id ? "PUT" : "POST";
+        await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+    } catch (err) {
+        console.warn("[WhatsApp Admin] Gateway offline para sync direto:", err);
+    }
+
+    // 3. Tenta gravar no Supabase caso a tabela exista
+    try {
+        await sb.from("ceramica_contatos").upsert([body]);
+    } catch (err) {}
+}
+
+async function excluirContatoWhatsappAdmin(id) {
+    const c = waAdminContatos.find(x => x.id === id);
+    if (!c) return;
+    if (!confirm(`Deseja realmente remover o contato ${c.nome} (+${c.telefone})?`)) return;
+
+    waAdminContatos = waAdminContatos.filter(x => x.id !== id);
+    localStorage.setItem("thermolink_wa_contatos", JSON.stringify(waAdminContatos));
+    mostrarToastFeedback("Contato removido com sucesso!", "success");
+    renderCardsCeramicasWhatsappAdmin();
+
+    const gatewayUrl = getGatewayUrl();
+    try {
+        await fetch(`${gatewayUrl}/api/contatos/${id}`, { method: "DELETE" });
+    } catch (e) {}
+
+    try {
+        await sb.from("ceramica_contatos").delete().eq("id", id);
+    } catch (e) {}
+}
+
+async function toggleRelatorioContatoAdmin(id) {
+    const c = waAdminContatos.find(x => x.id === id);
+    if (!c) return;
+    c.receber_relatorio = !c.receber_relatorio;
+    localStorage.setItem("thermolink_wa_contatos", JSON.stringify(waAdminContatos));
+    mostrarToastFeedback(`Recebimento diário de ${c.nome}: ${c.receber_relatorio ? 'ATIVADO' : 'PAUSADO'}`, "info");
+    renderCardsCeramicasWhatsappAdmin();
+
+    const gatewayUrl = getGatewayUrl();
+    try {
+        await fetch(`${gatewayUrl}/api/contatos/${id}/toggle-relatorio`, { method: "POST" });
+    } catch (e) {}
+}
+
+async function dispararRelatorioIndividualAdmin(id) {
+    const c = waAdminContatos.find(x => x.id === id);
+    if (!c) return;
+    if (!confirm(`Deseja enviar agora o relatório de ${c.ceramica_nome} para ${c.nome} (+${c.telefone}) no WhatsApp?`)) return;
+
+    mostrarToastFeedback(`Disparando relatório para ${c.nome}...`, "info");
+    const gatewayUrl = getGatewayUrl();
+    try {
+        const res = await fetch(`${gatewayUrl}/api/disparar-contato/${id}`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            mostrarToastFeedback(`Relatório entregue no WhatsApp de ${c.nome}!`, "success");
+            carregarSecaoWhatsappAdmin();
+        } else {
+            alert(data.error || "Falha ao enviar relatório. Verifique se o WhatsApp está conectado.");
+        }
+    } catch (e) {
+        alert("Erro de comunicação com o Gateway WhatsApp. Verifique se o servidor está rodando.");
+    }
+}
+
+async function dispararRelatorioCeramicaAdmin(ceramicaId) {
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+    const cer = clients.find(c => c.id === ceramicaId);
+    const nome = cer ? cer.nome : "esta cerâmica";
+
+    const contatos = waAdminContatos.filter(c => c.ceramica_id === ceramicaId && c.receber_relatorio);
+    if (contatos.length === 0) {
+        alert(`Nenhum contato com recebimento ativo cadastrado para ${nome}.`);
+        return;
+    }
+
+    if (!confirm(`Deseja disparar o relatório de ${nome} para os ${contatos.length} contato(s) ativos dela agora?`)) return;
+
+    mostrarToastFeedback(`Disparando relatório de ${nome}...`, "info");
+    const gatewayUrl = getGatewayUrl();
+    try {
+        const res = await fetch(`${gatewayUrl}/api/disparar-ceramica/${ceramicaId}`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            mostrarToastFeedback(`Relatórios de ${nome} enviados com sucesso!`, "success");
+            carregarSecaoWhatsappAdmin();
+        } else {
+            alert(data.error || "Erro no disparo.");
+        }
+    } catch (e) {
+        alert("Erro de comunicação com o Gateway.");
+    }
+}
+
+async function dispararRelatoriosTodosAdmin() {
+    if (!confirm("Deseja iniciar o disparo do resumo diário para TODOS os contatos ativos de todas as cerâmicas agora?")) return;
+
+    mostrarToastFeedback("Iniciando rotina de disparo em lote...", "info");
+    const gatewayUrl = getGatewayUrl();
+    try {
+        const res = await fetch(`${gatewayUrl}/api/disparar-todos`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            mostrarToastFeedback("Disparo em lote iniciado em segundo plano!", "success");
+            carregarSecaoWhatsappAdmin();
+        } else {
+            alert(data.error || "Erro ao iniciar disparo.");
+        }
+    } catch (e) {
+        alert("Erro de comunicação com o Gateway.");
+    }
+}
+
+async function forcarNovoQrCodeAdmin() {
+    mostrarToastFeedback("Gerando novo QR Code...", "info");
+    const gatewayUrl = getGatewayUrl();
+    try {
+        await fetch(`${gatewayUrl}/api/reconnect`, { method: "POST" });
+    } catch (e) {
+        try { await fetch(`${gatewayUrl}/api/logout`, { method: "POST" }); } catch (err2) {}
+    }
+    setTimeout(() => carregarStatusWhatsappAdmin(false), 1200);
+}
+
+async function desconectarWhatsappAdmin() {
+    if (!confirm("Deseja realmente desconectar este WhatsApp? Você precisará escanear o QR Code novamente para reativar os envios.")) return;
+
+    mostrarToastFeedback("Desconectando sessão...", "warn");
+    const gatewayUrl = getGatewayUrl();
+    try {
+        await fetch(`${gatewayUrl}/api/logout`, { method: "POST" });
+    } catch (e) {
+        alert("Erro ao desconectar sessão.");
+    }
+    setTimeout(() => carregarStatusWhatsappAdmin(false), 1500);
+}
+
+

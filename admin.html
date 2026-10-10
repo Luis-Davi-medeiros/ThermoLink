@@ -119,6 +119,13 @@
                 <i class="fa-solid fa-sliders"></i>
                 <span>Planos & Retenção</span>
             </button>
+
+            <div class="nav-section-label">COMUNICAÇÃO & RELATÓRIOS</div>
+            <button class="nav-btn" data-secao="whatsapp" onclick="trocarSecaoAdmin('whatsapp')">
+                <i class="fa-brands fa-whatsapp text-green"></i>
+                <span>WhatsApp & Relatórios</span>
+                <span class="nav-badge nav-badge-green" id="sidebarBadgeWhatsapp">ON</span>
+            </button>
         </nav>
 
         <div class="sidebar-footer">
@@ -628,6 +635,244 @@
 
             </section>
 
+            <!-- ========================================================
+                 SEÇÃO 6: WHATSAPP GATEWAY & RELATÓRIOS DIÁRIOS
+            ========================================================= -->
+            <section id="secWhatsapp" class="admin-section hidden">
+
+                <!-- BARRA SUPERIOR: STATUS E CONFIGURAÇÃO DO GATEWAY -->
+                <div class="panel-box" style="margin-bottom: 20px; background: linear-gradient(135deg, #091528, #0e1e38); border-color: #1e3a5f;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); display: flex; align-items: center; justify-content: center; font-size: 24px; color: #34d399;">
+                                <i class="fa-brands fa-whatsapp"></i>
+                            </div>
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <h3 style="color: white; font-size: 18px; margin: 0;">Gateway WhatsApp ThermoLink</h3>
+                                    <span id="waAdminStatusBadge" class="badge-status-online">Verificando...</span>
+                                </div>
+                                <p style="color: var(--text-muted); font-size: 13px; margin-top: 2px;" id="waAdminSubheader">
+                                    Disparo automático de telemetria diária dos fornos cerâmicos
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- OPÇÕES DE GATEWAY (LOCAL / GITHUB / NUVEM) -->
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.3); padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+                                <i class="fa-solid fa-server" style="color: #64748b; font-size: 12px;"></i>
+                                <span style="font-size: 11px; color: #94a3b8;">Servidor:</span>
+                                <input type="text" id="waGatewayUrlInput" value="https://thermolink-whatsapp.onrender.com" style="background: transparent; border: none; color: #38bdf8; font-size: 12px; font-family: monospace; outline: none; width: 235px;" title="URL do Gateway WhatsApp">
+                                <button class="btn-action-icon" onclick="salvarUrlGatewayAdmin()" title="Salvar URL do Gateway"><i class="fa-solid fa-check text-green"></i></button>
+                            </div>
+                            <button class="btn-primary-admin" onclick="carregarSecaoWhatsappAdmin()" style="padding: 8px 14px; font-size: 12px; background: #1e293b; color: white;">
+                                <i class="fa-solid fa-rotate-right"></i> Atualizar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CARD DE CONEXÃO & QR CODE DIRETO NO ADMIN -->
+                <div class="panel-box" id="waPairingPanel" style="margin-bottom: 24px; border: 1px solid #1e3a5f;">
+                    <!-- Bloco 1: Quando aguardando QR Code -->
+                    <div id="waQrCodeBlock" style="display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;">
+                        <div style="max-width: 460px;">
+                            <div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; background: rgba(245, 158, 11, 0.15); color: #fbbf24; font-size: 12px; font-weight: 700; margin-bottom: 10px;">
+                                <i class="fa-solid fa-qrcode"></i> Leitura de QR Code Necessária
+                            </div>
+                            <h3 style="color: white; font-size: 18px; margin-bottom: 8px;">Conecte o WhatsApp do ThermoLink</h3>
+                            <p style="color: var(--text-muted); font-size: 13px; line-height: 1.7; margin-bottom: 16px;">
+                                1. Abra o WhatsApp no smartphone que enviará os relatórios.<br>
+                                2. Toque nos <b>3 pontinhos</b> (ou Ajustes) ➡️ <b>Aparelhos conectados</b>.<br>
+                                3. Toque em <b>Conectar um aparelho</b> e aponte a câmera para o QR Code ao lado.
+                            </p>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <button class="btn-primary-admin" onclick="forcarNovoQrCodeAdmin()">
+                                    <i class="fa-solid fa-rotate-right"></i> Gerar Novo QR Code
+                                </button>
+                                <a href="http://localhost:3333" target="_blank" class="btn-primary-admin" style="background: #1e293b; color: white;">
+                                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Abrir Painel Avulso
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Caixa do QR Code com contraste alto -->
+                        <div style="background: white; padding: 14px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; min-width: 220px; min-height: 220px;">
+                            <img id="waAdminQrImage" src="" alt="QR Code WhatsApp" style="width: 200px; height: 200px; object-fit: contain; display: none;">
+                            <div id="waAdminQrLoading" style="text-align: center; color: #64748b; font-size: 12px;">
+                                <i class="fa-solid fa-spinner fa-spin" style="font-size: 32px; color: var(--orange); margin-bottom: 10px;"></i>
+                                <p>Carregando QR Code...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bloco 2: Quando Conectado -->
+                    <div id="waConnectedBlock" style="display: none; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <div style="width: 56px; height: 56px; border-radius: 14px; background: rgba(16, 185, 129, 0.2); border: 2px solid #10b981; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #10b981;">
+                                <i class="fa-solid fa-check"></i>
+                            </div>
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <b style="color: white; font-size: 17px;">WhatsApp Conectado com Sucesso!</b>
+                                    <span class="badge-status-online">Ativo</span>
+                                </div>
+                                <p style="color: #34d399; font-size: 15px; font-weight: 800; margin-top: 4px;" id="waConnectedPhoneDisplay">+55 ...</p>
+                                <p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">
+                                    Sessão ativa e autenticada. Os relatórios diários de queima serão entregues a partir deste número.
+                                </p>
+                            </div>
+                        </div>
+
+                        <button class="btn-primary-admin" onclick="desconectarWhatsappAdmin()" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);">
+                            <i class="fa-solid fa-arrow-right-from-bracket"></i> Desconectar / Trocar Chip
+                        </button>
+                    </div>
+                </div>
+
+                <!-- CARDS DE STATUS E MÉTRICAS -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">
+                            <i class="fa-brands fa-whatsapp"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Status da Conexão</span>
+                            <div class="kpi-value text-green" id="waAdminStatus">Verificando...</div>
+                            <div class="kpi-trend trend-green">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span id="waAdminPhone">+55 ...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box" style="background: rgba(249, 115, 22, 0.15); color: #fb923c;">
+                            <i class="fa-solid fa-address-book"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Contatos Cadastrados</span>
+                            <div class="kpi-value text-orange" id="waAdminTotalContatos">0</div>
+                            <div class="kpi-trend trend-neutral">
+                                <span id="waAdminContatosAtivos">0 ativos para envio</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                            <i class="fa-solid fa-clock"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Horário do Disparo Diário</span>
+                            <div class="kpi-value text-blue" id="waAdminHorarioDisplay">18:00</div>
+                            <div class="kpi-trend trend-neutral">
+                                <span id="waAdminStatusAuto">Automação Ativa</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-icon-box" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </div>
+                        <div class="kpi-body">
+                            <span class="kpi-label">Disparados Hoje</span>
+                            <div class="kpi-value" id="waAdminDisparadosHoje">0</div>
+                            <div class="kpi-trend trend-green">
+                                <span>Relatórios enviados</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONTROLE DO AGENDADOR & DISPARO GERAL -->
+                <div class="panel-box" style="margin-bottom: 24px;">
+                    <div class="panel-header">
+                        <div>
+                            <h3>Programação de Envio Diário Automático</h3>
+                            <p>O sistema consulta a telemetria dos fornos e dispara o resumo diário automaticamente para cada cerâmica</p>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <button class="btn-primary-admin" onclick="dispararRelatoriosTodosAdmin()" style="background: linear-gradient(135deg, #10b981, #059669);">
+                                <i class="fa-solid fa-paper-plane"></i>
+                                <span>Disparar Agora para Todos os Clientes</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <label class="switch">
+                                <input type="checkbox" id="waAdminCheckAuto" onchange="salvarConfigWhatsappAdmin()">
+                                <span class="slider"></span>
+                            </label>
+                            <div>
+                                <b style="color: white; font-size: 14px;">Envio Automático Diário de Queima</b>
+                                <p style="color: var(--text-muted); font-size: 12px;">Dispara para os números cadastrados na hora configurada</p>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">Horário Diário:</span>
+                            <input type="time" id="waAdminInputHorario" value="18:00" style="background: #07121f; border: 1px solid var(--border-color); border-radius: 8px; color: white; padding: 8px 12px; font-weight: 700; font-size: 14px;">
+                            <button class="btn-primary-admin" onclick="salvarConfigWhatsappAdmin()" style="padding: 8px 16px; font-size: 13px;">Salvar Horário</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEÇÃO PRINCIPAL: CONTATOS AGRUPADOS POR CERÂMICA -->
+                <div class="panel-box">
+                    <div class="panel-header">
+                        <div>
+                            <h3>Contatos Vinculados por Cerâmica Cliente</h3>
+                            <p>Organize quem recebe o relatório em cada fábrica cerâmica. Você pode adicionar múltiplos contatos por cliente.</p>
+                        </div>
+                        <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp()">
+                            <i class="fa-solid fa-user-plus"></i>
+                            <span>+ Novo Contato WhatsApp</span>
+                        </button>
+                    </div>
+
+                    <!-- BARRA DE PESQUISA & FILTROS POR CERÂMICA -->
+                    <div class="table-toolbar">
+                        <div class="search-input-group">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="waSearchContato" placeholder="Buscar por cerâmica, responsável ou telefone..." oninput="filtrarContatosWhatsappAdmin(this.value)">
+                        </div>
+                        <div class="filter-pills" id="waCeramicasFilterPills">
+                            <!-- Preenchido dinamicamente com as cerâmicas -->
+                        </div>
+                    </div>
+
+                    <!-- CONTAINER DOS CARDS POR CERÂMICA -->
+                    <div id="waCeramicasCardsContainer" style="display: flex; flex-direction: column; gap: 18px; margin-top: 14px;">
+                        <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            <i class="fa-solid fa-spinner fa-spin" style="font-size: 28px; color: var(--orange); margin-bottom: 10px;"></i>
+                            <p>Carregando cerâmicas e contatos...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LOGS RECENTES -->
+                <div class="panel-box" style="margin-top: 24px;">
+                    <div class="panel-header">
+                        <div>
+                            <h3>Histórico de Transmissões Recentes</h3>
+                            <p>Registro das últimas notificações e relatórios entregues</p>
+                        </div>
+                        <button class="btn-plan-edit" onclick="carregarSecaoWhatsappAdmin()">
+                            <i class="fa-solid fa-rotate-right"></i> Atualizar Logs
+                        </button>
+                    </div>
+                    <div id="waAdminLogsBox" style="background: #050a12; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; font-family: monospace; font-size: 12px; max-height: 180px; overflow-y: auto; color: #94a3b8;">
+                        Carregando logs...
+                    </div>
+                </div>
+
+            </section>
+
 
 
         </div>
@@ -653,6 +898,10 @@
             <button class="mobile-nav-item" data-secao="planos" onclick="trocarSecaoAdmin('planos')">
                 <i class="fa-solid fa-sliders"></i>
                 <span>Planos</span>
+            </button>
+            <button class="mobile-nav-item" data-secao="whatsapp" onclick="trocarSecaoAdmin('whatsapp')">
+                <i class="fa-brands fa-whatsapp text-green"></i>
+                <span>WhatsApp</span>
             </button>
         </nav>
 
@@ -918,6 +1167,58 @@
         <div class="modal-dialog-actions">
             <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalHistoricoSessoes', null)">Fechar</button>
         </div>
+    </div>
+</div>
+
+<!-- MODAL: CADASTRAR / EDITAR CONTATO WHATSAPP -->
+<div id="modalContatoWhatsapp" class="modal-overlay hidden" onclick="fecharModalAdmin('modalContatoWhatsapp', event)">
+    <div class="modal-dialog" onclick="event.stopPropagation()">
+        <div class="modal-dialog-header">
+            <h3><i class="fa-brands fa-whatsapp text-green"></i> <span id="waModalTitle">Cadastrar Contato de WhatsApp</span></h3>
+            <button type="button" class="btn-close-modal" onclick="fecharModalAdmin('modalContatoWhatsapp', null)"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form onsubmit="salvarContatoWhatsappAdmin(event)">
+            <input type="hidden" id="waContatoId">
+
+            <div class="form-group">
+                <label>Cerâmica Cliente</label>
+                <select id="waContatoCeramicaId" required>
+                    <!-- Preenchido dinamicamente com as cerâmicas -->
+                </select>
+            </div>
+
+            <div class="form-row-duo">
+                <div class="form-group">
+                    <label>Nome do Contato</label>
+                    <input type="text" id="waContatoNome" placeholder="Ex: André Rolim" required>
+                </div>
+                <div class="form-group">
+                    <label>Cargo / Função</label>
+                    <input type="text" id="waContatoCargo" placeholder="Ex: Proprietário, Encarregado, Forneiro" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Número do WhatsApp (com DDD)</label>
+                <input type="text" id="waContatoTelefone" placeholder="Ex: 88994463836 ou 5588..." required>
+                <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;">
+                    Informe o DDD e o número do celular. O sistema formata automaticamente.
+                </small>
+            </div>
+
+            <div class="form-group" style="display: flex; align-items: center; gap: 12px; margin-top: 14px; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px;">
+                <label class="switch">
+                    <input type="checkbox" id="waContatoReceber" checked>
+                    <span class="slider"></span>
+                </label>
+                <span style="font-size: 13px; color: white; font-weight: 600;">Receber Relatório Diário de Queima no WhatsApp</span>
+            </div>
+
+            <div class="modal-dialog-actions">
+                <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalContatoWhatsapp', null)">Cancelar</button>
+                <button type="submit" class="btn-admin-submit" style="background: linear-gradient(135deg, #10b981, #059669);">Salvar Contato</button>
+            </div>
+        </form>
     </div>
 </div>
 
