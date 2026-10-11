@@ -2632,7 +2632,19 @@ function renderListaVersoesFirmware() {
         const serial = d.serial || d.numeroSerie || (d.id ? 'THX-' + String(d.id).padStart(5, '0') : '--');
         const cli = clientMap[d.ceramicaId || d.ceramica_id];
         const ceramicaNome = cli ? cli.nome : (d.ceramicaNome || (d.ceramicaId ? "Vinculado" : "Em Estoque"));
-        const versaoAtual = d.firmware || d.firmwareVersion || "v4.5.7";
+        const versaoAtual = d.firmware || d.firmwareVersion || d.firmware_version || "v4.5.7";
+
+        // Nome legível como solicitado no áudio: "ThermoLink 02", "ThermoLink 01", etc.
+        let devLabel = d.nome || "";
+        if (!devLabel || devLabel === "ThermoX ESP") {
+            const numMatch = serial.match(/\d+$/);
+            const num = d.id || (numMatch ? parseInt(numMatch[0], 10) : null);
+            if (num !== null && !isNaN(num)) {
+                devLabel = `ThermoLink ${String(num).padStart(2, '0')}`;
+            } else {
+                devLabel = serial;
+            }
+        }
 
         const cmp = compararVersoes(versaoAtual, latestRelease);
         const isAtualizado = cmp >= 0;
@@ -2640,7 +2652,7 @@ function renderListaVersoesFirmware() {
         let badgeHtml = "";
         if (isAtualizado) {
             badgeHtml = `
-                <span class="firmware-badge-updated" title="Dispositivo executando a versão oficial mais recente">
+                <span class="firmware-badge-updated" title="Dispositivo executando a versão oficial mais recente (${latestRelease})">
                     <i class="fa-solid fa-circle-check"></i> ${escapeHtml(versaoAtual)} • Atualizado
                 </span>
             `;
@@ -2655,7 +2667,7 @@ function renderListaVersoesFirmware() {
         return `
             <div class="firmware-device-item">
                 <div class="firmware-dev-meta">
-                    <b><i class="fa-solid fa-microchip" style="color: var(--orange); font-size: 11px;"></i> ${escapeHtml(serial)}</b>
+                    <b><i class="fa-solid fa-microchip" style="color: var(--orange); font-size: 11px;"></i> ${escapeHtml(devLabel)} <span style="color: #94a3b8; font-weight: normal; font-size: 12px; margin-left: 4px;">(${escapeHtml(serial)})</span></b>
                     <span>${escapeHtml(ceramicaNome)} • ${escapeHtml(d.modelo || "TLK-ESP8266-ALUTAL")}</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
