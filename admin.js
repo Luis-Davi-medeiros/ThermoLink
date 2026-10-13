@@ -255,7 +255,7 @@ const adminState = {
     // Inteligência Artificial & Relatórios
     aiReportState: {
         activeCeramicaId: null,
-        janelaHoras: 24,
+        janelaHoras: 12,
         analiseAtual: null,
         textoFormatado: ""
     }
@@ -3452,7 +3452,7 @@ function popularSelectCeramicasIA() {
     `).join("");
 
     if (!adminState.aiReportState) {
-        adminState.aiReportState = { activeCeramicaId: currentVal, janelaHoras: 24, analiseAtual: null, textoFormatado: "" };
+        adminState.aiReportState = { activeCeramicaId: currentVal, janelaHoras: 12, analiseAtual: null, textoFormatado: "" };
     } else {
         adminState.aiReportState.activeCeramicaId = sel.value;
     }
@@ -3478,7 +3478,7 @@ async function executarAnaliseIA(forcar = false) {
         const ceramicaId = sel?.value || clients[0]?.id;
         const ceramica = clients.find(c => c.id === ceramicaId) || clients[0] || { id: "cli_1", nome: "Cerâmica Cliente", responsavel: "Gestor" };
 
-        const janelaHoras = Number($("aiSelectJanela")?.value || 24);
+        const janelaHoras = Number($("aiSelectJanela")?.value || 12);
 
         if ($("aiCeramicaAtivaBadge")) {
             $("aiCeramicaAtivaBadge").textContent = ceramica.nome;
@@ -3639,7 +3639,10 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
         let taxaVariacao = 0;
 
         if (lts && lts.length > 0) {
-            const ult = lts[0];
+            // Ordena estritamente em ordem cronológica (18:00 até 06:00)
+            lts.sort((a, b) => new Date(a.created_at || a.data_hora).getTime() - new Date(b.created_at || b.data_hora).getTime());
+
+            const ult = lts[lts.length - 1];
             c1 = Number(ult.canal_1 ?? 0);
             c2 = Number(ult.canal_2 ?? 0);
             picoC1 = Math.max(...lts.map(x => Number(x.canal_1 || 0)));
@@ -3652,9 +3655,9 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
             isOnline = diffMin <= 10;
 
             if (lts.length >= 2) {
-                const anterior = lts[Math.min(5, lts.length - 1)];
+                const anterior = lts[Math.max(0, lts.length - 6)];
                 const deltaV = c1 - Number(anterior.canal_1 || c1);
-                const dtHours = Math.max(0.1, (new Date(ult.created_at).getTime() - new Date(anterior.created_at).getTime()) / 3600000);
+                const dtHours = Math.max(0.1, (new Date(ult.created_at || ult.data_hora).getTime() - new Date(anterior.created_at || anterior.data_hora).getTime()) / 3600000);
                 taxaVariacao = Math.round(deltaV / dtHours);
             }
 
@@ -3663,12 +3666,16 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
             // FILTRO SOLICITADO: Forno em Queima Ativa vs Inativo / Fora de Uso
             const isQueimando = (picoC1 >= 80) || (deltaT >= 30) || (c1 >= 75);
 
-            // Amostragem dos 13 pontos térmicos para o gráfico
+            // Amostragem dos 13 pontos térmicos cronológicos para o gráfico (18h às 06h)
             const pontosGrafico = [];
             const step = Math.max(1, Math.floor(lts.length / 13));
             for (let i = 0; i < 13; i++) {
-                const idx = Math.min(lts.length - 1, i * step);
-                pontosGrafico.push(Number(lts[idx]?.canal_1 || c1));
+                if (i === 12) {
+                    pontosGrafico.push(c1);
+                } else {
+                    const idx = Math.min(lts.length - 1, i * step);
+                    pontosGrafico.push(Number(lts[idx]?.canal_1 || c1));
+                }
             }
 
             let tendenciaTxt = "Estável no patamar";
@@ -3759,6 +3766,22 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
             }
         }
     });
+
+    // Complementa todos os fornos cadastrados que não transmitiram leituras (inativos/desligados)
+    const fornosPresentes = new Set([...fornosEmQueima.map(f => Number(f.num)), ...fornosInativos.map(f => Number(f.num))]);
+    for (let fNum = 1; fNum <= totalFornos; fNum++) {
+        if (!fornosPresentes.has(fNum)) {
+            fornosInativos.push({
+                num: String(fNum).padStart(2, '0'),
+                c1: 0,
+                c2: 0,
+                delta: 0,
+                picoC1: 0,
+                picoC2: 0,
+                fase: { nome: "Inativo / Desligado", classe: "phase-patio", icone: "fa-moon", step: 0, desc: "Forno frio ou sem transmissão" }
+            });
+        }
+    }
 
     // Se for cerâmica sem leituras ativas, fallback demonstrativo realista
     if (fornosEmQueima.length === 0 && fKeys.length === 0) {
