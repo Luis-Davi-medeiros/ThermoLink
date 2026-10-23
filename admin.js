@@ -2922,6 +2922,9 @@ async function carregarStatusWhatsappAdmin(silent = false) {
             if ($("waAdminInputHorario")) $("waAdminInputHorario").value = data.config.horario_envio_diario || "18:00";
             if ($("waAdminHorarioDisplay")) $("waAdminHorarioDisplay").textContent = data.config.horario_envio_diario || "18:00";
             if ($("waAdminDisparadosHoje")) $("waAdminDisparadosHoje").textContent = data.config.total_enviados_hoje || 0;
+            if ($("waAdminInputGeminiKey")) {
+                $("waAdminInputGeminiKey").value = data.config.gemini_api_key || localStorage.getItem("thermolink_gemini_api_key") || "";
+            }
             if ($("waAdminStatusAuto")) {
                 $("waAdminStatusAuto").textContent = data.config.envio_automatico_ativo ? "Automação Ativa" : "Pausado";
             }
@@ -3189,17 +3192,22 @@ function filtrarCeramicaContatoAdmin(ceramicaId, btn) {
 async function salvarConfigWhatsappAdmin() {
     const envio_automatico_ativo = $("waAdminCheckAuto")?.checked;
     const horario_envio_diario = $("waAdminInputHorario")?.value;
+    const gemini_api_key = $("waAdminInputGeminiKey")?.value?.trim() || "";
+
+    if (gemini_api_key) {
+        localStorage.setItem("thermolink_gemini_api_key", gemini_api_key);
+    }
 
     const gatewayUrl = getGatewayUrl();
     try {
         const res = await fetch(`${gatewayUrl}/api/config`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ envio_automatico_ativo, horario_envio_diario })
+            body: JSON.stringify({ envio_automatico_ativo, horario_envio_diario, gemini_api_key })
         });
         const data = await res.json();
         if (data.success) {
-            mostrarToastFeedback("Configuração do envio diário salva com sucesso!", "success");
+            mostrarToastFeedback("Configuração e Chave Gemini salvas com sucesso!", "success");
             carregarSecaoWhatsappAdmin();
         }
     } catch (e) {
@@ -3554,7 +3562,12 @@ async function executarAnaliseIA(forcar = false) {
 }
 
 function gerarQuickChartUrlClient(ceramicaNome, fornosEmQueima) {
-    const labels = ['18h', '19h', '20h', '21h', '22h', '23h', '00h', '01h', '02h', '03h', '04h', '05h', '06h'];
+    const labels = [];
+    const agora = new Date();
+    for (let i = 12; i >= 0; i--) {
+        const d = new Date(agora.getTime() - i * 3600 * 1000);
+        labels.push(d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
+    }
     const cores = ['#f97316', '#06b6d4', '#10b981', '#a855f7', '#eab308', '#ec4899', '#3b82f6', '#f43f5e'];
 
     const datasets = fornosEmQueima.map((f, idx) => ({
@@ -3570,11 +3583,12 @@ function gerarQuickChartUrlClient(ceramicaNome, fornosEmQueima) {
 
     if (datasets.length === 0) {
         datasets.push({
-            label: 'Temperatura Ambiente / Pátio',
-            data: labels.map(() => 35),
+            label: 'Temperatura Ambiente / Pátio (~32°C)',
+            data: labels.map(() => 32),
             borderColor: '#64748b',
             borderWidth: 2,
-            pointRadius: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
             fill: false
         });
     }
@@ -3585,7 +3599,7 @@ function gerarQuickChartUrlClient(ceramicaNome, fornosEmQueima) {
         options: {
             title: {
                 display: true,
-                text: `Curva Térmica da Queima (18:00 às 06:00) • ${ceramicaNome}`,
+                text: `Curva Térmica da Queima (Últimas 12h) • ${ceramicaNome}`,
                 fontColor: '#ffffff',
                 fontSize: 14,
                 fontStyle: 'bold'
@@ -3612,7 +3626,7 @@ function gerarQuickChartUrlClient(ceramicaNome, fornosEmQueima) {
         }
     };
 
-    return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(cfg))}&w=860&h=440&bkg=%23091322&devicePixelRatio=2`;
+    return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(cfg))}&w=880&h=440&bkg=%2308101e&devicePixelRatio=2`;
 }
 
 function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
@@ -3796,74 +3810,7 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
         }
     }
 
-    // Se for cerâmica sem leituras ativas, fallback demonstrativo realista
-    if (fornosEmQueima.length === 0 && fKeys.length === 0) {
-        fornosEmQueima.push({
-            num: "01",
-            c1: 948,
-            c2: 925,
-            delta: 23,
-            picoC1: 988,
-            picoC2: 940,
-            mediaC1: 785,
-            taxaVariacao: 15,
-            tendenciaTxt: "⚖️ Estável no patamar de sinterização",
-            isOnline: true,
-            diffMin: 3,
-            fase: { nome: "Maturação Térmica", classe: "phase-maturacao", icone: "fa-fire-flame-curved", step: 3, desc: "Ponto de fogo e sinterização plena" },
-            anomalias: [],
-            recomendacao: "Patamar ideal alcançado. Manter alimentação branda por mais 1h e vedar.",
-            previsao: "~ 1h30 para selagem",
-            score: 95,
-            badgeScore: { label: "Excelente", classe: "score-excelente" },
-            pontosGrafico: [220, 310, 450, 580, 690, 780, 860, 920, 948, 965, 988, 960, 948]
-        });
-        fornosEmQueima.push({
-            num: "02",
-            c1: 285,
-            c2: 270,
-            delta: 15,
-            picoC1: 975,
-            picoC2: 930,
-            mediaC1: 620,
-            taxaVariacao: -35,
-            tendenciaTxt: "📉 Curva descendente de resfriamento (-35°C/h)",
-            isOnline: true,
-            diffMin: 4,
-            fase: { nome: "Resfriamento Controlado", classe: "phase-resfriamento", icone: "fa-snowflake", step: 4, desc: "Recozimento gradual das peças" },
-            anomalias: [],
-            recomendacao: "Manter portas e fornalhas 100% vedadas para evitar choque térmico.",
-            previsao: "~ 20h para abertura de portas",
-            score: 92,
-            badgeScore: { label: "Excelente", classe: "score-excelente" },
-            pontosGrafico: [975, 940, 890, 820, 740, 650, 560, 480, 410, 360, 320, 295, 285]
-        });
-        fornosEmQueima.push({
-            num: "05",
-            c1: 490,
-            c2: 420,
-            delta: 70,
-            picoC1: 510,
-            picoC2: 430,
-            mediaC1: 360,
-            taxaVariacao: 55,
-            tendenciaTxt: "📈 Subida contínua de temperatura (+55°C/h)",
-            isOnline: true,
-            diffMin: 2,
-            fase: { nome: "Elevação & Desidratação", classe: "phase-elevacao", icone: "fa-fire", step: 2, desc: "Eliminação de água estrutural" },
-            anomalias: ["Gradiente moderado (70°C entre topo e base)"],
-            recomendacao: "Gradiente de 70°C: equalizar fogo alimentando mais as fornalhas da base.",
-            previsao: "~ 4h para atingir zona de maturação",
-            score: 82,
-            badgeScore: { label: "Atenção", classe: "score-alerta" },
-            pontosGrafico: [120, 160, 210, 260, 310, 360, 400, 440, 470, 490, 500, 510, 490]
-        });
-        for (let i = 1; i <= 16; i++) {
-            if (![1, 2, 5].includes(i)) {
-                fornosInativos.push({ num: String(i).padStart(2, '0') });
-            }
-        }
-    }
+
 
     const qtdQueima = fornosEmQueima.length || 1;
     const scoreGeral = Math.round(fornosEmQueima.reduce((acc, f) => acc + (f.score || 85), 0) / qtdQueima);
@@ -4045,56 +3992,127 @@ function renderizarResultadoIA(resultado) {
     gerarTextoRelatorioIA(false);
 }
 
-function gerarTextoRelatorioIA(resetarManual = false) {
+async function obterResumoGeminiClient(ceramicaNome, fornosAtivos) {
+    if (!fornosAtivos || fornosAtivos.length === 0) {
+        return `• *Status:* Nenhum forno com queima ativa detectado nas últimas 12 horas.\n• *Ação:* Unidades em temperatura ambiente ou pátio. Sistema pronto para novo ciclo.`;
+    }
+
+    const apiKey = localStorage.getItem("thermolink_gemini_api_key") || $("waAdminInputGeminiKey")?.value?.trim() || "";
+
+    const fallbackLocal = () => {
+        const maiorPico = fornosAtivos.reduce((prev, curr) => (curr.picoC1 > prev.picoC1 ? curr : prev), fornosAtivos[0]);
+        const emMaturacao = fornosAtivos.filter(f => f.c1 >= 750);
+        const subindo = fornosAtivos.filter(f => String(f.tendenciaTxt || "").includes("Subida"));
+        const resfriando = fornosAtivos.filter(f => String(f.tendenciaTxt || "").toLowerCase().includes("resfriamento"));
+
+        const itens = [];
+        itens.push(`• *Operação:* ${fornosAtivos.length} forno(s) em queima ativa na janela de 12 horas.`);
+        if (emMaturacao.length > 0) {
+            itens.push(`• *Ponto de Fogo:* Forno(s) ${emMaturacao.map(f => f.num).join(', ')} na faixa de sinterização (Pico: ${maiorPico.picoC1}°C no Forno ${maiorPico.num}).`);
+        } else if (subindo.length > 0) {
+            itens.push(`• *Elevação:* Forno(s) ${subindo.map(f => f.num).join(', ')} em ritmo constante de queima.`);
+        } else {
+            itens.push(`• *Pico do Turno:* Forno ${maiorPico.num} atingiu a máxima de ${maiorPico.picoC1}°C.`);
+        }
+
+        if (resfriando.length > 0) {
+            itens.push(`• *Resfriamento:* Forno(s) ${resfriando.map(f => f.num).join(', ')} em curva descendente. Manter vedação completa.`);
+        } else {
+            itens.push(`• *Recomendação:* Manter alimentação uniforme de lenha e acompanhar estabilidade nos topos.`);
+        }
+        return itens.slice(0, 3).join("\n");
+    };
+
+    if (!apiKey) return fallbackLocal();
+
+    const dadosFornos = fornosAtivos.map(f => 
+        `- Forno ${f.num}: Fase "${f.fase?.nome || f.fase || 'Queima'}", Temp Atual C1=${f.c1}°C, C2=${f.c2}°C, Pico 12h=${f.picoC1}°C, Média=${f.mediaC1}°C, Comportamento="${f.tendenciaTxt}"`
+    ).join("\n");
+
+    const prompt = `Você é o especialista industrial em queima de cerâmica vermelha e olarias do sistema ThermoLink.
+Analise a telemetria REAL das últimas 12 horas da cerâmica "${ceramicaNome}":
+${dadosFornos}
+
+Diretrizes OBRIGATÓRIAS:
+1. Escreva um resumo EXECUTIVO de 2 a 3 tópicos curtos (máximo 4 linhas no total), iniciando cada tópico com '• '.
+2. Seja direto, conciso e prático para o proprietário da olaria / operador.
+3. Avalie o estado térmico (se atingiu zona de sinterização ~900°C+, se está subindo ou em resfriamento) e dê 1 recomendação operacional direta para o turno.
+4. NÃO use saudações ("Olá", "Bom dia", "Aqui está"), NÃO use introdução nem despedidas.
+5. NÃO invente números nem dados. Use apenas os dados reais fornecidos acima.
+6. Use negrito (*texto*) e marcadores • compatíveis com o WhatsApp.`;
+
+    try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.25, maxOutputTokens: 250 }
+            })
+        });
+        if (resp.ok) {
+            const json = await resp.json();
+            const txt = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (txt && txt.trim().length > 10) {
+                return txt.trim().replace(/^(Aqui está o resumo|Resumo Executivo|Relatório da IA|Análise da Queima):?\s*/i, '');
+            }
+        }
+    } catch (e) {
+        console.warn("[Gemini Client] Erro:", e);
+    }
+
+    return fallbackLocal();
+}
+
+async function gerarTextoRelatorioIA(resetarManual = false) {
     const res = adminState.aiReportState?.analiseAtual;
     if (!res) return;
 
-    const dataFormatada = new Date().toLocaleDateString("pt-BR");
-    const { fornosAtivos, fornosInativos, totalFornosCadastrados, ceramica, scoreGeral, gradienteMedio, chartUrl } = res;
+    const agora = new Date();
+    const dataFormatada = agora.toLocaleDateString("pt-BR");
+    const horaFormatada = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const { fornosAtivos, ceramica, chartUrl } = res;
+    const fornosList = fornosAtivos || [];
 
     let t = `*━━━━━━━━━━━━━━━━━━━━━━━━━━*\n`;
-    t += `🔥 *THERMOLINK • RESUMO DA MADRUGADA* 🔥\n`;
-    t += `*Turno de Queima (Últimas 12 Horas)*\n`;
+    t += `🔥 *THERMOLINK • RESUMO 12 HORAS* 🔥\n`;
     t += `*━━━━━━━━━━━━━━━━━━━━━━━━━━*\n\n`;
 
     t += `🏭 *Cerâmica:* ${ceramica.nome}\n`;
     t += `👤 *Aos Cuidados:* ${ceramica.responsavel || "Gestor de Queima"}\n`;
-    t += `📅 *Horário de Fechamento:* ${dataFormatada} às 06:00\n`;
-    t += `⏱️ *Período Analisado:* 18:00 às 06:00 (12h de Madrugada)\n\n`;
+    t += `📅 *Fechamento:* ${dataFormatada} às ${horaFormatada}\n`;
+    t += `⏱️ *Período:* Últimas 12 Horas (Telemetria Real)\n\n`;
 
-    t += `*──────────────────────────*\n`;
-    t += `📊 *PANORAMA GERAL DA FÁBRICA:*\n`;
-    t += `• Capacidade Total: *${totalFornosCadastrados} Fornos*\n`;
-    t += `• 🔥 *Fornos em Queima Ativa:* *${fornosAtivos.length} forno(s)* (${fornosAtivos.map(f => `F${f.num}`).join(', ') || 'Nenhum'})\n`;
-    t += `• 💤 *Fornos Inativos / Desligados:* *${fornosInativos.length} forno(s)* (sem variação térmica)\n`;
-    t += `*──────────────────────────*\n\n`;
-
-    if (fornosAtivos.length === 0) {
-        t += `ℹ️ *Nenhum forno registrou queima ativa nesta madrugada.*\n`;
-        t += `Todas as unidades permanecem em temperatura ambiente ou pátio.\n\n`;
+    if (fornosList.length === 0) {
+        t += `ℹ️ *Nenhum forno registrou queima ativa nesta janela de 12 horas.*\n`;
+        t += `Todas as unidades monitoradas permanecem em temperatura ambiente ou pátio.\n\n`;
     } else {
-        t += `🔥 *DIAGNÓSTICO INDIVIDUAL DOS FORNOS EM QUEIMA:*\n\n`;
-        fornosAtivos.forEach(f => {
-            t += `*FORNO ${f.num}* — ${f.fase.nome}\n`;
+        t += `🔥 *FORNOS EM OPERAÇÃO:* (${fornosList.length} ativo${fornosList.length > 1 ? 's' : ''})\n\n`;
+        fornosList.forEach(f => {
+            const faseNome = f.fase?.nome || f.fase || 'Queima Ativa';
+            t += `*FORNO ${f.num}* — ${faseNome}\n`;
             t += `• *Temp. Atual:* C1 (Topo): *${f.c1}°C* | C2 (Base): *${f.c2}°C*\n`;
-            t += `• *Pico na Madrugada:* *${f.picoC1}°C*\n`;
-            t += `• *Média das 12h:* ${f.mediaC1}°C\n`;
-            t += `• *Gradiente (Topo x Base):* ${f.delta}°C\n`;
-            t += `• *Comportamento:* ${f.tendenciaTxt}\n`;
-            t += `• 💡 *Recomendação IA:* ${f.recomendacao}\n\n`;
+            t += `• *Pico (12h):* *${f.picoC1}°C* (Média: ${f.mediaC1}°C)\n`;
+            t += `• *Comportamento:* ${f.tendenciaTxt}\n\n`;
         });
     }
 
-    t += `*━━━━━━━━━━━━━━━━━━━━━━━━━━*\n`;
-    t += `🤖 *PARECER TÉCNICO & IA THERMOLINK:*\n`;
-    t += `• ⭐ *Score Térmico Global:* *${scoreGeral}%* (${scoreGeral >= 85 ? 'Excelente' : 'Estável'})\n`;
-    t += `• ⚖️ *Gradiente Médio Operacional:* *${gradienteMedio}°C*\n`;
-    if (chartUrl) {
-        t += `• 📈 *Gráfico da curva térmica de 12h anexado acima.*\n`;
+    // Obtém análise do Gemini
+    let resumoGemini = res.resumoGemini;
+    if (!resumoGemini || resetarManual) {
+        resumoGemini = await obterResumoGeminiClient(ceramica.nome, fornosList);
+        res.resumoGemini = resumoGemini;
     }
-    t += `\n`;
-    t += `✅ *Resumo Operacional:* Leituras consolidadas e filtradas por inteligência artificial.\n`;
-    t += `📲 _Mensagem automática gerada diariamente às 06:00 pelo ThermoLink._\n`;
+
+    t += `*──────────────────────────*\n`;
+    t += `🧠 *ANÁLISE INTELIGENTE (GEMINI IA):*\n`;
+    t += `${resumoGemini}\n`;
+    t += `*──────────────────────────*\n\n`;
+
+    if (chartUrl) {
+        t += `📈 *Gráfico térmico real das últimas 12h anexado acima.*\n`;
+    }
+    t += `📲 _Mensagem automática ThermoLink • Monitoramento Industrial_\n`;
     t += `🌐 Painel de Controle: *thermolink.com.br*\n`;
     t += `*━━━━━━━━━━━━━━━━━━━━━━━━━━*`;
 
@@ -4107,7 +4125,7 @@ function gerarTextoRelatorioIA(resetarManual = false) {
     }
 
     if (resetarManual) {
-        mostrarToastFeedback("Texto e gráfico redefinidos para o padrão das 12h.", "info");
+        mostrarToastFeedback("Texto e análise da IA redefinidos para os dados das 12h.", "info");
     }
 }
 
