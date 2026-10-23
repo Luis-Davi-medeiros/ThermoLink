@@ -362,15 +362,27 @@ async function realizarLogin(e) {
     const users = getRegisteredUsers();
     let found = users.find(u => u.username.toLowerCase() === userVal && u.password === passVal);
 
-    // 2. Se não encontrou, busca diretamente no Supabase na tabela 'ceramicas'
+    // 2. Se não encontrou, autentica com o Supabase de forma segura (RPC com hash ou consulta direta)
     if (!found) {
         try {
-            const { data: ceramicaData } = await sb
-                .from("ceramicas")
-                .select("id, nome, username, status, motivo_bloqueio")
-                .ilike("username", userVal)
-                .eq("senha", passVal)
-                .maybeSingle();
+            // Tenta primeiro via função RPC segura com hash bcrypt
+            const { data: rpcData, error: rpcError } = await sb.rpc("fn_login_ceramica", {
+                p_username: userVal,
+                p_senha: passVal
+            });
+
+            let ceramicaData = Array.isArray(rpcData) && rpcData.length > 0 ? rpcData[0] : null;
+
+            // Fallback transitório caso a procedure ainda não tenha sido rodada no Supabase
+            if (!ceramicaData && rpcError) {
+                const { data } = await sb
+                    .from("ceramicas")
+                    .select("id, nome, username, status, motivo_bloqueio")
+                    .ilike("username", userVal)
+                    .eq("senha", passVal)
+                    .maybeSingle();
+                ceramicaData = data;
+            }
 
             if (ceramicaData) {
                 found = {
@@ -383,7 +395,7 @@ async function realizarLogin(e) {
                 };
             }
         } catch (err) {
-            console.warn("[Login] Erro ao consultar ceramicas no Supabase:", err);
+            console.warn("[Login] Erro ao autenticar no Supabase:", err);
         }
     }
 
@@ -815,6 +827,7 @@ async function carregarFornosELeituras() {
 
         // Hook: motor de alertas em tempo real
         if (window.ThermoAlertas) window.ThermoAlertas.verificarLeituras();
+        checarAlarmesSonoros();
 
         // Renderiza telas
         if (state.selectedModule === null) {
@@ -2272,6 +2285,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Configura botões de navegação contínua e gestos táteis do gráfico
     configurarBotoesNavegacaoContinuo();
+    atualizarBotaoAlarme();
 
     // Redimensionamento fluido em rotação de tela e resize de janela
     window.addEventListener("resize", () => {
@@ -2283,3 +2297,118 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 });
+
+// ==========================================================================
+// 9. RECURSOS INDUSTRIAIS: ALARME SONORO, MODO TV/FULLSCREEN E RELATÓRIO
+// ==========================================================================
+
+let audioCtx = null;
+let alarmMuted = localStorage.getItem("thermolink_alarm_muted") === "true";
+
+function initAudioContext() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+    }
+}
+
+function playAlarmBeep(isCritical = false) {
+    if (alarmMuted) return;
+    try {
+        initAudioContext();
+        if (!audioCtx) return;
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = isCritical ? "sawtooth" : "sine";
+        osc.frequency.setValueAtTime(isCritical ? 880 : 587.33, audioCtx.currentTime);
+        if (isCritical) {
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
+        }
+
+        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.4);
+
+        const btn = $("btnToggleAlarm");
+        if (btn) {
+            btn.classList.add("alarm-firing");
+            setTimeout(() => btn.classList.remove("alarm-firing"), 1200);
+        }
+    } catch (e) {
+        console.warn("[Alarme Sonoro] Erro ao reproduzir áudio:", e);
+    }
+}
+
+function toggleAudioAlarm() {
+    initAudioContext();
+    alarmMuted = !alarmMuted;
+    localStorage.setItem("thermolink_alarm_muted", alarmMuted ? "true" : "false");
+    atualizarBotaoAlarme();
+
+    if (!alarmMuted) {
+        playAlarmBeep(false);
+    }
+}
+
+function atualizarBotaoAlarme() {
+    const btn = $("btnToggleAlarm");
+    const icon = $("alarmIcon");
+    if (!btn || !icon) return;
+
+    if (alarmMuted) {
+        btn.classList.remove("alarm-enabled");
+        icon.className = "fa-solid fa-bell-slash";
+        btn.title = "Alarme Sonoro Silenciado (Toque para Ativar)";
+    } else {
+        btn.classList.add("alarm-enabled");
+        icon.className = "fa-solid fa-bell";
+        btn.title = "Alarme Sonoro Ativo (Toque para Silenciar)";
+    }
+}
+
+function checarAlarmesSonoros() {
+    if (alarmMuted || !state.readings) return;
+    for (const [mod, r] of state.readings.entries()) {
+        const c1 = numVal(r?.canal_1);
+        const c2 = numVal(r?.canal_2);
+        if ((c1 !== null && c1 >= 950) || (c2 !== null && c2 >= 950)) {
+            playAlarmBeep(true);
+            break;
+        }
+    }
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+        $("fullscreenIcon")?.classList.replace("fa-expand", "fa-compress");
+    } else {
+        document.exitFullscreen().catch(() => {});
+        $("fullscreenIcon")?.classList.replace("fa-compress", "fa-expand");
+    }
+}
+
+document.addEventListener("fullscreenchange", () => {
+    const isFull = !!document.fullscreenElement;
+    const icon = $("fullscreenIcon");
+    if (icon) {
+        if (isFull) {
+            icon.classList.replace("fa-expand", "fa-compress");
+        } else {
+            icon.classList.replace("fa-compress", "fa-expand");
+        }
+    }
+});
+
+function imprimirRelatorioQueima() {
+    window.print();
+}

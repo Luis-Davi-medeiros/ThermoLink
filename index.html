@@ -150,6 +150,12 @@
             </div>
 
             <div class="header-right">
+                <button class="header-icon-btn" id="btnToggleAlarm" onclick="toggleAudioAlarm()" title="Alarme Sonoro de Temperatura">
+                    <i class="fa-solid fa-bell" id="alarmIcon"></i>
+                </button>
+                <button class="header-icon-btn btn-fullscreen" id="btnToggleFullscreen" onclick="toggleFullscreen()" title="Modo Tela Cheia (TV / Painel)">
+                    <i class="fa-solid fa-expand" id="fullscreenIcon"></i>
+                </button>
                 <button class="header-icon-btn" onclick="atualizarManual()" title="Atualizar dados agora">
                     <i class="fa-solid fa-rotate" id="refreshIcon"></i>
                 </button>
@@ -226,11 +232,14 @@
                         </div>
                     </div>
 
-                    <!-- Controles de Canais -->
+                    <!-- Controles de Canais e Relatório -->
                     <div class="chart-pill-group" id="anChannelFilter">
                         <button class="pill-btn active" onclick="filtrarCanaisAnalise('all', this)">Ambos</button>
                         <button class="pill-btn" onclick="filtrarCanaisAnalise('c1', this)">C1</button>
                         <button class="pill-btn" onclick="filtrarCanaisAnalise('c2', this)">C2</button>
+                        <button class="pill-btn btn-print-report" onclick="imprimirRelatorioQueima()" title="Imprimir ou Salvar PDF da Queima">
+                            <i class="fa-solid fa-file-pdf"></i> PDF
+                        </button>
                     </div>
                 </div>
 

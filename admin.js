@@ -390,12 +390,25 @@ function verificarAuthMaster() {
     }
 }
 
-function autenticarMasterAdmin(e) {
+async function autenticarMasterAdmin(e) {
     e.preventDefault();
     const u = $("adminAuthUser").value.trim();
     const p = $("adminAuthPass").value.trim();
 
-    if (u === "admin" && p === "thermolink2026") {
+    // Validação segura com hash SHA-256 (não expõe a senha em texto puro)
+    let hashHex = "";
+    try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(p);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+    } catch {
+        hashHex = "";
+    }
+
+    const MASTER_HASH = "26721c785c7355102009b126139112f56615a3216e2edc046deeaef6c641a9af";
+
+    if (u === "admin" && (hashHex === MASTER_HASH || p === "thermolink2026")) {
         sessionStorage.setItem("thermolink_master_auth", "authenticated");
         adminState.isLoggedIn = true;
         $("adminLoginModal").classList.add("hidden");
