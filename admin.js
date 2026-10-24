@@ -3059,6 +3059,7 @@ function renderCardsCeramicasWhatsappAdmin() {
                 (c.nome && c.nome.toLowerCase().includes(termo)) ||
                 (c.cargo && c.cargo.toLowerCase().includes(termo)) ||
                 (c.telefone && c.telefone.includes(termo)) ||
+                (c.tipo_contato && c.tipo_contato.toLowerCase().includes(termo)) ||
                 (cer.nome && cer.nome.toLowerCase().includes(termo))
             );
             if (!cer.nome.toLowerCase().includes(termo) && contatosDestaCeramica.length === 0) {
@@ -3068,18 +3069,41 @@ function renderCardsCeramicasWhatsappAdmin() {
 
         const qtdContatos = contatosDestaCeramica.length;
 
-        // Verifica telemetria dos aparelhos Alutal desta cerâmica
+        // Separa contatos por perfil
+        const contatosTecnicos = contatosDestaCeramica.filter(c => 
+            c.tipo_contato === "tecnico" || 
+            (c.cargo && (c.cargo.toLowerCase().includes("técnic") || c.cargo.toLowerCase().includes("tecnic")))
+        );
+        const contatosProprietarios = contatosDestaCeramica.filter(c => !contatosTecnicos.includes(c));
+
+        // Badge do Técnico da Cerâmica
+        let tecnicoBadgeHtml = "";
+        if (contatosTecnicos.length > 0) {
+            tecnicoBadgeHtml = `
+                <span class="tag-pill tag-pill-cyan" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; font-size: 11px; font-weight: 700;" title="Técnico vinculado a esta cerâmica">
+                    <i class="fa-solid fa-wrench"></i> Técnico: <b>${escapeHtml(contatosTecnicos[0].nome)}</b>
+                </span>
+            `;
+        } else {
+            tecnicoBadgeHtml = `
+                <button type="button" class="tag-pill" onclick="abrirModalNovoContatoWhatsapp('${cer.id}', 'tecnico')" style="background: rgba(245, 158, 11, 0.15); border: 1px dashed rgba(245, 158, 11, 0.45); color: #fbbf24; font-size: 11px; font-weight: 700; cursor: pointer; padding: 3px 10px;" title="Clique para vincular o técnico desta cerâmica">
+                    <i class="fa-solid fa-triangle-exclamation"></i> + Vincular Técnico
+                </button>
+            `;
+        }
+
+        // Telemetria dos aparelhos Alutal desta cerâmica
         const devsDaCeramica = (adminState.deviceStatusList || []).filter(d => (d.ceramicaId || d.ceramica_id) === cer.id);
         let statusAlutalHtml = "";
         if (devsDaCeramica.length > 0) {
             const minDiff = Math.min(...devsDaCeramica.map(d => Number(d.diffMin !== undefined ? d.diffMin : 999999)));
             if (minDiff <= 10) {
-                statusAlutalHtml = `<span class="badge-status-online" style="padding: 2px 8px; font-size: 11px;"><span class="pulse-dot-green"></span> Alutal Online (${minDiff}m)</span>`;
+                statusAlutalHtml = `<span class="badge-status-online" style="padding: 2px 8px; font-size: 11px;"><span class="pulse-dot-green"></span> ${devsDaCeramica.length} Aparelho(s) Online (${minDiff}m)</span>`;
             } else if (minDiff <= 30) {
                 statusAlutalHtml = `<span class="badge-status-recent" style="padding: 2px 8px; font-size: 11px;"><i class="fa-regular fa-clock"></i> Sinal há ${minDiff}m</span>`;
             } else {
                 const diffTxt = minDiff > 9999 ? '>24h' : `${minDiff}m`;
-                statusAlutalHtml = `<span class="badge-status-offline" style="background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 8px; font-size: 11px;"><i class="fa-solid fa-triangle-exclamation"></i> Sem sinal há ${diffTxt} (Alerta Ativo)</span>`;
+                statusAlutalHtml = `<span class="badge-status-offline" style="background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 8px; font-size: 11px;"><i class="fa-solid fa-triangle-exclamation"></i> Sem sinal há ${diffTxt} (Offline)</span>`;
             }
         }
 
@@ -3094,8 +3118,9 @@ function renderCardsCeramicasWhatsappAdmin() {
                             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                 <h4 style="color: white; font-size: 17px; margin: 0; font-weight: 800;">${escapeHtml(cer.nome)}</h4>
                                 <span class="tag-pill" style="background: rgba(255,255,255,0.05); color: #94a3b8; font-size: 11px;">
-                                    ${qtdContatos} ${qtdContatos === 1 ? 'número cadastrado' : 'números cadastrados'}
+                                    ${qtdContatos} ${qtdContatos === 1 ? 'contato' : 'contatos'}
                                 </span>
+                                ${tecnicoBadgeHtml}
                                 ${statusAlutalHtml}
                             </div>
                             <span style="color: var(--text-muted); font-size: 12px;">
@@ -3104,12 +3129,21 @@ function renderCardsCeramicasWhatsappAdmin() {
                         </div>
                     </div>
 
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}')" style="padding: 8px 14px; font-size: 12px;">
-                            <i class="fa-solid fa-plus"></i> Adicionar Contato
+                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}', 'proprietario')" style="padding: 7px 12px; font-size: 12px;" title="Adicionar proprietário ou gestor da cerâmica">
+                            <i class="fa-solid fa-user-plus"></i> + Responsável
                         </button>
-                        <button class="btn-plan-edit" onclick="testarAlertaDesconexaoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="padding: 8px 12px; font-size: 12px;" title="Testar envio do alerta de desconexão (>30 min) para os números desta cerâmica">
-                            <i class="fa-solid fa-triangle-exclamation text-orange"></i> Testar Alerta Desconexão
+                        <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}', 'tecnico')" style="padding: 7px 12px; font-size: 12px; background: linear-gradient(135deg, #0284c7, #0369a1);" title="Vincular técnico responsável por esta cerâmica">
+                            <i class="fa-solid fa-wrench"></i> + Técnico
+                        </button>
+                        <button class="btn-plan-edit" onclick="enviarStatusTecnicoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="padding: 7px 10px; font-size: 11px;" title="Enviar diagnóstico com quantidade de aparelhos funcionando para o técnico">
+                            <i class="fa-solid fa-tower-broadcast text-blue"></i> Status Aparelhos
+                        </button>
+                        <button class="btn-plan-edit" onclick="testarAlertaDesconexaoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="padding: 7px 10px; font-size: 11px;" title="Simular aviso de equipamento desligado (>30 min) para o técnico">
+                            <i class="fa-solid fa-triangle-exclamation text-orange"></i> Simular Queda
+                        </button>
+                        <button class="btn-plan-edit" onclick="testarAlertaReconexaoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="padding: 7px 10px; font-size: 11px;" title="Simular aviso de equipamento que ligou / reconectou para o técnico">
+                            <i class="fa-solid fa-circle-check text-green"></i> Simular Ligou
                         </button>
                     </div>
                 </div>
@@ -3118,50 +3152,80 @@ function renderCardsCeramicasWhatsappAdmin() {
                 ${qtdContatos === 0 ? `
                     <div style="padding: 24px; text-align: center; background: rgba(0,0,0,0.2); border-radius: 10px; border: 1px dashed rgba(255,255,255,0.1);">
                         <i class="fa-brands fa-whatsapp" style="font-size: 28px; color: #64748b; margin-bottom: 8px;"></i>
-                        <p style="color: var(--text-muted); font-size: 13px;">Nenhum número cadastrado para <b>${escapeHtml(cer.nome)}</b>.</p>
-                        <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}')" style="margin-top: 12px; padding: 6px 14px; font-size: 12px;">
-                            <i class="fa-solid fa-user-plus"></i> Cadastrar Primeiro Número
-                        </button>
+                        <p style="color: var(--text-muted); font-size: 13px;">Nenhum contato cadastrado para <b>${escapeHtml(cer.nome)}</b>.</p>
+                        <div style="display: flex; justify-content: center; gap: 8px; margin-top: 12px;">
+                            <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}', 'proprietario')" style="padding: 6px 14px; font-size: 12px;">
+                                <i class="fa-solid fa-user-plus"></i> Cadastrar Responsável
+                            </button>
+                            <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}', 'tecnico')" style="padding: 6px 14px; font-size: 12px; background: linear-gradient(135deg, #0284c7, #0369a1);">
+                                <i class="fa-solid fa-wrench"></i> Vincular Técnico
+                            </button>
+                        </div>
                     </div>
                 ` : `
                     <div class="admin-table-wrapper" style="margin-top: 0;">
                         <table class="admin-table">
                             <thead>
                                 <tr>
-                                    <th>Nome do Contato</th>
+                                    <th>Contato & Perfil</th>
                                     <th>Cargo / Função</th>
                                     <th>WhatsApp</th>
-                                    <th style="text-align: center;">Recebe Relatório Diário</th>
-                                    <th style="text-align: right;">Ações de Envio</th>
+                                    <th style="text-align: center;" title="Recebe relatório analítico e gráfico das últimas 12 horas">Relatório 12h</th>
+                                    <th style="text-align: center;" title="Recebe alertas quando aparelho desliga, religa e status">Avisos Técnicos</th>
+                                    <th style="text-align: right;">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${contatosDestaCeramica.map(c => `
+                                ${contatosDestaCeramica.map(c => {
+                                    const isTec = c.tipo_contato === "tecnico" || (c.cargo && (c.cargo.toLowerCase().includes("técnic") || c.cargo.toLowerCase().includes("tecnic")));
+                                    const roleBadge = isTec 
+                                        ? `<span class="tag-pill tag-pill-cyan" style="font-size: 10px; cursor: pointer; margin-right: 6px; padding: 2px 7px;" onclick="toggleTecnicoContatoAdmin('${c.id}')" title="Clique para alternar para Responsável/Proprietário"><i class="fa-solid fa-wrench"></i> TÉCNICO</span>`
+                                        : `<span class="tag-pill" style="font-size: 10px; background: rgba(255,255,255,0.08); color: #cbd5e1; cursor: pointer; margin-right: 6px; padding: 2px 7px;" onclick="toggleTecnicoContatoAdmin('${c.id}')" title="Clique para alternar para Técnico"><i class="fa-solid fa-user-tie"></i> GESTÃO</span>`;
+                                    
+                                    const acaoBotao = isTec
+                                        ? `<button class="btn-send-wa-row" onclick="enviarStatusTecnicoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);" title="Enviar status dos aparelhos funcionando para o técnico agora">
+                                            <i class="fa-solid fa-tower-broadcast"></i> Status
+                                           </button>`
+                                        : `<button class="btn-send-wa-row" onclick="dispararRelatorioIndividualAdmin('${c.id}')" title="Disparar relatório de 12h de queima para este contato agora">
+                                            <i class="fa-solid fa-paper-plane"></i> Relatório
+                                           </button>`;
+
+                                    return `
                                     <tr>
-                                        <td><b>${escapeHtml(c.nome)}</b></td>
-                                        <td style="color: var(--text-muted);">${escapeHtml(c.cargo || 'Responsável')}</td>
+                                        <td>
+                                            <div style="display: flex; align-items: center;">
+                                                ${roleBadge}
+                                                <b style="color: #ffffff;">${escapeHtml(c.nome)}</b>
+                                            </div>
+                                        </td>
+                                        <td style="color: var(--text-muted); font-size: 12px;">${escapeHtml(c.cargo || (isTec ? 'Técnico Responsável' : 'Responsável'))}</td>
                                         <td>
                                             <a href="https://wa.me/${c.telefone}" target="_blank" style="color: #34d399; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
                                                 <i class="fa-brands fa-whatsapp"></i> +${escapeHtml(c.telefone)}
                                             </a>
                                         </td>
                                         <td style="text-align: center;">
-                                            <label class="switch">
+                                            <label class="switch" title="Ativar/Desativar relatório diário de 12h de queima">
                                                 <input type="checkbox" ${c.receber_relatorio ? 'checked' : ''} onchange="toggleRelatorioContatoAdmin('${c.id}')">
                                                 <span class="slider"></span>
                                             </label>
                                         </td>
+                                        <td style="text-align: center;">
+                                            <label class="switch" title="Ativar/Desativar avisos técnicos (desligado, ligou, quantidade de aparelhos)">
+                                                <input type="checkbox" ${c.receber_alertas_tecnicos || isTec ? 'checked' : ''} onchange="toggleAlertaTecnicoContatoAdmin('${c.id}')">
+                                                <span class="slider"></span>
+                                            </label>
+                                        </td>
                                         <td style="text-align: right;">
-                                            <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
-                                                <button class="btn-send-wa-row" onclick="dispararRelatorioIndividualAdmin('${c.id}')" title="Disparar relatório de ${escapeHtml(cer.nome)} para este número agora">
-                                                    <i class="fa-solid fa-paper-plane"></i> Enviar Agora
-                                                </button>
+                                            <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                                                ${acaoBotao}
                                                 <button class="btn-action-icon" onclick="editarContatoWhatsappAdmin('${c.id}')" title="Editar Contato"><i class="fa-solid fa-pen"></i></button>
                                                 <button class="btn-action-icon btn-action-danger" onclick="excluirContatoWhatsappAdmin('${c.id}')" title="Excluir Contato"><i class="fa-solid fa-trash"></i></button>
                                             </div>
                                         </td>
                                     </tr>
-                                `).join('')}
+                                    `;
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -3187,6 +3251,27 @@ function filtrarCeramicaContatoAdmin(ceramicaId, btn) {
     document.querySelectorAll("#waCeramicasFilterPills .filter-pill").forEach(b => b.classList.remove("active"));
     if (btn) btn.classList.add("active");
     renderCardsCeramicasWhatsappAdmin();
+}
+
+function atualizarOpcoesTipoContatoAdmin() {
+    const tipo = $("waContatoTipo")?.value || "proprietario";
+    const cargoInput = $("waContatoCargo");
+    const checkRelatorio = $("waContatoReceber");
+    const checkTecnico = $("waContatoReceberTecnico");
+
+    if (tipo === "tecnico") {
+        if (cargoInput && (!cargoInput.value || cargoInput.value === "Proprietário")) {
+            cargoInput.value = "Técnico Responsável";
+        }
+        if (checkTecnico) checkTecnico.checked = true;
+        if (checkRelatorio) checkRelatorio.checked = false;
+    } else {
+        if (cargoInput && (!cargoInput.value || cargoInput.value === "Técnico Responsável")) {
+            cargoInput.value = "Proprietário";
+        }
+        if (checkRelatorio) checkRelatorio.checked = true;
+        if (checkTecnico) checkTecnico.checked = false;
+    }
 }
 
 async function salvarConfigWhatsappAdmin() {
@@ -3215,13 +3300,16 @@ async function salvarConfigWhatsappAdmin() {
     }
 }
 
-function abrirModalNovoContatoWhatsapp(ceramicaIdPreselecionada = null) {
-    $("waModalTitle").textContent = "Cadastrar Contato de WhatsApp";
+function abrirModalNovoContatoWhatsapp(ceramicaIdPreselecionada = null, tipoPadrao = "proprietario") {
+    $("waModalTitle").textContent = tipoPadrao === "tecnico" 
+        ? "Vincular Técnico Responsável à Cerâmica" 
+        : "Cadastrar Contato de WhatsApp";
     $("waContatoId").value = "";
     $("waContatoNome").value = "";
-    $("waContatoCargo").value = "Proprietário";
     $("waContatoTelefone").value = "";
-    $("waContatoReceber").checked = true;
+
+    if ($("waContatoTipo")) $("waContatoTipo").value = tipoPadrao;
+    atualizarOpcoesTipoContatoAdmin();
 
     // Popula select de cerâmicas
     const sel = $("waContatoCeramicaId");
@@ -3249,7 +3337,19 @@ function editarContatoWhatsappAdmin(id) {
     $("waContatoNome").value = c.nome;
     $("waContatoCargo").value = c.cargo || "Responsável";
     $("waContatoTelefone").value = c.telefone;
-    $("waContatoReceber").checked = Boolean(c.receber_relatorio);
+
+    const isTecnico = c.tipo_contato === "tecnico" || 
+        (c.cargo && (c.cargo.toLowerCase().includes("técnic") || c.cargo.toLowerCase().includes("tecnic")));
+
+    if ($("waContatoTipo")) {
+        $("waContatoTipo").value = isTecnico ? "tecnico" : "proprietario";
+    }
+    if ($("waContatoReceber")) {
+        $("waContatoReceber").checked = Boolean(c.receber_relatorio);
+    }
+    if ($("waContatoReceberTecnico")) {
+        $("waContatoReceberTecnico").checked = Boolean(c.receber_alertas_tecnicos !== undefined ? c.receber_alertas_tecnicos : isTecnico);
+    }
 
     const sel = $("waContatoCeramicaId");
     sel.innerHTML = "";
@@ -3275,14 +3375,25 @@ async function salvarContatoWhatsappAdmin(e) {
     const nome = $("waContatoNome").value.trim();
     const cargo = $("waContatoCargo").value.trim();
     const telefone = $("waContatoTelefone").value.trim().replace(/\D/g, "");
-    const receber_relatorio = $("waContatoReceber").checked;
+    const tipo_contato = $("waContatoTipo") ? $("waContatoTipo").value : "proprietario";
+    const receber_relatorio = $("waContatoReceber") ? $("waContatoReceber").checked : true;
+    const receber_alertas_tecnicos = $("waContatoReceberTecnico") ? $("waContatoReceberTecnico").checked : (tipo_contato === "tecnico");
 
     if (!nome || !telefone) {
         alert("Preencha o nome e o número de WhatsApp!");
         return;
     }
 
-    const body = { ceramica_id, ceramica_nome, nome, cargo, telefone, receber_relatorio };
+    const body = { 
+        ceramica_id, 
+        ceramica_nome, 
+        nome, 
+        cargo: cargo || (tipo_contato === 'tecnico' ? 'Técnico Responsável' : 'Responsável'), 
+        telefone,
+        tipo_contato,
+        receber_relatorio,
+        receber_alertas_tecnicos
+    };
 
     // 1. Atualiza estado local imediatamente (funciona mesmo no GitHub Pages)
     if (id) {
@@ -3296,7 +3407,7 @@ async function salvarContatoWhatsappAdmin(e) {
 
     // Fecha o modal e atualiza a interface NA HORA
     fecharModalAdmin("modalContatoWhatsapp", null);
-    mostrarToastFeedback(id ? "Contato atualizado com sucesso!" : "Novo contato adicionado!", "success");
+    mostrarToastFeedback(id ? "Contato atualizado com sucesso!" : "Novo contato salvo!", "success");
     renderCardsCeramicasWhatsappAdmin();
 
     // 2. Dispara sync com Gateway em background (se online)
@@ -3344,12 +3455,48 @@ async function toggleRelatorioContatoAdmin(id) {
     if (!c) return;
     c.receber_relatorio = !c.receber_relatorio;
     localStorage.setItem("thermolink_wa_contatos", JSON.stringify(waAdminContatos));
-    mostrarToastFeedback(`Recebimento diário de ${c.nome}: ${c.receber_relatorio ? 'ATIVADO' : 'PAUSADO'}`, "info");
+    mostrarToastFeedback(`Relatório diário para ${c.nome}: ${c.receber_relatorio ? 'ATIVADO' : 'PAUSADO'}`, "info");
     renderCardsCeramicasWhatsappAdmin();
 
     const gatewayUrl = getGatewayUrl();
     try {
         await fetch(`${gatewayUrl}/api/contatos/${id}/toggle-relatorio`, { method: "POST" });
+    } catch (e) {}
+}
+
+async function toggleTecnicoContatoAdmin(id) {
+    const c = waAdminContatos.find(x => x.id === id);
+    if (!c) return;
+    const novoTipo = c.tipo_contato === 'tecnico' ? 'proprietario' : 'tecnico';
+    c.tipo_contato = novoTipo;
+    if (novoTipo === 'tecnico') {
+        c.receber_alertas_tecnicos = true;
+        if (!c.cargo || c.cargo === 'Responsável') c.cargo = 'Técnico Responsável';
+    } else {
+        c.receber_relatorio = true;
+        if (c.cargo === 'Técnico Responsável') c.cargo = 'Proprietário';
+    }
+    localStorage.setItem("thermolink_wa_contatos", JSON.stringify(waAdminContatos));
+    mostrarToastFeedback(`${c.nome} agora é: ${novoTipo === 'tecnico' ? '🛠️ TÉCNICO' : '👤 PROPRIETÁRIO'}`, "info");
+    renderCardsCeramicasWhatsappAdmin();
+
+    const gatewayUrl = getGatewayUrl();
+    try {
+        await fetch(`${gatewayUrl}/api/contatos/${id}/toggle-tecnico`, { method: "POST" });
+    } catch (e) {}
+}
+
+async function toggleAlertaTecnicoContatoAdmin(id) {
+    const c = waAdminContatos.find(x => x.id === id);
+    if (!c) return;
+    c.receber_alertas_tecnicos = !c.receber_alertas_tecnicos;
+    localStorage.setItem("thermolink_wa_contatos", JSON.stringify(waAdminContatos));
+    mostrarToastFeedback(`Avisos técnicos para ${c.nome}: ${c.receber_alertas_tecnicos ? 'ATIVADO' : 'PAUSADO'}`, "info");
+    renderCardsCeramicasWhatsappAdmin();
+
+    const gatewayUrl = getGatewayUrl();
+    try {
+        await fetch(`${gatewayUrl}/api/contatos/${id}/toggle-alerta-tecnico`, { method: "POST" });
     } catch (e) {}
 }
 
@@ -4270,41 +4417,128 @@ function abrirModalPreviewWhatsappIA() {
 }
 
 // ==========================================================================
-// 13. ALERTA DE DESCONEXÃO DOS APARELHOS ALUTAL (> 30 MINUTOS)
+// 13. AVISOS TÉCNICOS EXCLUSIVOS (DESLIGADO, LIGOU, APARELHOS FUNCIONANDO)
 // ==========================================================================
 
-function abrirModalPreviewAlertaDesconexao() {
+let waPreviewAvisoTipoAtivo = "offline";
+
+function abrirModalPreviewAlertaDesconexao(tipo = "offline") {
+    trocarAbaPreviewAvisoTecnico(tipo);
+    abrirModalAdmin("modalPreviewAlertaDesconexao");
+}
+
+function trocarAbaPreviewAvisoTecnico(tipo) {
+    waPreviewAvisoTipoAtivo = tipo;
+
+    const btnOffline = $("tabAvisoOfflineBtn");
+    const btnOnline = $("tabAvisoOnlineBtn");
+    const btnStatus = $("tabAvisoStatusBtn");
+    const textEl = $("waMockupAlertaText");
+    const origemEl = $("waMockupAlertaOrigem");
+    const actionBtn = $("btnDispararAvisoTecnicoModal");
+
+    if (btnOffline) btnOffline.className = `filter-pill ${tipo === 'offline' ? 'active' : ''}`;
+    if (btnOnline) btnOnline.className = `filter-pill ${tipo === 'online' ? 'active' : ''}`;
+    if (btnStatus) btnStatus.className = `filter-pill ${tipo === 'status' ? 'active' : ''}`;
+
     const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
     let cer = null;
     if (waAdminCeramicaFiltroAtivo && waAdminCeramicaFiltroAtivo !== "all") {
         cer = clients.find(c => c.id === waAdminCeramicaFiltroAtivo);
     }
     if (!cer) {
-        cer = clients.find(cl => (waAdminContatos || []).some(c => c.ceramica_id === cl.id && c.receber_relatorio));
+        cer = clients.find(cl => (waAdminContatos || []).some(c => c.ceramica_id === cl.id && (c.tipo_contato === "tecnico" || c.receber_alertas_tecnicos)));
     }
     if (!cer) cer = clients[0] || { nome: "Cerâmica Cliente" };
 
-    if ($("waMockupAlertaText")) {
-        $("waMockupAlertaText").textContent = `⚠️ *ALERTA THERMOLINK • EQUIPAMENTO OFFLINE* ⚠️
+    const devsDaCer = (adminState.deviceStatusList || []).filter(d => (d.ceramicaId || d.ceramica_id) === cer.id);
+    const totalDevs = devsDaCer.length || 1;
+    const qtdAtivos = devsDaCer.filter(d => d.isOnline).length || (devsDaCer.length > 0 ? 0 : 1);
+
+    const contatosTec = (waAdminContatos || []).filter(c => c.ceramica_id === cer.id && (c.tipo_contato === "tecnico" || c.receber_alertas_tecnicos));
+    const nomeTecnico = contatosTec.length > 0 ? contatosTec[0].nome : "Técnico de Campo";
+
+    const agora = new Date();
+    const dataHoraStr = agora.toLocaleDateString("pt-BR") + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+    if (tipo === "offline") {
+        if (origemEl) origemEl.textContent = "Alerta Automático (Desconexão > 30m)";
+        if (actionBtn) {
+            actionBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Testar Alerta Desligado (${cer.nome})`;
+            actionBtn.style.background = "linear-gradient(135deg, #f97316, #ea580c)";
+        }
+        if (textEl) {
+            textEl.textContent = `⚠️ *THERMOLINK • ALERTA TÉCNICO: EQUIPAMENTO OFFLINE* ⚠️
 
 🏭 *Cerâmica:* ${cer.nome}
-⏱️ *Sem comunicação:* há mais de 30 minutos
-📡 *Status:* Módulos sem sinal com o servidor
+👨‍🔧 *Aos Cuidados do Técnico:* ${nomeTecnico}
+⏱️ *Sem comunicação:* há mais de 35 minutos
+📡 *Última transmissão:* ${dataHoraStr}
 
-Identificamos que os sensores/aparelhos Alutal estão sem comunicação com o servidor.
+Identificamos que os módulos/sensores ThermoLink na fábrica pararam de comunicar com o servidor.
 
-🔍 *Possíveis causas:*
-• Queda de energia elétrica na fábrica
-• Falha ou oscilação na conexão Wi-Fi / Internet
-• Aparelho desligado da tomada ou reiniciando
+📊 *Status dos Equipamentos:*
+• Aparelhos cadastrados: ${totalDevs} aparelho(s)
+• Aparelhos transmitindo: 0 online (todos offline)
 
-Favor verificar se os equipamentos e a internet da fábrica estão ligados.
-_Mensagem automática enviada pelo sistema ThermoLink._`;
+🔍 *Verificações recomendadas para o Técnico:*
+1. Verificar se houve queda de energia elétrica geral na cerâmica.
+2. Checar se o roteador Wi-Fi / link de internet do galpão está ligado.
+3. Verificar se o aparelho ThermoLink (ESP/Alutal) está plugado na tomada e com LED aceso.
+
+_Notificação técnica automática enviada pelo sistema ThermoLink._`;
+        }
+    } else if (tipo === "online") {
+        if (origemEl) origemEl.textContent = "Aviso Automático (Aparelho Ligou / Reconectou)";
+        if (actionBtn) {
+            actionBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Testar Aviso Ligou (${cer.nome})`;
+            actionBtn.style.background = "linear-gradient(135deg, #10b981, #059669)";
+        }
+        if (textEl) {
+            textEl.textContent = `🟢 *THERMOLINK • AVISO TÉCNICO: EQUIPAMENTO ONLINE* 🟢
+
+🏭 *Cerâmica:* ${cer.nome}
+👨‍🔧 *Aos Cuidados do Técnico:* ${nomeTecnico}
+⏱️ *Status:* Sinal restabelecido com sucesso!
+📡 *Horário de Retorno:* ${dataHoraStr}
+
+Os aparelhos ThermoLink voltaram a transmitir leituras normalmente após o período de oscilação/queda de sinal.
+
+📊 *Diagnóstico Técnico Atual:*
+• Aparelhos Cadastrados: ${totalDevs} aparelho(s)
+• Aparelhos Funcionando: *${qtdAtivos || 1} ativo(s) transmitindo*
+• Última Leitura Recebida: C1 (Topo): 780°C | C2 (Base): 710°C
+
+✅ Comunicação normalizada. A telemetria dos fornos segue em tempo real.
+
+_Notificação técnica automática enviada pelo sistema ThermoLink._`;
+        }
+    } else {
+        if (origemEl) origemEl.textContent = "Diagnóstico Técnico sob Demanda";
+        if (actionBtn) {
+            actionBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Enviar Status dos Aparelhos (${cer.nome})`;
+            actionBtn.style.background = "linear-gradient(135deg, #0284c7, #0369a1)";
+        }
+        if (textEl) {
+            const perc = totalDevs > 0 ? Math.round((qtdAtivos / totalDevs) * 100) : 100;
+            textEl.textContent = `🛠️ *THERMOLINK • STATUS TÉCNICO DOS APARELHOS* 🛠️
+
+🏭 *Cerâmica:* ${cer.nome}
+👨‍🔧 *Técnico Responsável:* ${nomeTecnico}
+📅 *Horário do Diagnóstico:* ${dataHoraStr}
+
+📊 *Resumo de Operação dos Equipamentos:*
+• Total Cadastrado: ${totalDevs} aparelho(s)
+• Aparelhos em Funcionamento: *${qtdAtivos} ativo(s) transmitindo*
+• Saúde de Comunicação: *${perc}%*
+• Última Leitura: C1: 820°C | C2: 745°C
+
+📲 _Diagnóstico técnico solicitado via Painel ThermoLink._`;
+        }
     }
-    abrirModalAdmin("modalPreviewAlertaDesconexao");
 }
 
-async function testarDisparoAlertaDesconexaoAdmin() {
+async function testarDisparoAvisoTecnicoAtivoModal() {
     const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
     if (!clients || !clients.length) return alert("Nenhuma cerâmica cadastrada.");
 
@@ -4313,60 +4547,81 @@ async function testarDisparoAlertaDesconexaoAdmin() {
         cer = clients.find(c => c.id === waAdminCeramicaFiltroAtivo);
     }
     if (!cer) {
-        cer = clients.find(cl => (waAdminContatos || []).some(c => c.ceramica_id === cl.id && c.receber_relatorio));
+        cer = clients.find(cl => (waAdminContatos || []).some(c => c.ceramica_id === cl.id && (c.tipo_contato === "tecnico" || c.receber_alertas_tecnicos)));
     }
     if (!cer) cer = clients[0];
 
-    await testarAlertaDesconexaoCeramica(cer.id, cer.nome);
+    if (waPreviewAvisoTipoAtivo === "online") {
+        await testarAlertaReconexaoCeramica(cer.id, cer.nome);
+    } else if (waPreviewAvisoTipoAtivo === "status") {
+        await enviarStatusTecnicoCeramica(cer.id, cer.nome);
+    } else {
+        await testarAlertaDesconexaoCeramica(cer.id, cer.nome);
+    }
 }
 
+async function testarDisparoAlertaDesconexaoAdmin() {
+    await testarDisparoAvisoTecnicoAtivoModal();
+}
+
+// 13.1. Teste de Alerta de Desconexão (> 30 Minutos Offline)
 async function testarAlertaDesconexaoCeramica(ceramicaId, ceramicaNome) {
-    const contatos = (waAdminContatos || []).filter(c => c.ceramica_id === ceramicaId && c.receber_relatorio);
+    let contatos = (waAdminContatos || []).filter(c => 
+        c.ceramica_id === ceramicaId && 
+        (c.tipo_contato === "tecnico" || c.receber_alertas_tecnicos) && 
+        c.telefone
+    );
     if (!contatos || !contatos.length) {
-        return alert(`Nenhum contato com recebimento ativo cadastrado para ${ceramicaNome}.`);
+        contatos = (waAdminContatos || []).filter(c => c.ceramica_id === ceramicaId && c.receber_relatorio && c.telefone);
+    }
+    if (!contatos || !contatos.length) {
+        return alert(`Nenhum contato técnico ou responsável cadastrado para ${ceramicaNome}.`);
     }
 
-    if (!confirm(`Deseja simular e enviar o ALERTA DE DESCONEXÃO (>30 min) para os ${contatos.length} contato(s) de ${ceramicaNome} no WhatsApp?`)) {
+    if (!confirm(`Deseja enviar o aviso de EQUIPAMENTO DESLIGADO (>30 min) para o(s) técnico(s) de ${ceramicaNome} no WhatsApp?`)) {
         return;
     }
 
-    mostrarToastFeedback(`Enviando teste de alerta para ${ceramicaNome}...`, "info");
+    mostrarToastFeedback(`Enviando aviso de desligamento para ${ceramicaNome}...`, "info");
     const gatewayUrl = getGatewayUrl();
 
-    const agora = new Date();
-    const dataHoraStr = agora.toLocaleDateString("pt-BR") + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-
-    const textoAviso = `⚠️ *ALERTA THERMOLINK • EQUIPAMENTO OFFLINE* ⚠️\n\n` +
-        `🏭 *Cerâmica:* ${ceramicaNome}\n` +
-        `⏱️ *Sem comunicação:* há mais de 30 minutos\n` +
-        `📡 *Status:* Módulos sem sinal com o servidor\n` +
-        `🕒 *Data/Hora:* ${dataHoraStr}\n\n` +
-        `Identificamos que os sensores/aparelhos Alutal estão sem comunicação com o servidor.\n\n` +
-        `🔍 *Possíveis causas:*\n` +
-        `• Queda de energia elétrica na fábrica\n` +
-        `• Falha ou oscilação na conexão Wi-Fi / Internet\n` +
-        `• Aparelho desligado da tomada ou reiniciando\n\n` +
-        `Favor verificar se os equipamentos e a internet da fábrica estão ligados.\n` +
-        `_Mensagem de teste de alerta enviada pelo sistema ThermoLink._`;
-
-    // 1. Tenta endpoint direto dedicado do backend (se suportado na versão em execução)
+    // 1. Tenta endpoint direto do backend
     try {
         const resp = await fetch(`${gatewayUrl}/api/testar-alerta-desconexao/${ceramicaId}`, { method: "POST" });
         if (resp.ok) {
             const d = await resp.json();
             if (d.success) {
-                mostrarToastFeedback(`Alerta de desconexão entregue para ${d.enviados} contato(s)!`, "success");
+                mostrarToastFeedback(`Aviso entregue para ${d.enviados} contato(s) de ${ceramicaNome}!`, "success");
                 fecharModalAdmin("modalPreviewAlertaDesconexao", null);
                 return;
             }
         }
     } catch (eDedicated) {}
 
-    // 2. Fallback resiliente imediato via /api/send-message (compatível 100% com o gateway ativo no Render)
+    // 2. Fallback resiliente via /api/send-message
     try {
+        const agora = new Date();
+        const dataHoraStr = agora.toLocaleDateString("pt-BR") + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        const devsDaCer = (adminState.deviceStatusList || []).filter(d => (d.ceramicaId || d.ceramica_id) === ceramicaId);
+        const totalDevs = devsDaCer.length || 1;
+
         let enviados = 0;
         for (const c of contatos) {
-            if (!c.telefone) continue;
+            const textoAviso = `⚠️ *THERMOLINK • ALERTA TÉCNICO: EQUIPAMENTO OFFLINE* ⚠️\n\n` +
+                `🏭 *Cerâmica:* ${ceramicaNome}\n` +
+                `👨‍🔧 *Aos Cuidados do Técnico:* ${c.nome}\n` +
+                `⏱️ *Sem comunicação:* há mais de 35 minutos\n` +
+                `📡 *Última transmissão:* ${dataHoraStr}\n\n` +
+                `Identificamos que os módulos/sensores ThermoLink na fábrica pararam de comunicar com o servidor.\n\n` +
+                `📊 *Status dos Equipamentos:*\n` +
+                `• Aparelhos cadastrados: ${totalDevs} aparelho(s)\n` +
+                `• Aparelhos transmitindo: 0 online (todos offline)\n\n` +
+                `🔍 *Verificações recomendadas para o Técnico:*\n` +
+                `1. Verificar se houve queda de energia elétrica geral na cerâmica.\n` +
+                `2. Checar se o roteador Wi-Fi / link de internet do galpão está ligado.\n` +
+                `3. Verificar se o aparelho ThermoLink (ESP/Alutal) está plugado na tomada e com LED aceso.\n\n` +
+                `_Notificação técnica automática enviada pelo sistema ThermoLink._`;
+
             try {
                 await enviarMensagemWhatsappGateway(c.telefone, textoAviso);
                 enviados++;
@@ -4376,10 +4631,157 @@ async function testarAlertaDesconexaoCeramica(ceramicaId, ceramicaNome) {
         }
 
         if (enviados > 0) {
-            mostrarToastFeedback(`Alerta de teste entregue para ${enviados} contato(s) de ${ceramicaNome}!`, "success");
+            mostrarToastFeedback(`Aviso entregue para ${enviados} contato(s) de ${ceramicaNome}!`, "success");
             fecharModalAdmin("modalPreviewAlertaDesconexao", null);
         } else {
-            alert("Não foi possível enviar o alerta. Verifique se o Gateway WhatsApp está conectado e online.");
+            alert("Não foi possível entregar o aviso. Verifique se o Gateway WhatsApp está online.");
+        }
+    } catch (e) {
+        alert("Erro ao enviar mensagem pelo Gateway WhatsApp: " + (e.message || "Verifique sua conexão."));
+    }
+}
+
+// 13.2. Teste de Alerta de Reconexão (Aparelho Ligou / Voltou a Transmitir)
+async function testarAlertaReconexaoCeramica(ceramicaId, ceramicaNome) {
+    let contatos = (waAdminContatos || []).filter(c => 
+        c.ceramica_id === ceramicaId && 
+        (c.tipo_contato === "tecnico" || c.receber_alertas_tecnicos) && 
+        c.telefone
+    );
+    if (!contatos || !contatos.length) {
+        contatos = (waAdminContatos || []).filter(c => c.ceramica_id === ceramicaId && c.receber_relatorio && c.telefone);
+    }
+    if (!contatos || !contatos.length) {
+        return alert(`Nenhum contato técnico ou responsável cadastrado para ${ceramicaNome}.`);
+    }
+
+    if (!confirm(`Deseja enviar o aviso de EQUIPAMENTO ONLINE (Aparelho Ligou/Voltou) para o técnico de ${ceramicaNome}?`)) {
+        return;
+    }
+
+    mostrarToastFeedback(`Enviando aviso de retorno de sinal para ${ceramicaNome}...`, "info");
+    const gatewayUrl = getGatewayUrl();
+
+    // 1. Tenta endpoint direto do backend
+    try {
+        const resp = await fetch(`${gatewayUrl}/api/testar-alerta-reconexao/${ceramicaId}`, { method: "POST" });
+        if (resp.ok) {
+            const d = await resp.json();
+            if (d.success) {
+                mostrarToastFeedback(`Aviso de equipamento online entregue para ${d.enviados} técnico(s)!`, "success");
+                fecharModalAdmin("modalPreviewAlertaDesconexao", null);
+                return;
+            }
+        }
+    } catch (eDedicated) {}
+
+    // 2. Fallback resiliente via /api/send-message
+    try {
+        const agora = new Date();
+        const dataHoraStr = agora.toLocaleDateString("pt-BR") + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        const devsDaCer = (adminState.deviceStatusList || []).filter(d => (d.ceramicaId || d.ceramica_id) === ceramicaId);
+        const totalDevs = devsDaCer.length || 1;
+        const qtdAtivos = devsDaCer.filter(d => d.isOnline).length || totalDevs;
+
+        let enviados = 0;
+        for (const c of contatos) {
+            const textoAviso = `🟢 *THERMOLINK • AVISO TÉCNICO: EQUIPAMENTO ONLINE* 🟢\n\n` +
+                `🏭 *Cerâmica:* ${ceramicaNome}\n` +
+                `👨‍🔧 *Aos Cuidados do Técnico:* ${c.nome}\n` +
+                `⏱️ *Status:* Sinal restabelecido com sucesso!\n` +
+                `📡 *Horário de Retorno:* ${dataHoraStr}\n\n` +
+                `Os aparelhos ThermoLink voltaram a transmitir leituras normalmente após o período de oscilação/queda de sinal.\n\n` +
+                `📊 *Diagnóstico Técnico Atual:*\n` +
+                `• Aparelhos Cadastrados: ${totalDevs} aparelho(s)\n` +
+                `• Aparelhos Funcionando: *${qtdAtivos} ativo(s) transmitindo*\n\n` +
+                `✅ Comunicação normalizada. A telemetria dos fornos segue em tempo real.\n\n` +
+                `_Notificação técnica automática enviada pelo sistema ThermoLink._`;
+
+            try {
+                await enviarMensagemWhatsappGateway(c.telefone, textoAviso);
+                enviados++;
+            } catch (errOne) {
+                console.warn(`[Alerta Reconexão] Erro ao enviar para ${c.nome}:`, errOne);
+            }
+        }
+
+        if (enviados > 0) {
+            mostrarToastFeedback(`Aviso de reconexão entregue para ${enviados} contato(s) de ${ceramicaNome}!`, "success");
+            fecharModalAdmin("modalPreviewAlertaDesconexao", null);
+        } else {
+            alert("Não foi possível entregar o aviso. Verifique se o Gateway WhatsApp está online.");
+        }
+    } catch (e) {
+        alert("Erro ao enviar mensagem pelo Gateway WhatsApp: " + (e.message || "Verifique sua conexão."));
+    }
+}
+
+// 13.3. Envio de Status Técnico Geral (Quantos Aparelhos Funcionando)
+async function enviarStatusTecnicoCeramica(ceramicaId, ceramicaNome) {
+    let contatos = (waAdminContatos || []).filter(c => 
+        c.ceramica_id === ceramicaId && 
+        (c.tipo_contato === "tecnico" || c.receber_alertas_tecnicos) && 
+        c.telefone
+    );
+    if (!contatos || !contatos.length) {
+        contatos = (waAdminContatos || []).filter(c => c.ceramica_id === ceramicaId && c.receber_relatorio && c.telefone);
+    }
+    if (!contatos || !contatos.length) {
+        return alert(`Nenhum contato técnico ou responsável cadastrado para ${ceramicaNome}.`);
+    }
+
+    if (!confirm(`Deseja enviar o STATUS DOS APARELHOS EM FUNCIONAMENTO para o técnico de ${ceramicaNome}?`)) {
+        return;
+    }
+
+    mostrarToastFeedback(`Enviando diagnóstico dos aparelhos para ${ceramicaNome}...`, "info");
+    const gatewayUrl = getGatewayUrl();
+
+    // 1. Tenta endpoint direto do backend
+    try {
+        const resp = await fetch(`${gatewayUrl}/api/enviar-status-tecnico/${ceramicaId}`, { method: "POST" });
+        if (resp.ok) {
+            const d = await resp.json();
+            if (d.success) {
+                mostrarToastFeedback(`Status técnico entregue para ${d.enviados} técnico(s)! (${d.qtdAtivos}/${d.totalDevs} ativos)`, "success");
+                return;
+            }
+        }
+    } catch (eDedicated) {}
+
+    // 2. Fallback resiliente via /api/send-message
+    try {
+        const agora = new Date();
+        const dataHoraStr = agora.toLocaleDateString("pt-BR") + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        const devsDaCer = (adminState.deviceStatusList || []).filter(d => (d.ceramicaId || d.ceramica_id) === ceramicaId);
+        const totalDevs = devsDaCer.length || 1;
+        const qtdAtivos = devsDaCer.filter(d => d.isOnline).length;
+        const perc = totalDevs > 0 ? Math.round((qtdAtivos / totalDevs) * 100) : 0;
+
+        let enviados = 0;
+        for (const c of contatos) {
+            const textoStatus = `🛠️ *THERMOLINK • STATUS TÉCNICO DOS APARELHOS* 🛠️\n\n` +
+                `🏭 *Cerâmica:* ${ceramicaNome}\n` +
+                `👨‍🔧 *Técnico Responsável:* ${c.nome}\n` +
+                `📅 *Horário do Diagnóstico:* ${dataHoraStr}\n\n` +
+                `📊 *Resumo de Operação dos Equipamentos:*\n` +
+                `• Total Cadastrado: ${totalDevs} aparelho(s)\n` +
+                `• Aparelhos em Funcionamento: *${qtdAtivos} ativo(s) transmitindo*\n` +
+                `• Saúde de Comunicação: *${perc}%*\n\n` +
+                `📲 _Diagnóstico técnico solicitado via Painel ThermoLink._`;
+
+            try {
+                await enviarMensagemWhatsappGateway(c.telefone, textoStatus);
+                enviados++;
+            } catch (errOne) {
+                console.warn(`[Status Técnico] Erro ao enviar para ${c.nome}:`, errOne);
+            }
+        }
+
+        if (enviados > 0) {
+            mostrarToastFeedback(`Status técnico entregue para ${enviados} contato(s) de ${ceramicaNome}!`, "success");
+        } else {
+            alert("Não foi possível entregar o status técnico. Verifique se o Gateway WhatsApp está online.");
         }
     } catch (e) {
         alert("Erro ao enviar mensagem pelo Gateway WhatsApp: " + (e.message || "Verifique sua conexão."));

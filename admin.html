@@ -1413,21 +1413,30 @@
 
             <div class="form-row-duo">
                 <div class="form-group">
+                    <label>Perfil do Contato</label>
+                    <select id="waContatoTipo" onchange="atualizarOpcoesTipoContatoAdmin()">
+                        <option value="proprietario">👤 Responsável / Proprietário (Relatórios)</option>
+                        <option value="tecnico">🛠️ Técnico Responsável (Avisos de Aparelhos)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cargo / Função</label>
+                    <input type="text" id="waContatoCargo" placeholder="Ex: Proprietário ou Técnico Responsável" required>
+                </div>
+            </div>
+
+            <div class="form-row-duo">
+                <div class="form-group">
                     <label>Nome do Contato</label>
                     <input type="text" id="waContatoNome" placeholder="Ex: André Rolim" required>
                 </div>
                 <div class="form-group">
-                    <label>Cargo / Função</label>
-                    <input type="text" id="waContatoCargo" placeholder="Ex: Proprietário, Encarregado, Forneiro" required>
+                    <label>Número do WhatsApp (com DDD)</label>
+                    <input type="text" id="waContatoTelefone" placeholder="Ex: 88994463836 ou 5588..." required>
+                    <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;">
+                        DDD + Celular. Formatação automática.
+                    </small>
                 </div>
-            </div>
-
-            <div class="form-group">
-                <label>Número do WhatsApp (com DDD)</label>
-                <input type="text" id="waContatoTelefone" placeholder="Ex: 88994463836 ou 5588..." required>
-                <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;">
-                    Informe o DDD e o número do celular. O sistema formata automaticamente.
-                </small>
             </div>
 
             <div class="form-group" style="display: flex; align-items: center; gap: 12px; margin-top: 14px; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px;">
@@ -1435,7 +1444,21 @@
                     <input type="checkbox" id="waContatoReceber" checked>
                     <span class="slider"></span>
                 </label>
-                <span style="font-size: 13px; color: white; font-weight: 600;">Receber Relatório Diário de Queima no WhatsApp</span>
+                <div>
+                    <span style="font-size: 13px; color: white; font-weight: 600; display: block;">Receber Relatório 12h de Queima no WhatsApp</span>
+                    <small style="color: var(--text-muted); font-size: 11px;">Envia curva gráfica e resumo executivo às 06:00 e 18:00 (Proprietários/Gestores).</small>
+                </div>
+            </div>
+
+            <div class="form-group" style="display: flex; align-items: center; gap: 12px; margin-top: 8px; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); padding: 12px; border-radius: 8px;">
+                <label class="switch">
+                    <input type="checkbox" id="waContatoReceberTecnico">
+                    <span class="slider"></span>
+                </label>
+                <div>
+                    <span style="font-size: 13px; color: #38bdf8; font-weight: 700; display: block;">Receber Avisos Técnicos de Aparelhos (Técnico)</span>
+                    <small style="color: #94a3b8; font-size: 11px;">Notifica se o equipamento desligou (&gt;30min), se ligou/reconectou e quantos estão funcionando.</small>
+                </div>
             </div>
 
             <div class="modal-dialog-actions">
@@ -1578,48 +1601,47 @@
 </div>
 
 <!-- ========================================================
-     MODAL: PRÉVIA DO ALERTA DE DESCONEXÃO (> 30 MIN)
+     MODAL: PRÉVIA DOS AVISOS TÉCNICOS (DESLIGADO, LIGOU, APARELHOS)
 ========================================================= -->
 <div id="modalPreviewAlertaDesconexao" class="modal-overlay hidden" onclick="fecharModalAdmin('modalPreviewAlertaDesconexao', event)">
-    <div class="modal-dialog modal-dialog-md" onclick="event.stopPropagation()" style="max-width: 520px; width: 95%;">
+    <div class="modal-dialog modal-dialog-md" onclick="event.stopPropagation()" style="max-width: 560px; width: 95%;">
         <div class="modal-dialog-header">
             <div>
-                <h3 style="color: #fbbf24;"><i class="fa-solid fa-triangle-exclamation text-orange" style="margin-right: 8px;"></i> Modelo de Alerta de Desconexão</h3>
+                <h3 style="color: #38bdf8;"><i class="fa-solid fa-wrench text-cyan" style="margin-right: 8px;"></i> Avisos Técnicos de Aparelhos (Técnico)</h3>
                 <p style="color: var(--text-muted); font-size: 12px; margin-top: 3px;">
-                    Mensagem automática enviada aos números da cerâmica quando o aparelho Alutal passar de 30 minutos sem sinal
+                    Mensagens automáticas e sob demanda enviadas para o técnico responsável da cerâmica
                 </p>
             </div>
             <button type="button" class="btn-close-modal" onclick="fecharModalAdmin('modalPreviewAlertaDesconexao', null)"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
+        <!-- ABAS DE NAVEGAÇÃO DOS MODELOS TÉCNICOS -->
+        <div style="display: flex; gap: 8px; margin-top: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+            <button type="button" class="filter-pill active" id="tabAvisoOfflineBtn" onclick="trocarAbaPreviewAvisoTecnico('offline')">
+                <i class="fa-solid fa-triangle-exclamation text-orange"></i> 1. Desligado (>30m)
+            </button>
+            <button type="button" class="filter-pill" id="tabAvisoOnlineBtn" onclick="trocarAbaPreviewAvisoTecnico('online')">
+                <i class="fa-solid fa-circle-check text-green"></i> 2. Ligou / Reconectou
+            </button>
+            <button type="button" class="filter-pill" id="tabAvisoStatusBtn" onclick="trocarAbaPreviewAvisoTecnico('status')">
+                <i class="fa-solid fa-tower-broadcast text-blue"></i> 3. Status Aparelhos
+            </button>
+        </div>
+
         <div class="wa-phone-mockup" style="background: #0b141a; border-radius: 16px; padding: 16px; margin: 16px 0; border: 1px solid rgba(255,255,255,0.08); background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 0); background-size: 18px 18px;">
             <div class="wa-message-bubble" style="background: #005c4b; color: #e9edef; padding: 14px 16px; border-radius: 12px 12px 2px 12px; font-size: 12.5px; line-height: 1.6; max-height: 440px; overflow-y: auto; white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; box-shadow: 0 2px 5px rgba(0,0,0,0.3);" id="waMockupAlertaText">
-⚠️ *ALERTA THERMOLINK • EQUIPAMENTO OFFLINE* ⚠️
-
-🏭 *Cerâmica:* [Nome da Cerâmica]
-⏱️ *Sem comunicação:* há mais de 30 minutos
-📡 *Status:* Módulos sem sinal com o servidor
-
-Identificamos que os sensores/aparelhos Alutal estão sem comunicação com o servidor.
-
-🔍 *Possíveis causas:*
-• Queda de energia elétrica na fábrica
-• Falha ou oscilação na conexão Wi-Fi / Internet
-• Aparelho desligado da tomada ou reiniciando
-
-Favor verificar se os equipamentos e a internet da fábrica estão ligados.
-_Mensagem automática enviada pelo sistema ThermoLink._
+                Carregando modelo técnico...
             </div>
             <div style="display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-top: 6px; font-size: 11px; color: #8696a0;">
-                <span>Alerta Automático</span> <i class="fa-solid fa-check-double" style="color: #53bdeb;"></i>
+                <span id="waMockupAlertaOrigem">Canal Técnico ThermoLink</span> <i class="fa-solid fa-check-double" style="color: #53bdeb;"></i>
             </div>
         </div>
 
-        <div class="modal-dialog-actions" style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="modal-dialog-actions" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <button type="button" class="btn-admin-cancel" onclick="fecharModalAdmin('modalPreviewAlertaDesconexao', null)">Fechar</button>
-            <div style="display: flex; gap: 8px;">
-                <button type="button" class="btn-primary-admin" onclick="testarDisparoAlertaDesconexaoAdmin()" style="background: linear-gradient(135deg, #f97316, #ea580c); font-size: 12px;">
-                    <i class="fa-solid fa-paper-plane"></i> Testar Envio para Cerâmica Ativa
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" id="btnDispararAvisoTecnicoModal" class="btn-primary-admin" onclick="testarDisparoAvisoTecnicoAtivoModal()" style="background: linear-gradient(135deg, #0284c7, #0369a1); font-size: 12px;">
+                    <i class="fa-solid fa-paper-plane"></i> Testar Envio para Técnico
                 </button>
             </div>
         </div>
