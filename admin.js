@@ -1143,6 +1143,10 @@ function renderTabelaDispositivos() {
                             <i class="fa-solid fa-qrcode"></i>
                             <span>QR</span>
                         </button>
+                        <button class="btn-tbl-action btn-subtle" onclick="AdminSetpoints.abrirParaDispositivo('${d.id}', '${d.serial}')" title="Gerenciar Setpoints RS485 deste Aparelho" style="color: var(--orange);">
+                            <i class="fa-solid fa-sliders"></i>
+                            <span>Setpoints</span>
+                        </button>
                         ${!isDisponivel ? `
                             <button class="btn-tbl-action btn-block-toggle" onclick="desvincularDispositivo('${d.serial}')" title="Liberar e Desvincular Aparelho">
                                 <i class="fa-solid fa-unlink"></i>
@@ -4785,6 +4789,378 @@ async function enviarStatusTecnicoCeramica(ceramicaId, ceramicaNome) {
         }
     } catch (e) {
         alert("Erro ao enviar mensagem pelo Gateway WhatsApp: " + (e.message || "Verifique sua conexão."));
+    }
+}
+
+// ==========================================================================
+// TERMINAL DE SETPOINTS RS485 PARA MASTER ADMIN (SETSP / GETSP)
+// ==========================================================================
+window.AdminSetpoints = {
+    selectedDevice: 3,
+    selectedModule: 1,
+    pollingTimer: null,
+
+    init() {
+        this.popularSeletores();
+        this.carregarFornosAdmin();
+        this.renderizar();
+    },
+
+    popularSeletores() {
+        // Popula módulos de 1 a 31
+        const selMod = $("adminSpModuleSelect");
+        if (selMod) {
+            selMod.innerHTML = Array.from({ length: 31 }, (_, i) => {
+                const m = i + 1;
+                const pad = String(m).padStart(2, "0");
+                return `<option value="${m}">Módulo ${pad} (Forno ${pad})</option>`;
+            }).join("");
+            selMod.value = String(this.selectedModule || 1);
+        }
+
+        // Popula dispositivos com cerâmicas
+        const selDev = $("adminSpDeviceSelect");
+        if (selDev) {
+            const devices = typeof getDevices === "function" ? getDevices() : [];
+            const clients = typeof getClients === "function" ? getClients() : [];
+
+            if (devices.length > 0) {
+                selDev.innerHTML = devices.map(d => {
+                    const c = clients.find(cl => cl.id === d.ceramicaId);
+                    const cNome = c ? c.nome : (d.status === "Vinculado" ? "Vinculado" : "Disponível");
+                    const serial = d.serial || d.numero_serie || `ID ${d.id}`;
+                    return `<option value="${d.id || serial}">${serial} (${cNome})</option>`;
+                }).join("");
+                selDev.value = String(this.selectedDevice || devices[0]?.id || 3);
+            }
+        }
+    },
+
+    async carregarFornosAdmin() {
+        try {
+            const { data } = await sb.from("fornos").select("*");
+            if (data && data.length > 0) {
+                this.fornos = data;
+                this.renderizar();
+            }
+        } catch (e) {}
+    },
+
+    selecionarDispositivo(devId) {
+        this.selectedDevice = devId;
+        this.renderizar();
+        this.log(`Dispositivo ${devId} selecionado.`);
+    },
+
+    selecionarModulo(mod) {
+        this.selectedModule = Number(mod) || 1;
+        this.renderizar();
+        this.log(`Módulo RS485 ${this.selectedModule} selecionado.`);
+    },
+
+    abrirParaDispositivo(dispId, serial) {
+        trocarSecaoAdmin("dispositivos");
+        this.selectedDevice = dispId || serial;
+        const sel = $("adminSpDeviceSelect");
+        if (sel) sel.value = String(this.selectedDevice);
+
+        const card = $("adminSpConsole")?.closest(".panel-box");
+        if (card) {
+            card.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        this.log(`Painel direcionado para o hardware ${serial || dispId}.`);
+        this.consultarGetsp();
+    },
+
+    atualizarBtn() {
+        const mod = this.selectedModule || 1;
+        const sp1 = $("adminInpSp1")?.value || 650;
+        const sp2 = $("adminInpSp2")?.value || 900;
+        if ($("adminBtnSetspText")) {
+            $("adminBtnSetspText").textContent = `Aplicar Setpoint (SETSP ${mod} ${sp1} ${sp2})`;
+        }
+    },
+
+    async garantirForno(mod, sp1 = 650, sp2 = 900, cmd = 'IDLE', pendente = false) {
+        try {
+            const { data: existente } = await sb
+                .from("fornos")
+                .select("id, modulo_alutal, dispositivo_id, setpoint_1, setpoint_2")
+                .eq("modulo_alutal", mod)
+                .maybeSingle();
+
+            if (existente) return existente;
+
+            let dispId = Number(this.selectedDevice);
+            if (isNaN(dispId) || dispId <= 0) dispId = 3;
+
+            const { data: criado } = await sb
+                .from("fornos")
+                .insert([{
+                    numero: mod,
+                    nome: `Forno ${String(mod).padStart(2, "0")}`,
+                    modulo_alutal: mod,
+                    dispositivo_id: dispId,
+                    setpoint_1: 650,
+                    setpoint_2: 900,
+                    novo_setpoint_1: sp1,
+                    novo_setpoint_2: sp2,
+                    comando_setpoint: cmd,
+                    setpoint_pendente: pendente,
+                    setpoint_atualizado_em: new Date().toISOString()
+                }])
+                .select()
+                .maybeSingle();
+
+            return criado;
+        } catch (e) {
+            console.warn("[AdminSetpoints] Erro no upsert:", e);
+        }
+        return null;
+    },
+
+    async consultarGetsp() {
+        const mod = this.selectedModule || 1;
+        const icon = $("adminGetspIcon");
+        const statusMod = $("adminSpModStatus");
+        const badge = $("adminSpStatusBadge");
+
+        if (icon) icon.classList.add("fa-spin");
+        if (statusMod) {
+            statusMod.style.color = "#f59e0b";
+            statusMod.textContent = "Consultando GETSP via RS485...";
+        }
+        if (badge) {
+            badge.className = "tag-pill tag-pill-orange";
+            badge.textContent = `Lendo GETSP ${mod}...`;
+        }
+
+        const idHex = (0x30 + mod).toString(16).toUpperCase();
+        this.log(`>> GETSP ${mod}`);
+        this.log(`[TX RS485 11 bytes]: 3C 20 ${idHex} 20 30 20 30 20 4C 20 3E ("< ${mod} 0 0 L >")`);
+
+        try {
+            await this.garantirForno(mod, 650, 900, 'GETSP', true);
+
+            await sb.from("fornos")
+                .update({
+                    comando_setpoint: "GETSP",
+                    setpoint_pendente: true,
+                    setpoint_atualizado_em: new Date().toISOString()
+                })
+                .eq("modulo_alutal", mod);
+        } catch (e) {
+            console.warn("[AdminSetpoints] Erro ao enviar GETSP:", e);
+        }
+
+        // Polling a cada 2 segundos no Supabase
+        let tentativas = 0;
+        if (this.pollingTimer) clearInterval(this.pollingTimer);
+
+        this.pollingTimer = setInterval(async () => {
+            tentativas++;
+            try {
+                const { data } = await sb.from("fornos")
+                    .select("setpoint_1, setpoint_2, setpoint_pendente, comando_setpoint, setpoint_atualizado_em")
+                    .eq("modulo_alutal", mod)
+                    .maybeSingle();
+
+                if (data && data.comando_setpoint === "SUCESSO" && !data.setpoint_pendente) {
+                    clearInterval(this.pollingTimer);
+                    this.pollingTimer = null;
+
+                    if (icon) icon.classList.remove("fa-spin");
+                    const sp1 = data.setpoint_1 !== null ? Number(data.setpoint_1) : 0;
+                    const sp2 = data.setpoint_2 !== null ? Number(data.setpoint_2) : 0;
+
+                    if ($("adminDispSp1")) $("adminDispSp1").textContent = `${sp1} °C`;
+                    if ($("adminDispSp2")) $("adminDispSp2").textContent = `${sp2} °C`;
+                    if ($("adminInpSp1")) $("adminInpSp1").value = sp1;
+                    if ($("adminInpSp2")) $("adminInpSp2").value = sp2;
+                    this.atualizarBtn();
+
+                    if (statusMod) {
+                        statusMod.style.color = "#22c55e";
+                        statusMod.textContent = "Confirmado no Aparelho";
+                    }
+                    if (badge) {
+                        badge.className = "tag-pill tag-pill-green";
+                        badge.textContent = "Confirmado";
+                    }
+
+                    this.log(`<< [SETPOINTS ATUAIS] MODULO ${mod}: SP1=${sp1}°C | SP2=${sp2}°C (Confirmado pelo Alutal)`);
+                    return;
+                } else if (data && data.comando_setpoint === "ERRO") {
+                    clearInterval(this.pollingTimer);
+                    this.pollingTimer = null;
+                    if (icon) icon.classList.remove("fa-spin");
+                    if (statusMod) {
+                        statusMod.style.color = "#ef4444";
+                        statusMod.textContent = "Módulo Sem Resposta";
+                    }
+                    if (badge) {
+                        badge.className = "tag-pill";
+                        badge.textContent = "Falha RS485";
+                    }
+                    this.log(`<< ERRO: Módulo ${mod} não respondeu ao comando GETSP no barramento.`);
+                    return;
+                }
+            } catch (err) {}
+
+            if (tentativas >= 15) {
+                clearInterval(this.pollingTimer);
+                this.pollingTimer = null;
+                if (icon) icon.classList.remove("fa-spin");
+                if (statusMod) {
+                    statusMod.style.color = "#94a3b8";
+                    statusMod.textContent = "Aguardando Varredura";
+                }
+                this.log(`<< AVISO: Tempo limite de consulta atingido. O ESP8266 lerá na próxima varredura.`);
+            }
+        }, 2000);
+    },
+
+    async gravarSetsp() {
+        const mod = this.selectedModule || 1;
+        const sp1 = parseInt($("adminInpSp1")?.value, 10);
+        const sp2 = parseInt($("adminInpSp2")?.value, 10);
+
+        if (isNaN(sp1) || isNaN(sp2) || sp1 < 0 || sp2 < 0 || sp1 > 1400 || sp2 > 1400) {
+            alert("Por favor, digite valores válidos entre 0 °C e 1400 °C.");
+            return;
+        }
+
+        const btn = $("adminBtnSetsp");
+        const icon = $("adminSetspIcon");
+        const statusMod = $("adminSpModStatus");
+        const badge = $("adminSpStatusBadge");
+
+        if (btn) btn.disabled = true;
+        if (icon) icon.className = "fa-solid fa-spinner fa-spin";
+        if (statusMod) {
+            statusMod.style.color = "#f59e0b";
+            statusMod.textContent = `Gravando SETSP ${mod} ${sp1} ${sp2}...`;
+        }
+        if (badge) {
+            badge.className = "tag-pill tag-pill-orange";
+            badge.textContent = "Aguardando ESP...";
+        }
+
+        const enc1 = window.ThermoSetpoints?.calcularHexAlutal(sp1) || {
+            hHex: ((((sp1 >> 6) & 0x3F) << 2) | 0x03).toString(16).toUpperCase().padStart(2, "0"),
+            lHex: (((sp1 & 0x3F) << 2) | 0x03).toString(16).toUpperCase().padStart(2, "0")
+        };
+        const enc2 = window.ThermoSetpoints?.calcularHexAlutal(sp2) || {
+            hHex: ((((sp2 >> 6) & 0x3F) << 2) | 0x03).toString(16).toUpperCase().padStart(2, "0"),
+            lHex: (((sp2 & 0x3F) << 2) | 0x03).toString(16).toUpperCase().padStart(2, "0")
+        };
+        const idHex = (0x30 + mod).toString(16).toUpperCase();
+
+        this.log(`>> SETSP ${mod} ${sp1} ${sp2}`);
+        this.log(`[TX RS485 19 bytes]: 3C 20 ${idHex} 20 31 20 34 20 53 20 ${enc1.hHex} 20 ${enc1.lHex} 20 ${enc2.hHex} 20 ${enc2.lHex} 20 3E`);
+
+        try {
+            await this.garantirForno(mod, sp1, sp2, 'SETSP', true);
+
+            await sb.from("fornos")
+                .update({
+                    novo_setpoint_1: sp1,
+                    novo_setpoint_2: sp2,
+                    comando_setpoint: "SETSP",
+                    setpoint_pendente: true,
+                    setpoint_atualizado_em: new Date().toISOString()
+                })
+                .eq("modulo_alutal", mod);
+        } catch (e) {
+            console.warn("[AdminSetpoints] Erro ao gravar SETSP:", e);
+        }
+
+        // Polling a cada 2 segundos no Supabase até confirmação física
+        let tentativas = 0;
+        if (this.pollingTimer) clearInterval(this.pollingTimer);
+
+        this.pollingTimer = setInterval(async () => {
+            tentativas++;
+            try {
+                const { data } = await sb.from("fornos")
+                    .select("setpoint_1, setpoint_2, setpoint_pendente, comando_setpoint, setpoint_atualizado_em")
+                    .eq("modulo_alutal", mod)
+                    .maybeSingle();
+
+                if (data && data.comando_setpoint === "SUCESSO" && !data.setpoint_pendente) {
+                    clearInterval(this.pollingTimer);
+                    this.pollingTimer = null;
+
+                    if (btn) btn.disabled = false;
+                    if (icon) icon.className = "fa-solid fa-bolt";
+
+                    const sp1Confirmado = data.setpoint_1 !== null ? Number(data.setpoint_1) : sp1;
+                    const sp2Confirmado = data.setpoint_2 !== null ? Number(data.setpoint_2) : sp2;
+
+                    if ($("adminDispSp1")) $("adminDispSp1").textContent = `${sp1Confirmado} °C`;
+                    if ($("adminDispSp2")) $("adminDispSp2").textContent = `${sp2Confirmado} °C`;
+
+                    if (statusMod) {
+                        statusMod.style.color = "#22c55e";
+                        statusMod.textContent = "Confirmado no Aparelho";
+                    }
+                    if (badge) {
+                        badge.className = "tag-pill tag-pill-green";
+                        badge.textContent = "Confirmado";
+                    }
+
+                    this.log(`<< SUCESSO: Módulo ${mod} gravado e confirmado na memória física: SP1=${sp1Confirmado}°C | SP2=${sp2Confirmado}°C!`);
+                    return;
+                } else if (data && data.comando_setpoint === "ERRO") {
+                    clearInterval(this.pollingTimer);
+                    this.pollingTimer = null;
+                    if (btn) btn.disabled = false;
+                    if (icon) icon.className = "fa-solid fa-bolt";
+                    if (statusMod) {
+                        statusMod.style.color = "#ef4444";
+                        statusMod.textContent = "Erro na Gravação";
+                    }
+                    this.log(`<< ERRO: Módulo ${mod} não confirmou gravação de setpoint.`);
+                    return;
+                }
+            } catch (err) {}
+
+            if (tentativas >= 15) {
+                clearInterval(this.pollingTimer);
+                this.pollingTimer = null;
+                if (btn) btn.disabled = false;
+                if (icon) icon.className = "fa-solid fa-bolt";
+                if (statusMod) {
+                    statusMod.style.color = "#94a3b8";
+                    statusMod.textContent = "Comando em Fila";
+                }
+                this.log(`<< AVISO: Comando gravado no banco de dados. O ESP8266 executará na próxima checagem periódica.`);
+            }
+        }, 2000);
+    },
+
+    renderizar() {
+        this.atualizarBtn();
+    },
+
+    log(msg) {
+        const c = $("adminSpConsole");
+        if (!c) return;
+        const time = new Date().toLocaleTimeString("pt-BR");
+        const d = document.createElement("div");
+        d.textContent = `[${time}] ${msg}`;
+        c.appendChild(d);
+        c.scrollTop = c.scrollHeight;
+    }
+};
+
+if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", () => {
+            window.AdminSetpoints?.init();
+        });
+    } else {
+        window.AdminSetpoints?.init();
     }
 }
 

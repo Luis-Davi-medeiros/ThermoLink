@@ -93,7 +93,45 @@ CREATE INDEX IF NOT EXISTS idx_dispositivos_num_serie ON public.dispositivos(num
 CREATE INDEX IF NOT EXISTS idx_dispositivos_serial ON public.dispositivos(serial);
 
 -- ==============================================================================
--- 3. TABELA: LEITURAS (TELEMETRIA ENVIADA PELOS ESPS - ULTRA OTIMIZADA)
+-- 3. TABELA: FORNOS & SETPOINTS DE ALARME RS485 (ALUTAL IS4000D / CERATERM)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.fornos (
+    id                      BIGSERIAL PRIMARY KEY,
+    ceramica_id             TEXT REFERENCES public.ceramicas(id) ON DELETE CASCADE,
+    dispositivo_id          BIGINT REFERENCES public.dispositivos(id) ON DELETE CASCADE,
+    numero                  INT NOT NULL DEFAULT 1,
+    nome                    TEXT NOT NULL DEFAULT 'Forno 01',
+    modulo_alutal           INT NOT NULL DEFAULT 1,
+    ativo                   BOOLEAN NOT NULL DEFAULT true,
+    setpoint_1              INTEGER DEFAULT 0,
+    setpoint_2              INTEGER DEFAULT 0,
+    novo_setpoint_1         INTEGER,
+    novo_setpoint_2         INTEGER,
+    comando_setpoint        TEXT DEFAULT 'IDLE', -- Valores: 'IDLE', 'GETSP', 'SETSP', 'SUCESSO', 'ERRO'
+    setpoint_pendente       BOOLEAN NOT NULL DEFAULT false,
+    setpoint_atualizado_em  TIMESTAMPTZ,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Garante todas as colunas necessárias para sincronização remota
+ALTER TABLE public.fornos
+  ADD COLUMN IF NOT EXISTS modulo_alutal integer DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS setpoint_1 integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS setpoint_2 integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS novo_setpoint_1 integer,
+  ADD COLUMN IF NOT EXISTS novo_setpoint_2 integer,
+  ADD COLUMN IF NOT EXISTS comando_setpoint text DEFAULT 'IDLE',
+  ADD COLUMN IF NOT EXISTS setpoint_pendente boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS setpoint_atualizado_em timestamptz;
+
+CREATE INDEX IF NOT EXISTS idx_fornos_dispositivo_id ON public.fornos(dispositivo_id);
+CREATE INDEX IF NOT EXISTS idx_fornos_ceramica_id ON public.fornos(ceramica_id);
+CREATE INDEX IF NOT EXISTS idx_fornos_modulo_alutal ON public.fornos(modulo_alutal);
+CREATE INDEX IF NOT EXISTS idx_fornos_setpoint_pendente ON public.fornos(dispositivo_id, setpoint_pendente) WHERE setpoint_pendente = true;
+
+-- ==============================================================================
+-- 4. TABELA: LEITURAS (TELEMETRIA ENVIADA PELOS ESPS - ULTRA OTIMIZADA)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.leituras (
     id              BIGSERIAL PRIMARY KEY,
@@ -216,6 +254,7 @@ CREATE TRIGGER trg_processar_nova_leitura
 -- ==============================================================================
 ALTER TABLE public.ceramicas    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dispositivos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fornos       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leituras     ENABLE ROW LEVEL SECURITY;
 
 -- Permite leitura e escrita para o App, Admin e ESPs (chave anon / serviço)
@@ -224,6 +263,9 @@ CREATE POLICY "permitir_tudo_ceramicas" ON public.ceramicas FOR ALL USING (true)
 
 DROP POLICY IF EXISTS "permitir_tudo_dispositivos" ON public.dispositivos;
 CREATE POLICY "permitir_tudo_dispositivos" ON public.dispositivos FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "permitir_tudo_fornos" ON public.fornos;
+CREATE POLICY "permitir_tudo_fornos" ON public.fornos FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "permitir_tudo_leituras" ON public.leituras;
 CREATE POLICY "permitir_tudo_leituras" ON public.leituras FOR ALL USING (true) WITH CHECK (true);
@@ -282,6 +324,17 @@ UPDATE public.leituras
 SET ceramica_id = 'cli_1788920539236'
 WHERE (numero_serie = 'THX-00003' OR dispositivo_id = 3)
   AND (ceramica_id IS NULL OR ceramica_id <> 'cli_1788920539236');
+
+-- 4. Criação dos Fornos Iniciais com Setpoints de Alarme Padrão (SETSP 1 650 900)
+INSERT INTO public.fornos (id, ceramica_id, dispositivo_id, numero, nome, modulo_alutal, ativo, setpoint_1, setpoint_2, setpoint_pendente)
+VALUES
+    (1, 'cli_1788920539236', 3, 1, 'Forno 01', 1, true, 650, 900, false),
+    (2, 'cli_1788920539236', 3, 2, 'Forno 02', 2, true, 650, 900, false),
+    (3, 'cli_1788920539236', 3, 3, 'Forno 03', 3, true, 650, 900, false)
+ON CONFLICT (id) DO UPDATE SET
+    setpoint_1 = EXCLUDED.setpoint_1,
+    setpoint_2 = EXCLUDED.setpoint_2,
+    modulo_alutal = EXCLUDED.modulo_alutal;
 
 -- ==============================================================================
 -- 7. TABELAS: CONTATOS WHATSAPP & AUTOMAÇÃO DE RELATÓRIOS DIÁRIOS

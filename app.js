@@ -519,6 +519,7 @@ function iniciarPainelUsuario(user, usarSplash = false) {
         } else {
             $("clientBlockedOverlay")?.classList.add("hidden");
             carregarFornosELeituras();
+            if (window.ThermoSetpoints) window.ThermoSetpoints.init();
         }
     };
 
@@ -825,8 +826,10 @@ async function carregarFornosELeituras() {
             }));
         }
 
-        // Hook: motor de alertas em tempo real
+        // Hook: motor de alertas em tempo real e sincronização de setpoints
         if (window.ThermoAlertas) window.ThermoAlertas.verificarLeituras();
+        if (window.ThermoSetpoints) window.ThermoSetpoints.sincronizarComFornos();
+        if (typeof sincronizarPainelSetpointsAnalise === "function") sincronizarPainelSetpointsAnalise(state.selectedModule);
         checarAlarmesSonoros();
 
         // Renderiza telas
@@ -1036,6 +1039,8 @@ async function abrirDetalheForno(modulo) {
     window.scrollTo({ top: 0, behavior: "smooth" });
 
     atualizarFaixaResumoAnalise(mod);
+    if (window.ThermoSetpoints) window.ThermoSetpoints.atualizarResumoForno(mod);
+    if (typeof sincronizarPainelSetpointsAnalise === "function") sincronizarPainelSetpointsAnalise(mod);
     await carregarDadosAnalise();
 }
 
@@ -2079,6 +2084,7 @@ function navegarAba(aba) {
         $("screenAnaliseForno").classList.add("hidden");
         $("screenHistoricoQueimas").classList.add("hidden");
         $("screenConfig").classList.remove("hidden");
+        if (window.ThermoSetpoints) window.ThermoSetpoints.renderizar();
 
         document.querySelectorAll(".bottom-tab-bar .tab-item").forEach(b => b.classList.remove("active"));
         $("tabNavConfig").classList.add("active");
@@ -2412,3 +2418,1095 @@ document.addEventListener("fullscreenchange", () => {
 function imprimirRelatorioQueima() {
     window.print();
 }
+
+// ==========================================================================
+// 8. GERENCIADOR DE SETPOINTS RS485 (SETSP / GETSP - ALUTAL IS4000D / CERATERM)
+// ==========================================================================
+window.ThermoSetpoints = {
+    currentModule: 1,
+    cache: new Map(),
+    isInitialized: false,
+    realtimeChannel: null,
+
+    // Calcula os bytes hexadecimais brutos oficiais do protocolo Alutal IS4000D
+    // (12 bits empacotados em blocos de 6 bits com bits 0 e 1 em 11)
+    // Formula exata documentada em DOCUMENTACAO_THERMOX.md:
+    // byteH = ((((tempC >> 6) & 0x3F) << 2) | 0x03)
+    // byteL = (((tempC & 0x3F) << 2) | 0x03)
+    calcularHexAlutal(tempC) {
+        const val = Math.max(0, Math.min(4095, Math.round(Number(tempC) || 0)));
+        const byteH = ((((val >> 6) & 0x3F) << 2) | 0x03);
+        const byteL = (((val & 0x3F) << 2) | 0x03);
+        return {
+            hHex: byteH.toString(16).toUpperCase().padStart(2, "0"),
+            lHex: byteL.toString(16).toUpperCase().padStart(2, "0"),
+            hVal: byteH,
+            lVal: byteL
+        };
+    },
+
+    init() {
+        if (this.isInitialized) return;
+        this.isInitialized = true;
+
+        // Carrega cache salvo no localStorage para persistência offline
+        try {
+            const salvo = localStorage.getItem("thermolink_setpoints_cache");
+            if (salvo) {
+                const parsed = JSON.parse(salvo);
+                Object.keys(parsed).forEach(k => {
+                    this.cache.set(Number(k), parsed[k]);
+                });
+            }
+        } catch (e) {
+            console.warn("[Setpoints] Falha ao ler cache local:", e);
+        }
+
+        // Se o cache ainda estiver vazio, define Módulo 1 com o padrão solicitado (650°C / 900°C)
+        if (!this.cache.has(1)) {
+            this.cache.set(1, {
+                modulo: 1,
+                sp1: 650,
+                sp2: 900,
+                novoSp1: 650,
+                novoSp2: 900,
+                pendenteGravacao: false,
+                pendenteLeitura: false,
+                updatedAt: "Padrão Oficial"
+            });
+        }
+
+        this.sincronizarComFornos();
+        this.carregarDoSupabase();
+        this.iniciarRealtime();
+        this.renderizar();
+    },
+
+    async carregarDoSupabase() {
+        try {
+            const { data, error } = await sb
+                .from("fornos")
+                .select("id, modulo_alutal, numero, nome, setpoint_1, setpoint_2, novo_setpoint_1, novo_setpoint_2, setpoint_pendente, comando_setpoint, setpoint_atualizado_em");
+
+            if (!error && Array.isArray(data) && data.length > 0) {
+                data.forEach(item => {
+                    const mod = Number(item.modulo_alutal || item.numero || 1);
+                    const sp1 = item.setpoint_1 !== null && item.setpoint_1 !== undefined ? Number(item.setpoint_1) : 650;
+                    const sp2 = item.setpoint_2 !== null && item.setpoint_2 !== undefined ? Number(item.setpoint_2) : 900;
+                    const dt = item.setpoint_atualizado_em ? new Date(item.setpoint_atualizado_em).toLocaleTimeString("pt-BR") : "Sincronizado";
+
+                    this.cache.set(mod, {
+                        fornoId: item.id,
+                        modulo: mod,
+                        sp1: sp1,
+                        sp2: sp2,
+                        novoSp1: item.novo_setpoint_1 !== null ? Number(item.novo_setpoint_1) : sp1,
+                        novoSp2: item.novo_setpoint_2 !== null ? Number(item.novo_setpoint_2) : sp2,
+                        pendenteGravacao: !!item.setpoint_pendente,
+                        pendenteLeitura: item.comando_setpoint === "GETSP",
+                        updatedAt: dt
+                    });
+                });
+                this.salvarCacheLocal();
+                this.renderizar();
+            }
+        } catch (err) {
+            console.warn("[Setpoints] Falha ao carregar setpoints do Supabase:", err);
+        }
+    },
+
+    iniciarRealtime() {
+        if (this.realtimeChannel) return;
+        try {
+            this.realtimeChannel = sb.channel("thermolink_setpoints_sync")
+                .on("postgres_changes", { event: "*", schema: "public", table: "fornos" }, payload => {
+                    const rec = payload.new || payload.record;
+                    if (rec && rec.modulo_alutal) {
+                        const mod = Number(rec.modulo_alutal);
+                        const prev = this.cache.get(mod) || {};
+                        const sp1 = rec.setpoint_1 !== null ? Number(rec.setpoint_1) : (prev.sp1 || 650);
+                        const sp2 = rec.setpoint_2 !== null ? Number(rec.setpoint_2) : (prev.sp2 || 900);
+                        const pendenteGravacao = !!rec.setpoint_pendente;
+                        const pendenteLeitura = rec.comando_setpoint === "GETSP";
+
+                        this.cache.set(mod, {
+                            ...prev,
+                            fornoId: rec.id,
+                            modulo: mod,
+                            sp1: sp1,
+                            sp2: sp2,
+                            pendenteGravacao: pendenteGravacao,
+                            pendenteLeitura: pendenteLeitura,
+                            updatedAt: rec.setpoint_atualizado_em ? new Date(rec.setpoint_atualizado_em).toLocaleTimeString("pt-BR") : "Atualizado"
+                        });
+                        this.salvarCacheLocal();
+
+                        // Se a gravação concluiu e estávamos aguardando
+                        if (!pendenteGravacao && prev.pendenteGravacao) {
+                            this.adicionarLog(`<< [SETSP] Módulo ${mod} confirmou gravação na EEPROM! SP1 = ${sp1} °C | SP2 = ${sp2} °C`, "cmd-rx");
+                        }
+                        if (!pendenteLeitura && prev.pendenteLeitura) {
+                            this.adicionarLog(`<< [GETSP] Módulo ${mod} leitura confirmada! SP1 = ${sp1} °C | SP2 = ${sp2} °C`, "cmd-rx");
+                        }
+
+                        this.renderizar();
+                    }
+                })
+                .subscribe();
+        } catch (e) {
+            console.warn("[Setpoints] Realtime não suportado ou falhou:", e);
+        }
+    },
+
+    salvarCacheLocal() {
+        try {
+            const obj = {};
+            this.cache.forEach((v, k) => { obj[k] = v; });
+            localStorage.setItem("thermolink_setpoints_cache", JSON.stringify(obj));
+        } catch (e) {}
+    },
+
+    sincronizarComFornos() {
+        const select = $("selModuloSetpoints");
+        if (!select) return;
+
+        let mods = [];
+        if (state.ovens && state.ovens.length > 0) {
+            mods = state.ovens.map(o => Number(o.numero)).filter(n => Number.isFinite(n) && n > 0);
+        }
+        if (mods.length === 0) {
+            mods = [1, 2, 3, 4, 5, 6];
+        }
+
+        const modsUnicos = Array.from(new Set(mods)).sort((a, b) => a - b);
+        const valorAtual = select.value ? Number(select.value) : this.currentModule;
+
+        select.innerHTML = modsUnicos.map(m => {
+            const nome = getNomeForno(m);
+            return `<option value="${m}">Módulo ${String(m).padStart(2, "0")} (${escapeHtml(nome)})</option>`;
+        }).join("");
+
+        if (modsUnicos.includes(valorAtual)) {
+            select.value = String(valorAtual);
+            this.currentModule = valorAtual;
+        } else {
+            this.currentModule = modsUnicos[0] || 1;
+            select.value = String(this.currentModule);
+        }
+    },
+
+    selecionarModulo(mod) {
+        this.currentModule = Number(mod) || 1;
+        this.renderizar();
+
+        const data = this.obterDadosModulo(this.currentModule);
+        this.adicionarLog(`>> Selecionado Módulo ${this.currentModule} (${getNomeForno(this.currentModule)}). SP1 = ${data.sp1} °C | SP2 = ${data.sp2} °C.`, "cmd-info");
+    },
+
+    obterDadosModulo(mod) {
+        const m = Number(mod) || 1;
+        if (!this.cache.has(m)) {
+            this.cache.set(m, {
+                modulo: m,
+                sp1: 650,
+                sp2: 900,
+                novoSp1: 650,
+                novoSp2: 900,
+                pendenteGravacao: false,
+                pendenteLeitura: false,
+                updatedAt: "--:--:--"
+            });
+        }
+        return this.cache.get(m);
+    },
+
+    renderizar() {
+        const mod = this.currentModule || 1;
+        const data = this.obterDadosModulo(mod);
+
+        // Atualiza selects nos diferentes painéis
+        const sel1 = $("selModuloSetpoints");
+        if (sel1 && sel1.value !== String(mod)) sel1.value = String(mod);
+        const sel2 = $("selModuloSetpoint");
+        if (sel2 && sel2.value !== String(mod)) sel2.value = String(mod);
+
+        // Header e Tags do Painel em Configurações
+        if ($("lblGetspHeader")) $("lblGetspHeader").textContent = `Leitura Atual no Módulo (GETSP ${mod})`;
+        if ($("lblGetspTime")) $("lblGetspTime").textContent = data.updatedAt || "--:--:--";
+        if ($("lblBtnGetsp")) $("lblBtnGetsp").textContent = `Consultar Módulo (GETSP ${mod})`;
+
+        // Valores de exibição do GETSP (Painel Config)
+        if ($("dispGetSp1")) $("dispGetSp1").textContent = `${data.sp1} °C`;
+        if ($("dispGetSp2")) $("dispGetSp2").textContent = `${data.sp2} °C`;
+
+        // Valores de exibição destacados (Painel Análise do Forno)
+        if ($("lblSetpoint1Atual")) $("lblSetpoint1Atual").textContent = `${data.sp1} °C`;
+        if ($("lblSetpoint2Atual")) $("lblSetpoint2Atual").textContent = `${data.sp2} °C`;
+        if ($("lblSetpointUltimaLeitura")) $("lblSetpointUltimaLeitura").textContent = data.updatedAt || "--";
+        if ($("lblSetpointTituloGetsp")) $("lblSetpointTituloGetsp").textContent = `Leitura Atual no Módulo ${mod} (GETSP)`;
+        if ($("lblBtnSolicitarLeitura")) $("lblBtnSolicitarLeitura").textContent = `Ler do Aparelho (GETSP ${mod})`;
+
+        // Inputs de edição (não sobrescreve se o usuário estiver digitando ativamente)
+        const inp1 = $("inpSetSp1");
+        const inp2 = $("inpSetSp2");
+        if (inp1 && document.activeElement !== inp1) inp1.value = data.novoSp1 || data.sp1 || 650;
+        if (inp2 && document.activeElement !== inp2) inp2.value = data.novoSp2 || data.sp2 || 900;
+
+        const inpA1 = $("inpNovoSetpoint1");
+        const inpA2 = $("inpNovoSetpoint2");
+        if (inpA1 && document.activeElement !== inpA1) inpA1.value = data.novoSp1 || data.sp1 || 650;
+        if (inpA2 && document.activeElement !== inpA2) inpA2.value = data.novoSp2 || data.sp2 || 900;
+
+        // Status Badges
+        const badgeCfg = $("cfgSpBadgeStatus");
+        const badgeAna = $("badgeStatusSetpoint");
+        const pendente = data.pendenteGravacao || data.pendenteLeitura;
+
+        [badgeCfg, badgeAna].forEach(b => {
+            if (!b) return;
+            if (data.pendenteGravacao) {
+                b.className = "setpoints-badge-status is-pending";
+                b.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Gravando SETSP...`;
+            } else if (data.pendenteLeitura) {
+                b.className = "setpoints-badge-status is-querying";
+                b.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Lendo GETSP...`;
+            } else {
+                b.className = "setpoints-badge-status";
+                b.innerHTML = `<i class="fa-solid fa-circle-check"></i> Pronto`;
+            }
+        });
+
+        // Rótulos dos botões de gravação
+        this.atualizarTextoBotaoGravar();
+        if (typeof atualizarLabelBotaoGravar === "function") atualizarLabelBotaoGravar();
+
+        // Resumo no topo do forno atual se estiver na tela de análise
+        if (state.analysisModule) {
+            this.atualizarResumoForno(state.analysisModule);
+        }
+
+        // Espelha no modal se estiver aberto
+        this.sincronizarModalSeAberto();
+    },
+
+    atualizarTextoBotaoGravar() {
+        const mod = this.currentModule || 1;
+        const sp1 = $("inpSetSp1")?.value || $("inpNovoSetpoint1")?.value || 650;
+        const sp2 = $("inpSetSp2")?.value || $("inpNovoSetpoint2")?.value || 900;
+        const btnLbl = $("lblBtnSetspGravar");
+        if (btnLbl) {
+            btnLbl.textContent = `Gravar no Módulo (SETSP ${mod} ${sp1} ${sp2})`;
+        }
+    },
+
+    aplicarPreset(sp1, sp2, btnEl) {
+        const inp1 = $("inpSetSp1");
+        const inp2 = $("inpSetSp2");
+        if (inp1) inp1.value = sp1;
+        if (inp2) inp2.value = sp2;
+
+        const inpA1 = $("inpNovoSetpoint1");
+        const inpA2 = $("inpNovoSetpoint2");
+        if (inpA1) inpA1.value = sp1;
+        if (inpA2) inpA2.value = sp2;
+
+        document.querySelectorAll(".setsp-preset-chip").forEach(c => c.classList.remove("active"));
+        if (btnEl) btnEl.classList.add("active");
+
+        this.atualizarTextoBotaoGravar();
+        if (typeof atualizarLabelBotaoGravar === "function") atualizarLabelBotaoGravar();
+        this.adicionarLog(`Preset aplicado: SP1=${sp1}°C | SP2=${sp2}°C para o Módulo ${this.currentModule}`, "cmd-info");
+    },
+
+    async consultarGetsp() {
+        return solicitarLeituraSetpoint();
+    },
+
+    async gravarSetsp() {
+        return enviarNovoSetpoint();
+    },
+
+    atualizarResumoForno(modulo) {
+        const mod = Number(modulo) || 1;
+        const data = this.obterDadosModulo(mod);
+        const disp = $("quickSpDisplay");
+        if (disp) {
+            disp.textContent = `SP1: ${data.sp1}°C | SP2: ${data.sp2}°C`;
+        }
+    },
+
+    adicionarLog(msg, tipo = "cmd-info") {
+        const terminal = $("setpointsTerminal");
+        if (!terminal) return;
+
+        const agora = new Date().toLocaleTimeString("pt-BR");
+        const span = document.createElement("span");
+        span.className = `terminal-line ${tipo}`;
+        span.textContent = `[${agora}] ${msg}`;
+
+        terminal.appendChild(span);
+        terminal.scrollTop = terminal.scrollHeight;
+
+        while (terminal.children.length > 50) {
+            terminal.removeChild(terminal.firstChild);
+        }
+
+        const modalTerm = $("modalSetpointsTerminal");
+        if (modalTerm) {
+            const clone = span.cloneNode(true);
+            modalTerm.appendChild(clone);
+            modalTerm.scrollTop = modalTerm.scrollHeight;
+            while (modalTerm.children.length > 50) {
+                modalTerm.removeChild(modalTerm.firstChild);
+            }
+        }
+    },
+
+    abrirModalParaFornoAtual() {
+        const mod = state.analysisModule || state.selectedModule || 1;
+        this.currentModule = mod;
+
+        const modal = $("modalSetpoints");
+        const content = $("modalSpContentArea");
+        const title = $("modalSpTitle");
+
+        if (title) title.textContent = `Setpoints do ${getNomeForno(mod)} (Módulo ${mod})`;
+
+        const cardOriginal = $("cardSetpointsConfig");
+        if (cardOriginal && content) {
+            content.innerHTML = `
+                <div class="setpoints-card" style="margin-bottom: 0; box-shadow: none; padding: 10px; background: transparent; border: none;">
+                    <div class="getsp-display-box" style="margin-bottom: 12px;">
+                        <div class="getsp-header">
+                            <span class="getsp-header-tag"><i class="fa-solid fa-satellite-dish"></i> GETSP ${mod} Atual</span>
+                            <span id="modalSpTime">--:--:--</span>
+                        </div>
+                        <div class="getsp-grid">
+                            <div class="getsp-item sp1">
+                                <span class="getsp-lbl">Setpoint 1 (SP1)</span>
+                                <div class="getsp-val" id="modalDispGetSp1">-- °C</div>
+                            </div>
+                            <div class="getsp-item sp2">
+                                <span class="getsp-lbl">Setpoint 2 (SP2)</span>
+                                <div class="getsp-val" id="modalDispGetSp2">-- °C</div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-query-getsp" onclick="solicitarLeituraSetpoint()">
+                            <i class="fa-solid fa-rotate"></i> Consultar Módulo (GETSP ${mod})
+                        </button>
+                    </div>
+
+                    <div class="setsp-editor-box" style="margin-bottom: 12px;">
+                        <div class="setsp-inputs-grid">
+                            <div class="setsp-field-group">
+                                <label>Novo SP1 (°C):</label>
+                                <div class="setsp-input-container">
+                                    <input type="number" id="modalInpSetSp1" class="setsp-input" value="650" oninput="ThermoSetpoints.sincronizarModalInputs(1, this.value)">
+                                    <span class="setsp-input-unit">°C</span>
+                                </div>
+                            </div>
+                            <div class="setsp-field-group">
+                                <label>Novo SP2 (°C):</label>
+                                <div class="setsp-input-container">
+                                    <input type="number" id="modalInpSetSp2" class="setsp-input" value="900" oninput="ThermoSetpoints.sincronizarModalInputs(2, this.value)">
+                                    <span class="setsp-input-unit">°C</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setsp-presets-bar">
+                            <button type="button" class="setsp-preset-chip active" onclick="ThermoSetpoints.aplicarPresetModal(650, 900)">650° / 900° (Padrão)</button>
+                            <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPresetModal(700, 950)">700° / 950°</button>
+                            <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPresetModal(800, 1000)">800° / 1000°</button>
+                            <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPresetModal(900, 1150)">900° / 1150°</button>
+                        </div>
+
+                        <button type="button" class="btn-save-setsp" id="modalBtnGravar" onclick="ThermoSetpoints.gravarSetspModal()">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span id="modalBtnGravarLbl">Gravar no Módulo (SETSP ${mod} 650 900)</span>
+                        </button>
+                    </div>
+
+                    <div class="setpoints-terminal" id="modalSetpointsTerminal" style="max-height: 80px;">
+                        <span class="terminal-line cmd-info"># Terminal de comandos SETSP & GETSP</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (modal) modal.classList.remove("hidden");
+        this.sincronizarModalSeAberto();
+    },
+
+    fecharModal() {
+        $("modalSetpoints")?.classList.add("hidden");
+    },
+
+    sincronizarModalSeAberto() {
+        const modal = $("modalSetpoints");
+        if (!modal || modal.classList.contains("hidden")) return;
+
+        const mod = this.currentModule || 1;
+        const data = this.obterDadosModulo(mod);
+
+        if ($("modalDispGetSp1")) $("modalDispGetSp1").textContent = `${data.sp1} °C`;
+        if ($("modalDispGetSp2")) $("modalDispGetSp2").textContent = `${data.sp2} °C`;
+        if ($("modalSpTime")) $("modalSpTime").textContent = data.updatedAt || "--:--:--";
+
+        const mInp1 = $("modalInpSetSp1");
+        const mInp2 = $("modalInpSetSp2");
+        if (mInp1 && document.activeElement !== mInp1) mInp1.value = data.novoSp1 || data.sp1 || 650;
+        if (mInp2 && document.activeElement !== mInp2) mInp2.value = data.novoSp2 || data.sp2 || 900;
+
+        const btnLbl = $("modalBtnGravarLbl");
+        if (btnLbl) {
+            const v1 = mInp1?.value || 650;
+            const v2 = mInp2?.value || 900;
+            btnLbl.textContent = `Gravar no Módulo (SETSP ${mod} ${v1} ${v2})`;
+        }
+    },
+
+    sincronizarModalInputs(canal, val) {
+        if (canal === 1) {
+            if ($("inpSetSp1")) $("inpSetSp1").value = val;
+            if ($("inpNovoSetpoint1")) $("inpNovoSetpoint1").value = val;
+        } else {
+            if ($("inpSetSp2")) $("inpSetSp2").value = val;
+            if ($("inpNovoSetpoint2")) $("inpNovoSetpoint2").value = val;
+        }
+        this.atualizarTextoBotaoGravar();
+        if (typeof atualizarLabelBotaoGravar === "function") atualizarLabelBotaoGravar();
+
+        const mod = this.currentModule || 1;
+        const v1 = $("modalInpSetSp1")?.value || 650;
+        const v2 = $("modalInpSetSp2")?.value || 900;
+        if ($("modalBtnGravarLbl")) {
+            $("modalBtnGravarLbl").textContent = `Gravar no Módulo (SETSP ${mod} ${v1} ${v2})`;
+        }
+    },
+
+    aplicarPresetModal(sp1, sp2) {
+        if ($("modalInpSetSp1")) $("modalInpSetSp1").value = sp1;
+        if ($("modalInpSetSp2")) $("modalInpSetSp2").value = sp2;
+        this.aplicarPreset(sp1, sp2, null);
+        const mod = this.currentModule || 1;
+        if ($("modalBtnGravarLbl")) {
+            $("modalBtnGravarLbl").textContent = `Gravar no Módulo (SETSP ${mod} ${sp1} ${sp2})`;
+        }
+    },
+
+    async gravarSetspModal() {
+        const mInp1 = $("modalInpSetSp1");
+        const mInp2 = $("modalInpSetSp2");
+        if (mInp1 && $("inpSetSp1")) $("inpSetSp1").value = mInp1.value;
+        if (mInp2 && $("inpSetSp2")) $("inpSetSp2").value = mInp2.value;
+        if (mInp1 && $("inpNovoSetpoint1")) $("inpNovoSetpoint1").value = mInp1.value;
+        if (mInp2 && $("inpNovoSetpoint2")) $("inpNovoSetpoint2").value = mInp2.value;
+        await enviarNovoSetpoint();
+        this.sincronizarModalSeAberto();
+    }
+};
+
+// ==========================================================================
+// FUNÇÕES GLOBAIS DE CONTROLE DE SETPOINT (CONFORME ESPECIFICAÇÃO DE PROJETO)
+// ==========================================================================
+
+// Garante que o registro do forno/módulo exista no Supabase com upsert automático
+// Garante que o registro do forno/módulo exista no Supabase com upsert automático
+async function garantirFornoExiste(modulo, novoSp1 = 650, novoSp2 = 900, comando = 'IDLE', pendente = false) {
+    const mod = Number(modulo) || 1;
+    const cid = state.currentUser?.ceramicaId || null;
+
+    let dispId = 1;
+    if (state.allowedDeviceIds && state.allowedDeviceIds.length > 0) {
+        dispId = Number(state.allowedDeviceIds[0]) || 1;
+    } else if (state.clientDevices && state.clientDevices.length > 0) {
+        dispId = Number(state.clientDevices[0].id) || 1;
+    }
+
+    try {
+        // 1. Tenta buscar pelo vínculo da cerâmica e módulo/número
+        let existente = null;
+        if (cid) {
+            const { data } = await sb
+                .from("fornos")
+                .select("id, modulo_alutal, numero, dispositivo_id, ceramica_id, setpoint_1, setpoint_2")
+                .eq("ceramica_id", cid)
+                .or(`modulo_alutal.eq.${mod},numero.eq.${mod}`)
+                .maybeSingle();
+            existente = data;
+        }
+
+        // 2. Se não achou por cerâmica, busca pelo dispositivo e módulo/número
+        if (!existente && dispId) {
+            const { data } = await sb
+                .from("fornos")
+                .select("id, modulo_alutal, numero, dispositivo_id, ceramica_id, setpoint_1, setpoint_2")
+                .eq("dispositivo_id", dispId)
+                .or(`modulo_alutal.eq.${mod},numero.eq.${mod}`)
+                .maybeSingle();
+            existente = data;
+        }
+
+        // 3. Fallback genérico por modulo_alutal
+        if (!existente) {
+            const { data } = await sb
+                .from("fornos")
+                .select("id, modulo_alutal, numero, dispositivo_id, ceramica_id, setpoint_1, setpoint_2")
+                .eq("modulo_alutal", mod)
+                .maybeSingle();
+            existente = data;
+        }
+
+        if (existente) {
+            // Garante que o registro tenha modulo_alutal e dispositivo_id preenchidos
+            const patch = {};
+            if (!existente.modulo_alutal || existente.modulo_alutal !== mod) patch.modulo_alutal = mod;
+            if ((!existente.dispositivo_id || existente.dispositivo_id <= 0) && dispId) patch.dispositivo_id = dispId;
+            if (!existente.ceramica_id && cid) patch.ceramica_id = cid;
+
+            if (Object.keys(patch).length > 0) {
+                await sb.from("fornos").update(patch).eq("id", existente.id);
+                Object.assign(existente, patch);
+            }
+            return existente;
+        }
+
+        // 4. Criação de novo forno se não existir
+        const nomeForno = getNomeForno(mod);
+        const novoRegistro = {
+            numero: mod,
+            nome: nomeForno,
+            modulo_alutal: mod,
+            dispositivo_id: dispId,
+            ceramica_id: cid,
+            setpoint_1: 0,
+            setpoint_2: 0,
+            novo_setpoint_1: novoSp1,
+            novo_setpoint_2: novoSp2,
+            comando_setpoint: comando,
+            setpoint_pendente: pendente,
+            setpoint_atualizado_em: new Date().toISOString()
+        };
+
+        const { data: criado, error } = await sb
+            .from("fornos")
+            .insert([novoRegistro])
+            .select()
+            .maybeSingle();
+
+        if (!error && criado) {
+            return criado;
+        }
+    } catch (e) {
+        console.warn("[Setpoints] Erro ao garantir forno no Supabase:", e);
+    }
+    return null;
+}
+
+// 1. SOLICITAR LEITURA DE SETPOINT DO APARELHO (GETSP)
+async function solicitarLeituraSetpoint() {
+    const sel = $("selModuloSetpoint") || $("selModuloSetpoints");
+    const mod = Number(sel?.value) || state.selectedModule || 1;
+
+    const btn = $("btnSolicitarLeitura") || $("btnConsultarGetsp");
+    const icon = $("iconSpinLeitura") || $("iconGetspSpin");
+    const lbl = $("lblBtnSolicitarLeitura") || $("lblBtnGetsp");
+    const badge = $("badgeStatusSetpoint") || $("cfgSpBadgeStatus");
+    const feedback = $("setpointLiveFeedback");
+    const feedbackText = $("setpointLiveFeedbackText");
+
+    // UI: Spinner e Feedback
+    if (btn) btn.disabled = true;
+    if (icon) icon.classList.add("fa-spin");
+    if (lbl) lbl.textContent = `Consultando módulo ${mod} via RS485...`;
+
+    if (badge) {
+        badge.className = "setpoints-badge-status is-querying";
+        badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Consultando GETSP ${mod}...`;
+    }
+
+    if (feedback && feedbackText) {
+        feedback.className = "setpoint-live-feedback is-waiting";
+        feedback.classList.remove("hidden");
+        feedbackText.textContent = `Consultando módulo ${mod} via RS485... Aguardando resposta do aparelho...`;
+    }
+
+    if (window.ThermoSetpoints) {
+        window.ThermoSetpoints.adicionarLog(`>> Solicitando GETSP ${mod} ao ESP8266...`, "cmd-tx");
+    }
+
+    let fornoId = null;
+    try {
+        const forno = await garantirFornoExiste(mod, 650, 900, 'GETSP', true);
+        if (forno) fornoId = forno.id;
+
+        const updateData = {
+            comando_setpoint: "GETSP",
+            setpoint_pendente: true,
+            setpoint_atualizado_em: new Date().toISOString()
+        };
+
+        if (fornoId) {
+            await sb.from("fornos").update(updateData).eq("id", fornoId);
+        } else {
+            await sb.from("fornos").update(updateData).eq("modulo_alutal", mod);
+        }
+    } catch (err) {
+        console.warn("[Setpoints] Falha ao solicitar GETSP:", err);
+    }
+
+    // Polling a cada 2 segundos no Supabase
+    let tentativas = 0;
+    const maxTentativas = 15; // 30 segundos
+    if (window._setpointPollingTimer) clearInterval(window._setpointPollingTimer);
+
+    window._setpointPollingTimer = setInterval(async () => {
+        tentativas++;
+        try {
+            let poll = sb
+                .from("fornos")
+                .select("id, modulo_alutal, setpoint_1, setpoint_2, novo_setpoint_1, novo_setpoint_2, setpoint_pendente, comando_setpoint, setpoint_atualizado_em");
+
+            if (fornoId) {
+                poll = poll.eq("id", fornoId);
+            } else {
+                poll = poll.eq("modulo_alutal", mod);
+            }
+
+            const { data, error } = await poll.maybeSingle();
+
+            if (!error && data) {
+                const pendente = !!data.setpoint_pendente;
+                const cmd = data.comando_setpoint || "";
+
+                // Finaliza com sucesso quando o ESP8266 responder e confirmar leitura
+                if (cmd === "SUCESSO" && !pendente) {
+                    clearInterval(window._setpointPollingTimer);
+                    window._setpointPollingTimer = null;
+
+                    const sp1 = data.setpoint_1 !== null ? Number(data.setpoint_1) : 0;
+                    const sp2 = data.setpoint_2 !== null ? Number(data.setpoint_2) : 0;
+                    const horaAtual = data.setpoint_atualizado_em
+                        ? new Date(data.setpoint_atualizado_em).toLocaleTimeString("pt-BR")
+                        : new Date().toLocaleTimeString("pt-BR");
+
+                    // Atualiza displays destacados
+                    if ($("lblSetpoint1Atual")) $("lblSetpoint1Atual").textContent = `${sp1} °C`;
+                    if ($("lblSetpoint2Atual")) $("lblSetpoint2Atual").textContent = `${sp2} °C`;
+                    if ($("lblSetpointUltimaLeitura")) $("lblSetpointUltimaLeitura").textContent = horaAtual;
+                    if ($("dispGetSp1")) $("dispGetSp1").textContent = `${sp1} °C`;
+                    if ($("dispGetSp2")) $("dispGetSp2").textContent = `${sp2} °C`;
+
+                    // Preenche os inputs de edição com os valores reais lidos do aparelho
+                    if ($("inpNovoSetpoint1")) $("inpNovoSetpoint1").value = sp1;
+                    if ($("inpNovoSetpoint2")) $("inpNovoSetpoint2").value = sp2;
+                    if ($("inpSetSp1")) $("inpSetSp1").value = sp1;
+                    if ($("inpSetSp2")) $("inpSetSp2").value = sp2;
+
+                    atualizarLabelBotaoGravar();
+
+                    // Atualiza cache e logs
+                    if (window.ThermoSetpoints) {
+                        const c = window.ThermoSetpoints.obterDadosModulo(mod);
+                        c.sp1 = sp1;
+                        c.sp2 = sp2;
+                        c.novoSp1 = sp1;
+                        c.novoSp2 = sp2;
+                        c.updatedAt = horaAtual;
+                        c.pendenteLeitura = false;
+                        window.ThermoSetpoints.salvarCacheLocal();
+                        window.ThermoSetpoints.renderizar();
+                        window.ThermoSetpoints.adicionarLog(`<< [GETSP] Módulo ${mod} confirmado no aparelho: SP1=${sp1}°C | SP2=${sp2}°C`, "cmd-rx");
+                    }
+
+                    if (badge) {
+                        badge.className = "setpoints-badge-status";
+                        badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Leitura Confirmada!`;
+                    }
+
+                    if (feedback && feedbackText) {
+                        feedback.className = "setpoint-live-feedback is-success";
+                        feedbackText.textContent = `Setpoint atual do Módulo ${mod} lido com sucesso: SP1 = ${sp1} °C | SP2 = ${sp2} °C`;
+                    }
+
+                    if (btn) btn.disabled = false;
+                    if (icon) icon.classList.remove("fa-spin");
+                    if (lbl) lbl.textContent = `Ler do Aparelho (GETSP ${mod})`;
+                    return;
+                } else if (cmd === "ERRO") {
+                    clearInterval(window._setpointPollingTimer);
+                    window._setpointPollingTimer = null;
+
+                    if (badge) {
+                        badge.className = "setpoints-badge-status is-error";
+                        badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Falha RS485`;
+                    }
+
+                    if (feedback && feedbackText) {
+                        feedback.className = "setpoint-live-feedback is-error";
+                        feedbackText.textContent = `Módulo ${mod} não respondeu à leitura via RS485. Verifique a fiação e o barramento.`;
+                    }
+
+                    if (btn) btn.disabled = false;
+                    if (icon) icon.classList.remove("fa-spin");
+                    if (lbl) lbl.textContent = `Ler do Aparelho (GETSP ${mod})`;
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn("[Setpoints] Erro no polling de leitura:", e);
+        }
+
+        if (tentativas >= maxTentativas) {
+            clearInterval(window._setpointPollingTimer);
+            window._setpointPollingTimer = null;
+
+            if (btn) btn.disabled = false;
+            if (icon) icon.classList.remove("fa-spin");
+            if (lbl) lbl.textContent = `Ler do Aparelho (GETSP ${mod})`;
+
+            if (badge) {
+                badge.className = "setpoints-badge-status";
+                badge.innerHTML = `<i class="fa-solid fa-clock"></i> Sincronizando...`;
+            }
+
+            if (feedback && feedbackText) {
+                feedback.className = "setpoint-live-feedback is-waiting";
+                feedbackText.textContent = `Comando GETSP registrado. O aparelho atualizará a leitura assim que o ciclo de varredura RS485 concluir.`;
+            }
+        }
+    }, 2000);
+}
+
+// 2. ENVIAR E GRAVAR NOVO SETPOINT NO APARELHO (SETSP)
+async function enviarNovoSetpoint() {
+    const sel = $("selModuloSetpoint") || $("selModuloSetpoints");
+    const mod = Number(sel?.value) || state.selectedModule || 1;
+
+    const inp1 = $("inpNovoSetpoint1") || $("inpSetSp1");
+    const inp2 = $("inpNovoSetpoint2") || $("inpSetSp2");
+
+    const sp1 = parseInt(inp1?.value, 10);
+    const sp2 = parseInt(inp2?.value, 10);
+
+    // Validação numérica (entre 0 e 1400 °C)
+    if (isNaN(sp1) || isNaN(sp2) || sp1 < 0 || sp2 < 0 || sp1 > 1400 || sp2 > 1400) {
+        alert("Por favor, informe valores válidos de setpoint entre 0 °C e 1400 °C.");
+        return;
+    }
+
+    const btn = $("btnEnviarNovoSetpoint") || $("btnGravarSetsp");
+    const icon = $("iconSpinGravar") || $("iconBtnSetsp");
+    const lbl = $("lblBtnEnviarNovoSetpoint") || $("lblBtnSetspGravar");
+    const badge = $("badgeStatusSetpoint") || $("cfgSpBadgeStatus");
+    const feedback = $("setpointLiveFeedback");
+    const feedbackText = $("setpointLiveFeedbackText");
+
+    // UI Feedback imediato:
+    if (btn) btn.disabled = true;
+    if (icon) icon.className = "fa-solid fa-spinner fa-spin";
+    if (lbl) lbl.textContent = `Enviando comando SETSP ${mod} ${sp1} ${sp2}...`;
+
+    if (badge) {
+        badge.className = "setpoints-badge-status is-pending";
+        badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Aguardando ESP8266...`;
+    }
+
+    if (feedback && feedbackText) {
+        feedback.className = "setpoint-live-feedback is-waiting";
+        feedback.classList.remove("hidden");
+        feedbackText.textContent = `🟡 Enviando comando SETSP ${mod} ${sp1} ${sp2} para o aparelho... Aguardando confirmação física...`;
+    }
+
+    // Registra log do protocolo RS485
+    if (window.ThermoSetpoints) {
+        const enc1 = window.ThermoSetpoints.calcularHexAlutal(sp1);
+        const enc2 = window.ThermoSetpoints.calcularHexAlutal(sp2);
+        const idHex = (0x30 + mod).toString(16).toUpperCase();
+        window.ThermoSetpoints.adicionarLog(`>> SETSP ${mod} ${sp1} ${sp2}`, "cmd-tx");
+        window.ThermoSetpoints.adicionarLog(`[TX RS485 19 bytes]: 3C 20 ${idHex} 20 31 20 34 20 53 20 ${enc1.hHex} 20 ${enc1.lHex} 20 ${enc2.hHex} 20 ${enc2.lHex} 20 3E`, "cmd-tx");
+    }
+
+    let fornoId = null;
+    try {
+        const forno = await garantirFornoExiste(mod, sp1, sp2, 'SETSP', true);
+        if (forno) fornoId = forno.id;
+
+        const updateData = {
+            novo_setpoint_1: sp1,
+            novo_setpoint_2: sp2,
+            comando_setpoint: "SETSP",
+            setpoint_pendente: true,
+            setpoint_atualizado_em: new Date().toISOString()
+        };
+
+        if (fornoId) {
+            await sb.from("fornos").update(updateData).eq("id", fornoId);
+        } else {
+            await sb.from("fornos").update(updateData).eq("modulo_alutal", mod);
+        }
+    } catch (err) {
+        console.warn("[Setpoints] Falha ao enviar SETSP ao Supabase:", err);
+    }
+
+    // Polling a cada 2 segundos no Supabase até o ESP8266 confirmar
+    let tentativas = 0;
+    const maxTentativas = 15; // 30 segundos
+    if (window._setpointPollingTimer) clearInterval(window._setpointPollingTimer);
+
+    window._setpointPollingTimer = setInterval(async () => {
+        tentativas++;
+        try {
+            let poll = sb
+                .from("fornos")
+                .select("id, modulo_alutal, setpoint_1, setpoint_2, novo_setpoint_1, novo_setpoint_2, setpoint_pendente, comando_setpoint, setpoint_atualizado_em");
+
+            if (fornoId) {
+                poll = poll.eq("id", fornoId);
+            } else {
+                poll = poll.eq("modulo_alutal", mod);
+            }
+
+            const { data, error } = await poll.maybeSingle();
+
+            if (!error && data) {
+                const pendente = !!data.setpoint_pendente;
+                const cmd = data.comando_setpoint || "";
+
+                if (cmd === "SUCESSO" && !pendente) {
+                    clearInterval(window._setpointPollingTimer);
+                    window._setpointPollingTimer = null;
+
+                    const sp1Confirmado = data.setpoint_1 !== null ? Number(data.setpoint_1) : sp1;
+                    const sp2Confirmado = data.setpoint_2 !== null ? Number(data.setpoint_2) : sp2;
+                    const horaAtual = data.setpoint_atualizado_em
+                        ? new Date(data.setpoint_atualizado_em).toLocaleTimeString("pt-BR")
+                        : new Date().toLocaleTimeString("pt-BR");
+
+                    // Atualiza displays destacados
+                    if ($("lblSetpoint1Atual")) $("lblSetpoint1Atual").textContent = `${sp1Confirmado} °C`;
+                    if ($("lblSetpoint2Atual")) $("lblSetpoint2Atual").textContent = `${sp2Confirmado} °C`;
+                    if ($("lblSetpointUltimaLeitura")) $("lblSetpointUltimaLeitura").textContent = horaAtual;
+                    if ($("dispGetSp1")) $("dispGetSp1").textContent = `${sp1Confirmado} °C`;
+                    if ($("dispGetSp2")) $("dispGetSp2").textContent = `${sp2Confirmado} °C`;
+
+                    // Atualiza cache
+                    if (window.ThermoSetpoints) {
+                        const c = window.ThermoSetpoints.obterDadosModulo(mod);
+                        c.sp1 = sp1Confirmado;
+                        c.sp2 = sp2Confirmado;
+                        c.novoSp1 = sp1Confirmado;
+                        c.novoSp2 = sp2Confirmado;
+                        c.updatedAt = horaAtual;
+                        c.pendenteGravacao = false;
+                        window.ThermoSetpoints.salvarCacheLocal();
+                        window.ThermoSetpoints.renderizar();
+                        window.ThermoSetpoints.atualizarResumoForno(mod);
+                        window.ThermoSetpoints.adicionarLog(`<< [SETSP] Módulo ${mod} gravado e confirmado! SP1=${sp1Confirmado}°C | SP2=${sp2Confirmado}°C`, "cmd-rx");
+                    }
+
+                    if (badge) {
+                        badge.className = "setpoints-badge-status";
+                        badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Confirmado no Aparelho!`;
+                    }
+
+                    if (feedback && feedbackText) {
+                        feedback.className = "setpoint-live-feedback is-success";
+                        feedbackText.textContent = `🟢 Setpoint gravado e confirmado pelo módulo Alutal! (SP1 = ${sp1Confirmado} °C | SP2 = ${sp2Confirmado} °C)`;
+                    }
+
+                    if (btn) btn.disabled = false;
+                    if (icon) icon.className = "fa-solid fa-bolt";
+                    atualizarLabelBotaoGravar();
+                    return;
+                } else if (cmd === "ERRO") {
+                    clearInterval(window._setpointPollingTimer);
+                    window._setpointPollingTimer = null;
+
+                    if (badge) {
+                        badge.className = "setpoints-badge-status is-error";
+                        badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Erro na Gravação`;
+                    }
+
+                    if (feedback && feedbackText) {
+                        feedback.className = "setpoint-live-feedback is-error";
+                        feedbackText.textContent = `Módulo ${mod} não confirmou a gravação do setpoint via RS485. Tente novamente.`;
+                    }
+
+                    if (btn) btn.disabled = false;
+                    if (icon) icon.className = "fa-solid fa-bolt";
+                    atualizarLabelBotaoGravar();
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn("[Setpoints] Erro no polling de gravação:", e);
+        }
+
+        if (tentativas >= maxTentativas) {
+            clearInterval(window._setpointPollingTimer);
+            window._setpointPollingTimer = null;
+
+            if (btn) btn.disabled = false;
+            if (icon) icon.className = "fa-solid fa-bolt";
+            atualizarLabelBotaoGravar();
+
+            if (badge) {
+                badge.className = "setpoints-badge-status";
+                badge.innerHTML = `<i class="fa-solid fa-clock"></i> Sincronizando...`;
+            }
+
+            if (feedback && feedbackText) {
+                feedback.className = "setpoint-live-feedback is-waiting";
+                feedbackText.textContent = `Comando SETSP registrado no banco. O ESP8266 aplicará assim que concluir o ciclo RS485.`;
+            }
+        }
+    }, 2000);
+}
+
+// 3. AJUSTE DE PASSO (-10°C / +10°C)
+function ajustarSetpointPasso(canal, delta) {
+    const inpId = canal === 1 ? "inpNovoSetpoint1" : "inpNovoSetpoint2";
+    const inp = $(inpId) || (canal === 1 ? $("inpSetSp1") : $("inpSetSp2"));
+    if (!inp) return;
+
+    let v = parseInt(inp.value, 10);
+    if (isNaN(v)) v = (canal === 1 ? 650 : 900);
+    v = Math.max(0, Math.min(1400, v + delta));
+    inp.value = v;
+
+    // Sincroniza campos equivalentes
+    const outroInp = canal === 1 ? $("inpSetSp1") : $("inpSetSp2");
+    if (outroInp && outroInp !== inp) outroInp.value = v;
+
+    atualizarLabelBotaoGravar();
+}
+
+// 4. MUDANÇA DE MÓDULO NO SELECT
+function aoMudarModuloSetpoint(modulo) {
+    const mod = Number(modulo) || 1;
+    if (window.ThermoSetpoints) {
+        window.ThermoSetpoints.selecionarModulo(mod);
+    }
+    sincronizarPainelSetpointsAnalise(mod);
+}
+
+// 5. ATUALIZA RÓTULO DO BOTÃO DE GRAVAÇÃO
+function atualizarLabelBotaoGravar() {
+    const sel = $("selModuloSetpoint") || $("selModuloSetpoints");
+    const mod = Number(sel?.value) || state.selectedModule || 1;
+    const inp1 = $("inpNovoSetpoint1") || $("inpSetSp1");
+    const inp2 = $("inpNovoSetpoint2") || $("inpSetSp2");
+
+    const sp1 = inp1?.value || 650;
+    const sp2 = inp2?.value || 900;
+
+    const lbl = $("lblBtnEnviarNovoSetpoint");
+    if (lbl) {
+        lbl.textContent = `Gravar no Aparelho (SETSP ${mod} ${sp1} ${sp2})`;
+    }
+
+    if (window.ThermoSetpoints) {
+        window.ThermoSetpoints.atualizarTextoBotaoGravar();
+    }
+}
+
+// 6. APLICA PRESET RÁPIDO
+function aplicarPresetRapido(sp1, sp2, btnEl) {
+    const inp1 = $("inpNovoSetpoint1");
+    const inp2 = $("inpNovoSetpoint2");
+    if (inp1) inp1.value = sp1;
+    if (inp2) inp2.value = sp2;
+
+    const inpAlt1 = $("inpSetSp1");
+    const inpAlt2 = $("inpSetSp2");
+    if (inpAlt1) inpAlt1.value = sp1;
+    if (inpAlt2) inpAlt2.value = sp2;
+
+    document.querySelectorAll(".setsp-preset-chip").forEach(c => c.classList.remove("active"));
+    if (btnEl) btnEl.classList.add("active");
+
+    atualizarLabelBotaoGravar();
+}
+
+// 7. SINCRONIZA O PAINEL DE SETPOINTS COM O FORNO ATIVO
+function sincronizarPainelSetpointsAnalise(moduloDesejado) {
+    const select = $("selModuloSetpoint");
+    if (!select) return;
+
+    let mods = [];
+    if (state.ovens && state.ovens.length > 0) {
+        mods = state.ovens.map(o => Number(o.numero)).filter(n => Number.isFinite(n) && n > 0);
+    }
+    if (mods.length === 0) {
+        mods = [1, 2, 3, 4, 5, 6];
+    }
+    const modsUnicos = Array.from(new Set(mods)).sort((a, b) => a - b);
+
+    const modAtual = moduloDesejado !== undefined ? Number(moduloDesejado) : (state.selectedModule || Number(select.value) || 1);
+
+    select.innerHTML = modsUnicos.map(m => {
+        const nome = getNomeForno(m);
+        return `<option value="${m}">Módulo ${String(m).padStart(2, "0")} (${escapeHtml(nome)})</option>`;
+    }).join("");
+
+    if (modsUnicos.includes(modAtual)) {
+        select.value = String(modAtual);
+    } else {
+        select.value = String(modsUnicos[0] || 1);
+    }
+
+    const mod = Number(select.value) || 1;
+
+    // Atualiza tag do dispositivo
+    const devTag = $("lblSetpointDispositivoNome");
+    if (devTag) {
+        const primaryDev = state.clientDevices?.[0];
+        const serial = primaryDev ? (primaryDev.serial || primaryDev.numero_serie) : "THX-00003";
+        devTag.textContent = `${serial} (Online)`;
+    }
+
+    // Carrega dados do cache do ThermoSetpoints
+    let data = { sp1: 650, sp2: 900, novoSp1: 650, novoSp2: 900, updatedAt: "--" };
+    if (window.ThermoSetpoints) {
+        data = window.ThermoSetpoints.obterDadosModulo(mod);
+    }
+
+    if ($("lblSetpoint1Atual")) $("lblSetpoint1Atual").textContent = `${data.sp1} °C`;
+    if ($("lblSetpoint2Atual")) $("lblSetpoint2Atual").textContent = `${data.sp2} °C`;
+    if ($("lblSetpointUltimaLeitura")) $("lblSetpointUltimaLeitura").textContent = data.updatedAt || "--";
+
+    const inp1 = $("inpNovoSetpoint1");
+    const inp2 = $("inpNovoSetpoint2");
+    if (inp1 && document.activeElement !== inp1) inp1.value = data.novoSp1 || data.sp1 || 650;
+    if (inp2 && document.activeElement !== inp2) inp2.value = data.novoSp2 || data.sp2 || 900;
+
+    atualizarLabelBotaoGravar();
+
+    if ($("lblBtnSolicitarLeitura")) {
+        $("lblBtnSolicitarLeitura").textContent = `Ler do Aparelho (GETSP ${mod})`;
+    }
+}
+
+// Expõe globalmente
+window.garantirFornoExiste = garantirFornoExiste;
+window.solicitarLeituraSetpoint = solicitarLeituraSetpoint;
+window.enviarNovoSetpoint = enviarNovoSetpoint;
+window.ajustarSetpointPasso = ajustarSetpointPasso;
+window.aoMudarModuloSetpoint = aoMudarModuloSetpoint;
+window.atualizarLabelBotaoGravar = atualizarLabelBotaoGravar;
+window.aplicarPresetRapido = aplicarPresetRapido;
+window.sincronizarPainelSetpointsAnalise = sincronizarPainelSetpointsAnalise;
+
+// Inicialização automática após carregamento da página
+if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", () => {
+            window.ThermoSetpoints?.init();
+        });
+    } else {
+        window.ThermoSetpoints?.init();
+    }
+}
+

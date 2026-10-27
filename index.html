@@ -191,6 +191,21 @@
         ===================================================== -->
         <section id="screenAnaliseForno" class="screen-view hidden">
 
+            <!-- BARRA RÁPIDA DE SETPOINTS DE ALARME DO FORNO (SETSP / GETSP) -->
+            <div class="btn-open-setpoints-quick" onclick="ThermoSetpoints.abrirModalParaFornoAtual()" title="Ajustar Setpoints de Alarme deste Forno">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-sliders text-orange" style="font-size: 16px;"></i>
+                    <div>
+                        <div style="font-size: 13px; font-weight: 700;">Setpoints de Alarme (Alutal RS485)</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">Comandos SETSP & GETSP do Módulo</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="quick-sp-values" id="quickSpDisplay">SP1: -- | SP2: --</span>
+                    <i class="fa-solid fa-chevron-right" style="font-size: 12px; color: #94a3b8;"></i>
+                </div>
+            </div>
+
             <!-- RESUMO ESTATÍSTICO DE QUEIMA (KPIS) -->
             <div class="analysis-stats-grid">
                 <div class="analysis-stat-card stat-card-pico">
@@ -293,6 +308,135 @@
                         <span class="legend-color legend-c2"></span>
                         <span>Canal 2 - Inferior</span>
                     </div>
+                </div>
+            </div>
+
+            <!-- ========================================================
+                 CARD: CONTROLE DE SETPOINT DO APARELHO (ALUTAL RS485)
+            ========================================================= -->
+            <div class="setpoints-card" id="cardSetpointAnalise">
+                <div class="setpoints-header">
+                    <div class="setpoints-title-group">
+                        <i class="fa-solid fa-sliders text-orange"></i>
+                        <div>
+                            <h3>Controle de Setpoint do Aparelho (Alutal RS485)</h3>
+                            <div style="font-size: 11px; color: var(--text-muted);">Protocolo Alutal IS4000D / Ceraterm • Comandos GETSP & SETSP</div>
+                        </div>
+                    </div>
+                    <span class="setpoints-badge-status" id="badgeStatusSetpoint">
+                        <i class="fa-solid fa-circle-check"></i> Pronto
+                    </span>
+                </div>
+
+                <!-- Seletor de Módulo / Forno -->
+                <div class="setpoints-select-wrap">
+                    <div class="setpoints-select-label">
+                        <span><i class="fa-solid fa-microchip text-orange"></i> Módulo / Forno Selecionado:</span>
+                        <small id="lblSetpointDispositivoNome">Dispositivo Conectado</small>
+                    </div>
+                    <select id="selModuloSetpoint" class="setpoints-module-select" onchange="aoMudarModuloSetpoint(this.value)">
+                        <option value="1">Módulo 01 (Forno 01)</option>
+                    </select>
+                </div>
+
+                <!-- Painel de Leitura Atual (GETSP) -->
+                <div class="getsp-display-box">
+                    <div class="getsp-header">
+                        <div class="getsp-header-tag">
+                            <i class="fa-solid fa-satellite-dish"></i>
+                            <span id="lblSetpointTituloGetsp">Leitura Atual no Aparelho Físico</span>
+                        </div>
+                        <div>
+                            <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Última Leitura:</span>
+                            <small id="lblSetpointUltimaLeitura">--</small>
+                        </div>
+                    </div>
+
+                    <div class="getsp-grid">
+                        <div class="getsp-item sp1">
+                            <span class="getsp-lbl"><i class="fa-solid fa-bell text-orange"></i> Setpoint 1 Atual (Alarme 1)</span>
+                            <div class="getsp-val"><strong id="lblSetpoint1Atual">-- °C</strong></div>
+                            <span class="getsp-subtext">Limite de Alarme Superior</span>
+                        </div>
+                        <div class="getsp-item sp2">
+                            <span class="getsp-lbl"><i class="fa-solid fa-triangle-exclamation text-red"></i> Setpoint 2 Atual (Alarme 2)</span>
+                            <div class="getsp-val"><strong id="lblSetpoint2Atual">-- °C</strong></div>
+                            <span class="getsp-subtext">Limite de Alarme Crítico</span>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn-query-getsp" id="btnSolicitarLeitura" onclick="solicitarLeituraSetpoint()">
+                        <i class="fa-solid fa-rotate" id="iconSpinLeitura"></i>
+                        <span id="lblBtnSolicitarLeitura">Ler do Aparelho (GETSP)</span>
+                    </button>
+                </div>
+
+                <!-- Painel de Edição e Gravação (SETSP) -->
+                <div class="setsp-editor-box">
+                    <div class="setsp-editor-title">
+                        <i class="fa-solid fa-pen-to-square text-orange"></i>
+                        <span>Editar e Gravar Novos Setpoints no Aparelho (SETSP):</span>
+                    </div>
+
+                    <div class="setsp-inputs-grid">
+                        <!-- Campo Setpoint 1 -->
+                        <div class="setsp-field-group">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <label for="inpNovoSetpoint1">Novo Setpoint 1 (°C):</label>
+                                <div class="step-buttons-group">
+                                    <button type="button" class="btn-step-adjust" onclick="ajustarSetpointPasso(1, -10)" title="Diminuir 10°C">-10°C</button>
+                                    <button type="button" class="btn-step-adjust" onclick="ajustarSetpointPasso(1, 10)" title="Aumentar 10°C">+10°C</button>
+                                </div>
+                            </div>
+                            <div class="setsp-input-container">
+                                <input type="number" id="inpNovoSetpoint1" class="setsp-input" placeholder="Ex: 650" min="0" max="1500" inputmode="numeric" value="650" oninput="atualizarLabelBotaoGravar()">
+                                <span class="setsp-input-unit">°C</span>
+                            </div>
+                        </div>
+
+                        <!-- Campo Setpoint 2 -->
+                        <div class="setsp-field-group">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <label for="inpNovoSetpoint2">Novo Setpoint 2 (°C):</label>
+                                <div class="step-buttons-group">
+                                    <button type="button" class="btn-step-adjust" onclick="ajustarSetpointPasso(2, -10)" title="Diminuir 10°C">-10°C</button>
+                                    <button type="button" class="btn-step-adjust" onclick="ajustarSetpointPasso(2, 10)" title="Aumentar 10°C">+10°C</button>
+                                </div>
+                            </div>
+                            <div class="setsp-input-container">
+                                <input type="number" id="inpNovoSetpoint2" class="setsp-input" placeholder="Ex: 900" min="0" max="1500" inputmode="numeric" value="900" oninput="atualizarLabelBotaoGravar()">
+                                <span class="setsp-input-unit">°C</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Presets Rápidos -->
+                    <div class="setsp-presets-bar">
+                        <button type="button" class="setsp-preset-chip active" onclick="aplicarPresetRapido(650, 900, this)">
+                            <i class="fa-solid fa-fire text-orange"></i> 650° / 900° (Padrão)
+                        </button>
+                        <button type="button" class="setsp-preset-chip" onclick="aplicarPresetRapido(700, 950, this)">
+                            700° / 950°
+                        </button>
+                        <button type="button" class="setsp-preset-chip" onclick="aplicarPresetRapido(800, 1000, this)">
+                            800° / 1000°
+                        </button>
+                        <button type="button" class="setsp-preset-chip" onclick="aplicarPresetRapido(900, 1150, this)">
+                            900° / 1150°
+                        </button>
+                    </div>
+
+                    <!-- Botão de Envio (SETSP) -->
+                    <button type="button" class="btn-save-setsp" id="btnEnviarNovoSetpoint" onclick="enviarNovoSetpoint()">
+                        <i class="fa-solid fa-bolt" id="iconSpinGravar"></i>
+                        <span id="lblBtnEnviarNovoSetpoint">Gravar no Aparelho (SETSP 1 650 900)</span>
+                    </button>
+                </div>
+
+                <!-- Toast / Feedback em Tempo Real -->
+                <div id="setpointLiveFeedback" class="setpoint-live-feedback hidden">
+                    <i class="fa-solid fa-circle-notch fa-spin"></i>
+                    <span id="setpointLiveFeedbackText">Processando comando...</span>
                 </div>
             </div>
 
@@ -475,6 +619,121 @@
                 </div>
             </div>
 
+            <!-- ========================================================
+                 GERENCIADOR DE SETPOINTS RS485 (SETSP / GETSP - ALUTAL)
+            ========================================================= -->
+            <div class="setpoints-card" id="cardSetpointsConfig">
+                <div class="setpoints-header">
+                    <div class="setpoints-title-group">
+                        <i class="fa-solid fa-sliders"></i>
+                        <div>
+                            <h3>Setpoints de Alarme RS485</h3>
+                            <div style="font-size: 11px; color: var(--text-muted);">Protocolo Alutal IS4000D / Ceraterm</div>
+                        </div>
+                    </div>
+                    <span class="setpoints-badge-status" id="cfgSpBadgeStatus">
+                        <i class="fa-solid fa-check-circle"></i> Sincronizado
+                    </span>
+                </div>
+
+                <p class="setpoints-description">
+                    Selecione o módulo para visualizar a leitura atual (<b>GETSP</b>) gravada na memória do hardware e edite os valores para enviar uma nova programação (<b>SETSP</b>).
+                </p>
+
+                <!-- SELETOR DE MÓDULO -->
+                <div class="setpoints-select-wrap">
+                    <div class="setpoints-select-label">
+                        <span><i class="fa-solid fa-microchip text-orange"></i> Módulo RS485:</span>
+                        <small id="cfgSpDeviceTag">Dispositivo Conectado</small>
+                    </div>
+                    <select id="selModuloSetpoints" class="setpoints-module-select" onchange="ThermoSetpoints.selecionarModulo(this.value)">
+                        <option value="1">Módulo 01 (Forno 01)</option>
+                    </select>
+                </div>
+
+                <!-- QUADRO DE LEITURA DO GETSP ATUAL -->
+                <div class="getsp-display-box">
+                    <div class="getsp-header">
+                        <div class="getsp-header-tag">
+                            <i class="fa-solid fa-satellite-dish"></i>
+                            <span id="lblGetspHeader">Leitura Atual no Módulo (GETSP 1)</span>
+                        </div>
+                        <span id="lblGetspTime">--:--:--</span>
+                    </div>
+
+                    <div class="getsp-grid">
+                        <div class="getsp-item sp1">
+                            <span class="getsp-lbl">Setpoint 1 (SP1)</span>
+                            <div class="getsp-val" id="dispGetSp1">-- °C</div>
+                            <span class="getsp-subtext">Canal 1 (Superior / Aviso)</span>
+                        </div>
+                        <div class="getsp-item sp2">
+                            <span class="getsp-lbl">Setpoint 2 (SP2)</span>
+                            <div class="getsp-val" id="dispGetSp2">-- °C</div>
+                            <span class="getsp-subtext">Canal 2 (Inferior / Crítico)</span>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn-query-getsp" id="btnConsultarGetsp" onclick="ThermoSetpoints.consultarGetsp()">
+                        <i class="fa-solid fa-rotate" id="iconGetspSpin"></i>
+                        <span id="lblBtnGetsp">Consultar Módulo (GETSP 1)</span>
+                    </button>
+                </div>
+
+                <!-- FORMULÁRIO DE EDIÇÃO E GRAVAÇÃO (SETSP) -->
+                <div class="setsp-editor-box">
+                    <div class="setsp-editor-title">
+                        <i class="fa-solid fa-pen-to-square text-orange"></i>
+                        <span>Configurar Novos Valores de Setpoint:</span>
+                    </div>
+
+                    <div class="setsp-inputs-grid">
+                        <div class="setsp-field-group">
+                            <label for="inpSetSp1">Novo Setpoint 1 (SP1):</label>
+                            <div class="setsp-input-container">
+                                <input type="number" id="inpSetSp1" class="setsp-input" placeholder="Ex: 650" min="0" max="1300" inputmode="numeric" value="650" oninput="ThermoSetpoints.atualizarTextoBotaoGravar()">
+                                <span class="setsp-input-unit">°C</span>
+                            </div>
+                        </div>
+                        <div class="setsp-field-group">
+                            <label for="inpSetSp2">Novo Setpoint 2 (SP2):</label>
+                            <div class="setsp-input-container">
+                                <input type="number" id="inpSetSp2" class="setsp-input" placeholder="Ex: 900" min="0" max="1300" inputmode="numeric" value="900" oninput="ThermoSetpoints.atualizarTextoBotaoGravar()">
+                                <span class="setsp-input-unit">°C</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PRESETS RÁPIDOS -->
+                    <div class="setsp-presets-bar">
+                        <button type="button" class="setsp-preset-chip active" onclick="ThermoSetpoints.aplicarPreset(650, 900, this)">
+                            <i class="fa-solid fa-fire text-orange"></i> 650° / 900° (Padrão)
+                        </button>
+                        <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPreset(700, 950, this)">
+                            700° / 950°
+                        </button>
+                        <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPreset(800, 1000, this)">
+                            800° / 1000°
+                        </button>
+                        <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPreset(900, 1150, this)">
+                            900° / 1150°
+                        </button>
+                    </div>
+
+                    <!-- BOTÃO PRINCIPAL DE GRAVAÇÃO -->
+                    <button type="button" class="btn-save-setsp" id="btnGravarSetsp" onclick="ThermoSetpoints.gravarSetsp()">
+                        <i class="fa-solid fa-bolt" id="iconBtnSetsp"></i>
+                        <span id="lblBtnSetspGravar">Gravar no Módulo (SETSP 1 650 900)</span>
+                    </button>
+                </div>
+
+                <!-- TERMINAL SERIAL RS485 -->
+                <div class="setpoints-terminal" id="setpointsTerminal">
+                    <span class="terminal-line cmd-info"># Sistema ThermoLink RS485 Setpoints Ativo</span>
+                    <span class="terminal-line cmd-info"># Selecione o módulo para ver GETSP ou digite novos valores para SETSP</span>
+                </div>
+            </div>
+
             <!-- SOBRE & LOGOUT -->
             <div class="card-dark">
                 <div class="card-dark-header">
@@ -633,6 +892,30 @@
             <span class="land-stat-tag min"><i class="fa-solid fa-snowflake text-blue"></i> Mín: <b id="landStatMin">-- °C</b></span>
             <span class="land-stat-tag avg"><i class="fa-solid fa-chart-line text-green"></i> Média: <b id="landStatAvg">-- °C</b></span>
             <span class="land-stat-tag count"><i class="fa-solid fa-layer-group"></i> <b id="landStatCount">--</b></span>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================
+     MODAL DE SETPOINTS RS485 (ACESSO RÁPIDO DO FORNO)
+========================================================= -->
+<div id="modalSetpoints" class="client-blocked-overlay modal-overlay hidden">
+    <div class="client-blocked-card modal-card" style="max-width: 480px; width: 92%; padding: 22px; text-align: left; background: #0c2335; border: 1px solid rgba(244, 123, 32, 0.3);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-sliders text-orange" style="font-size: 20px;"></i>
+                <div>
+                    <h3 style="font-size: 16px; font-weight: 700; color: #fff; margin: 0;" id="modalSpTitle">Setpoints do Módulo 1</h3>
+                    <div style="font-size: 11px; color: var(--text-muted);">Protocolo Alutal RS485 (SETSP / GETSP)</div>
+                </div>
+            </div>
+            <button type="button" onclick="ThermoSetpoints.fecharModal()" style="color: #94a3b8; font-size: 20px; padding: 4px; border: none; background: none; cursor: pointer;">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div id="modalSpContentArea">
+            <!-- Espelhado e gerenciado pelo módulo ThermoSetpoints -->
         </div>
     </div>
 </div>
