@@ -309,12 +309,22 @@ async function carregarDadosSupabase() {
             adminState.devices = dbDevs.map(d => {
                 const s = d.serial || d.numero_serie || (d.id ? 'THX-' + String(d.id).padStart(5, '0') : '--');
                 const c = adminState.clients.find(cli => cli.id === d.ceramica_id);
+
+                // Normaliza o status caso o ESP8266 tenha sobrescrito com "Online" no reboot
+                let normalizedStatus = d.status;
+                if (normalizedStatus !== "Disponível" && normalizedStatus !== "Manutenção") {
+                    normalizedStatus = d.ceramica_id ? "Vinculado" : "Disponível";
+                }
+                if (d.status === "Online" && d.id) {
+                    sb.from("dispositivos").update({ status: normalizedStatus }).eq("id", d.id).then(() => {});
+                }
+
                 return {
                     id: d.id,
                     serial: s,
                     numeroSerie: s,
                     modelo: d.modelo || "TLK-ESP8266-ALUTAL",
-                    status: d.status || (d.ceramica_id ? "Vinculado" : "Disponível"),
+                    status: normalizedStatus,
                     ceramicaId: d.ceramica_id || null,
                     ceramicaNome: c ? c.nome : (d.ceramica_id ? "Vinculado" : "Em Estoque"),
                     moduloNum: d.modulo_num,
@@ -1203,7 +1213,8 @@ function abrirModalVincularDispositivo(serial) {
     $("vincSerialOriginal").value = serial;
     $("vincSerial").value = serial;
     $("vincModuloNum").value = target.moduloNum || 1;
-    $("vincStatus").value = target.status === "Disponível" ? "Vinculado" : target.status;
+    const validStatuses = ["Vinculado", "Disponível", "Manutenção"];
+    $("vincStatus").value = (validStatuses.includes(target.status) && target.status !== "Disponível") ? target.status : "Vinculado";
 
     const sel = $("vincCeramica");
     if (sel) {

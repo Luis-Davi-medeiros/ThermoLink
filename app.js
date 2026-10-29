@@ -683,16 +683,24 @@ async function carregarFornosELeituras() {
         if (state.currentUser && state.currentUser.role !== "admin") {
             const cid = state.currentUser.ceramicaId;
 
-            // Busca no Supabase apenas os dispositivos vinculados a esta cerâmica
+            // Busca no Supabase todos os dispositivos vinculados a esta cerâmica
+            // (aceita status "Vinculado" ou "Online", caso o ESP8266 tenha reportado telemetria sobrescrevendo status)
             try {
                 const { data: devs, error: errDevs } = await sb
                     .from("dispositivos")
                     .select("id, serial, numero_serie, modelo, modulo_num, forno_id, status, ceramica_id")
-                    .eq("ceramica_id", cid)
-                    .eq("status", "Vinculado");
+                    .eq("ceramica_id", cid);
 
                 if (!errDevs && devs && devs.length > 0) {
-                    clientDevices = devs;
+                    clientDevices = devs.filter(d => d.status !== "Disponível" && d.status !== "Manutenção");
+
+                    // Auto-reparo: se algum aparelho vinculado estiver com status "Online" no banco, restaura para "Vinculado"
+                    devs.forEach(d => {
+                        if (d.ceramica_id && d.status === "Online" && d.id) {
+                            d.status = "Vinculado";
+                            sb.from("dispositivos").update({ status: "Vinculado" }).eq("id", d.id).then(() => {});
+                        }
+                    });
                 }
             } catch (errDev) {
                 console.warn("[ThermoLink] Falha ao consultar dispositivos no Supabase:", errDev);
@@ -701,7 +709,7 @@ async function carregarFornosELeituras() {
             // Fallback no localStorage
             if (!clientDevices.length) {
                 const localDevs = JSON.parse(localStorage.getItem("thermolink_devices_admin") || "[]");
-                clientDevices = localDevs.filter(d => (d.ceramicaId === cid || d.ceramica_id === cid) && d.status === "Vinculado");
+                clientDevices = localDevs.filter(d => (d.ceramicaId === cid || d.ceramica_id === cid) && d.status !== "Disponível" && d.status !== "Manutenção");
             }
 
             allowedSerials = clientDevices.map(d => d.serial || d.numero_serie).filter(Boolean);
@@ -2061,6 +2069,7 @@ function navegarAba(aba) {
         voltarListaFornos();
     } else if (aba === "historico") {
         state.selectedModule = null;
+        state.historicoFornoSelecionado = null;
         $("headerTitle").textContent = "Histórico de Queimas";
         $("headerBackBtn").classList.add("hidden");
 
@@ -2090,121 +2099,1392 @@ function navegarAba(aba) {
 }
 
 // ==========================================================================
-// 5.1 HISTÓRICO DE QUEIMAS (CICLOS, LOTES & RELATÓRIOS)
+// 5.1 HISTÓRICO DE QUEIMA DINÂMICO (POR FORNO & FILTRO TEMPORAL NO SUPABASE)
 // ==========================================================================
 
-state.historicoFornoFiltro = "all";
+state.historicoFornoSelecionado = null;
+state.historicoPeriodoDias = "7";
+state.historicoDateStart = null;
+state.historicoDateEnd = null;
+state.historicoModoVisao = "cycles"; // "cycles" | "table"
+state.historicoModoEscalaTempo = "period"; // "period" | "data"
+state.historicoWindowStartMs = null;
+state.historicoWindowEndMs = null;
+state.historicoLeiturasAtuais = [];
+state.historicoGruposPorDia = new Map();
+state.historicoPaginaTabela = 1;
+let historicoFornoChartInstance = null;
+let historicoDiaChartInstance = null;
+let historicoActiveRequestId = 0;
+const historicoCachePorModulo = new Map(); // mod -> { minStartMs, rows: [] }
 
-function carregarHistoricoQueimas() {
-    const filterContainer = $("histFiltroForno");
+/**
+ * PASSO 1: Identifica dinamicamente todos os fornos cadastrados/ativos da cerâmica no banco
+ * e renderiza os cards de seleção de forno.
+ */
+async function carregarHistoricoQueimas(forcarRecarga = false) {
+    const ovensGrid = $("histOvensSelectorGrid");
+    const refreshIcon = $("iconRefreshHistorico");
+    if (forcarRecarga) {
+        historicoCachePorModulo.clear();
+        if (refreshIcon) refreshIcon.classList.add("fa-spin");
+    }
+
+    try {
+        // Se state.ovens ainda não foi populado, garante o carregamento inicial
+        if (!state.ovens || state.ovens.length === 0 || forcarRecarga) {
+            await loadData();
+        }
+
+        // Consulta complementar à tabela 'fornos' do Supabase para a cerâmica logada
+        let dbFornos = [];
+        const cid = state.currentUser ? state.currentUser.ceramicaId : null;
+        if (typeof sb !== "undefined" && sb && cid && state.currentUser?.role !== "admin") {
+            const { data: fData, error: fErr } = await sb
+                .from("fornos")
+                .select("id, numero, modulo_alutal, nome, ativo, ceramica_id, dispositivo_id")
+                .eq("ceramica_id", cid)
+                .order("numero", { ascending: true });
+            if (!fErr && fData && fData.length > 0) {
+                dbFornos = fData;
+            }
+        }
+
+        // Exibe ESTRITAMENTE os fornos que possuem alguma leitura registrada no banco de dados (state.readings)
+        const ovensMap = new Map();
+        (state.ovens || []).forEach(o => {
+            const num = Number(o.numero || o.id || 1);
+            const temLeituraNoBanco = state.readings && state.readings.has(num);
+            if (Number.isFinite(num) && num > 0 && temLeituraNoBanco) {
+                ovensMap.set(num, {
+                    id: o.id || num,
+                    numero: num,
+                    modulo: num,
+                    nome: o.nome || `Forno ${String(num).padStart(2, "0")}`,
+                    serial: o.dispositivo_serial || (state.allowedSerials && state.allowedSerials[0]) || "THX"
+                });
+            }
+        });
+
+        dbFornos.forEach(f => {
+            const num = Number(f.modulo_alutal || f.numero || 1);
+            const temLeituraNoBanco = state.readings && state.readings.has(num);
+            if (Number.isFinite(num) && num > 0 && temLeituraNoBanco && !ovensMap.has(num)) {
+                ovensMap.set(num, {
+                    id: f.id || num,
+                    numero: num,
+                    modulo: num,
+                    nome: f.nome || `Forno ${String(num).padStart(2, "0")}`,
+                    serial: (state.allowedSerials && state.allowedSerials[0]) || "THX"
+                });
+            }
+        });
+
+        const availableOvens = Array.from(ovensMap.values()).sort((a, b) => a.numero - b.numero);
+
+        if ($("statHistoricoCount")) {
+            $("statHistoricoCount").textContent = `${availableOvens.length} ${availableOvens.length === 1 ? "Forno com Histórico" : "Fornos com Histórico"}`;
+        }
+
+        // Caso a cerâmica não possua nenhum forno/aparelho vinculado
+        if (availableOvens.length === 0) {
+            if ($("histStep1Card")) $("histStep1Card").classList.remove("hidden");
+            if (ovensGrid) {
+                ovensGrid.innerHTML = `
+                    <div class="loading-box" style="grid-column: 1 / -1; padding: 28px 16px; text-align: center;">
+                        <i class="fa-solid fa-microchip" style="font-size: 34px; color: #f97316; margin-bottom: 10px;"></i>
+                        <h4 style="color: #ffffff; margin: 0 0 6px; font-size: 15px;">Nenhum Forno Identificado</h4>
+                        <p style="color: #94a3b8; font-size: 12px; margin: 0;">
+                            Esta cerâmica ainda não possui fornos ou aparelhos ThermoX vinculados com leituras no banco de dados.
+                        </p>
+                    </div>
+                `;
+            }
+            if ($("histSelectedOvenPanel")) $("histSelectedOvenPanel").classList.add("hidden");
+            return;
+        }
+
+        // Renderiza os Cards Dinâmicos de cada Forno (Passo 1)
+        if (ovensGrid) {
+            ovensGrid.innerHTML = availableOvens.map(o => {
+                const mod = Number(o.numero);
+                const isSelected = Number(state.historicoFornoSelecionado) === mod;
+                const ultimaLeitura = state.readings ? state.readings.get(mod) : null;
+                const c1 = ultimaLeitura ? numVal(ultimaLeitura.canal_1) : null;
+                const c2 = ultimaLeitura ? numVal(ultimaLeitura.canal_2) : null;
+                const ts = ultimaLeitura ? new Date(ultimaLeitura.created_at || ultimaLeitura.data_hora).getTime() : 0;
+                const isOnline = ts > 0 && (Date.now() - ts) <= 15 * 60 * 1000;
+
+                return `
+                    <button type="button" class="hist-oven-select-card ${isSelected ? 'active' : ''}" onclick="selecionarFornoHistorico(${mod})">
+                        <div class="hist-oven-card-top">
+                            <span class="hist-oven-icon-box">
+                                <i class="fa-solid fa-fire-flame-curved"></i>
+                            </span>
+                            <span class="hist-oven-status-dot ${isOnline ? 'online' : 'standby'}">
+                                <i class="fa-solid fa-circle" style="font-size: 6px;"></i>
+                                ${isOnline ? 'Ativo' : 'Standby'}
+                            </span>
+                        </div>
+                        <div>
+                            <h4 class="hist-oven-card-title">${escapeHtml(o.nome)}</h4>
+                            <div class="hist-oven-card-meta">
+                                <span>Módulo RS485 #${String(mod).padStart(2, '0')}</span>
+                                <span>${escapeHtml(o.serial || 'THX')}</span>
+                            </div>
+                        </div>
+                        <div class="hist-oven-card-temps">
+                            <span class="text-orange">C1: ${c1 !== null ? `${c1}°C` : '--'}</span>
+                            <span style="color: rgba(255,255,255,0.2);">|</span>
+                            <span class="text-blue">C2: ${c2 !== null ? `${c2}°C` : '--'}</span>
+                        </div>
+                    </button>
+                `;
+            }).join("");
+        }
+
+        // Se nenhum forno foi clicado ainda, exibe APENAS a tela de seleção de fornos (Passo 1)
+        const selectedMod = Number(state.historicoFornoSelecionado);
+        const existsSelected = selectedMod > 0 && availableOvens.some(o => Number(o.numero) === selectedMod);
+
+        if (!existsSelected) {
+            state.historicoFornoSelecionado = null;
+            if ($("histStep1Card")) $("histStep1Card").classList.remove("hidden");
+            if ($("histSelectedOvenPanel")) $("histSelectedOvenPanel").classList.add("hidden");
+            return;
+        }
+
+        // Quando um forno específico está selecionado, oculta a grade de seleção e abre a aba interna do forno
+        if ($("histStep1Card")) $("histStep1Card").classList.add("hidden");
+        if ($("histSelectedOvenPanel")) $("histSelectedOvenPanel").classList.remove("hidden");
+
+        // Carrega os dados históricos do forno selecionado e período ativo (Passos 2 e 3)
+        await carregarDadosHistoricoFornoSelecionado();
+    } finally {
+        if (refreshIcon) {
+            setTimeout(() => refreshIcon.classList.remove("fa-spin"), 300);
+        }
+    }
+}
+
+/**
+ * PASSO 2: Ação ao clicar no Card de um Forno específico -> abre a aba de histórico daquele forno
+ */
+async function selecionarFornoHistorico(modulo) {
+    state.historicoFornoSelecionado = Number(modulo);
+    state.historicoPaginaTabela = 1;
+
+    if ($("histStep1Card")) $("histStep1Card").classList.add("hidden");
+    if ($("histSelectedOvenPanel")) $("histSelectedOvenPanel").classList.remove("hidden");
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    await carregarDadosHistoricoFornoSelecionado();
+}
+
+/**
+ * Volta da aba de histórico do forno selecionado para a lista de Fornos Identificados da Cerâmica
+ */
+function voltarListaFornosHistorico() {
+    state.historicoFornoSelecionado = null;
+    if ($("histSelectedOvenPanel")) $("histSelectedOvenPanel").classList.add("hidden");
+    if ($("histStep1Card")) $("histStep1Card").classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/**
+ * PASSO 3: Ação ao trocar o Filtro Temporal (7d, 15d, 30d, 60d, 90d ou Personalizado)
+ */
+async function selecionarPeriodoHistorico(diasOuCustom, btn) {
+    state.historicoPeriodoDias = String(diasOuCustom);
+    state.historicoPaginaTabela = 1;
+
+    document.querySelectorAll("#histPeriodTabs .pill-btn").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+
+    const customBox = $("histCustomDateBox");
+    if (diasOuCustom === "custom") {
+        if (customBox) customBox.classList.remove("hidden");
+        const endInput = $("histDateEnd");
+        const startInput = $("histDateStart");
+        if (endInput && !endInput.value) {
+            const hoje = new Date();
+            endInput.value = hoje.toISOString().split("T")[0];
+        }
+        if (startInput && !startInput.value) {
+            const seteDiasAtras = new Date(Date.now() - 7 * 86400000);
+            startInput.value = seteDiasAtras.toISOString().split("T")[0];
+        }
+        return;
+    } else {
+        if (customBox) customBox.classList.add("hidden");
+    }
+
+    await carregarDadosHistoricoFornoSelecionado();
+}
+
+async function aplicarFiltroDataCustomHistorico() {
+    const startVal = $("histDateStart")?.value;
+    const endVal = $("histDateEnd")?.value;
+    if (!startVal || !endVal) {
+        alert("Selecione a Data Inicial e a Data Final para filtrar.");
+        return;
+    }
+    state.historicoDateStart = new Date(`${startVal}T00:00:00`);
+    state.historicoDateEnd = new Date(`${endVal}T23:59:59`);
+    state.historicoPaginaTabela = 1;
+    await carregarDadosHistoricoFornoSelecionado();
+}
+
+function alternarModoVisualizacaoHistorico(modo) {
+    state.historicoModoVisao = modo;
+    const btnCycles = $("btnHistViewCycles");
+    const btnTable = $("btnHistViewTable");
+    const dailyBoxWrapper = $("histDailyBoxWrapper");
+    const singleDayBox = $("histSingleDayDetailBox");
+    const cyclesContainer = $("listaQueimasHistorico");
+    const tableWrapper = $("histRawTableWrapper");
+
+    if (modo === "table") {
+        btnCycles?.classList.remove("active");
+        btnTable?.classList.add("active");
+        dailyBoxWrapper?.classList.add("hidden");
+        singleDayBox?.classList.add("hidden");
+        tableWrapper?.classList.remove("hidden");
+        renderizarTabelaLeiturasHistorico();
+    } else {
+        btnTable?.classList.remove("active");
+        btnCycles?.classList.add("active");
+        tableWrapper?.classList.add("hidden");
+        singleDayBox?.classList.add("hidden");
+        dailyBoxWrapper?.classList.remove("hidden");
+        cyclesContainer?.classList.remove("hidden");
+    }
+}
+
+function alternarEscalaTempoGraficoHistorico(modoEscala) {
+    state.historicoModoEscalaTempo = modoEscala === "data" ? "data" : "period";
+    $("btnHistScalePeriod")?.classList.toggle("active", state.historicoModoEscalaTempo === "period");
+    $("btnHistScaleData")?.classList.toggle("active", state.historicoModoEscalaTempo === "data");
+
+    const mod = Number(state.historicoFornoSelecionado || 1);
+    const ovenObj = (state.ovens || []).find(o => Number(o.numero) === mod);
+    const ovenName = ovenObj ? ovenObj.nome : `Forno ${String(mod).padStart(2, "0")}`;
+    renderizarGraficoHistoricoForno(state.historicoLeiturasAtuais || [], ovenName);
+}
+
+/**
+ * Consulta ultra-rápida (com Cache Inteligente + Requisições Paralelas + Renderização Progressiva)
+ * para o Forno selecionado e intervalo de datas ativo
+ */
+async function carregarDadosHistoricoFornoSelecionado() {
+    const reqId = ++historicoActiveRequestId;
+    const mod = Number(state.historicoFornoSelecionado || 1);
+    const ovenObj = (state.ovens || []).find(o => Number(o.numero) === mod);
+    const ovenName = ovenObj ? ovenObj.nome : `Forno ${String(mod).padStart(2, "0")}`;
+
+    if ($("histActiveOvenName")) $("histActiveOvenName").textContent = `${ovenName} (Módulo ${mod})`;
+    if ($("histChartOvenTitle")) $("histChartOvenTitle").textContent = ovenName;
+
+    // Calcula janela de datas (dataInicio -> dataFim)
+    let dataFim = new Date();
+    let dataInicio = new Date(Date.now() - 7 * 86400000);
+    let labelPeriodo = "Última semana (7 dias)";
+
+    if (state.historicoPeriodoDias === "custom" && state.historicoDateStart && state.historicoDateEnd) {
+        dataInicio = state.historicoDateStart;
+        dataFim = state.historicoDateEnd;
+        labelPeriodo = "Período personalizado";
+    } else {
+        const dias = parseInt(state.historicoPeriodoDias, 10) || 7;
+        dataInicio = new Date(Date.now() - dias * 86400000);
+        if (dias === 7) labelPeriodo = "Última semana (7 dias)";
+        else if (dias === 15) labelPeriodo = "Últimos 15 dias";
+        else if (dias === 30) labelPeriodo = "Último mês (30 dias)";
+        else if (dias === 60) labelPeriodo = "Últimos 2 meses (60 dias)";
+        else if (dias === 90) labelPeriodo = "Últimos 3 meses (90 dias)";
+        else labelPeriodo = `Últimos ${dias} dias`;
+    }
+
+    const startMs = dataInicio.getTime();
+    const endMs = dataFim.getTime();
+    state.historicoWindowStartMs = startMs;
+    state.historicoWindowEndMs = endMs;
+
+    const fmtDateShort = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    if ($("histPeriodRangeLabel")) {
+        $("histPeriodRangeLabel").textContent = `${fmtDateShort(dataInicio)} até ${fmtDateShort(dataFim)}`;
+    }
+    if ($("histChartSubtitle")) {
+        $("histChartSubtitle").textContent = `Temperatura (°C) × Tempo • ${labelPeriodo}: ${fmtDateShort(dataInicio)} a ${fmtDateShort(dataFim)}`;
+    }
+
+    // 1. VERIFICA CACHE EM MEMÓRIA PARA RESPOSTA INSTANTÂNEA (< 2ms)
+    const cacheEntry = historicoCachePorModulo.get(mod);
+    if (cacheEntry && cacheEntry.rows.length > 0 && state.historicoPeriodoDias !== "custom") {
+        const cachedInWindow = cacheEntry.rows.filter(r => r._ts >= startMs && r._ts <= endMs);
+        // Se o cache já cobre todo o período solicitado, renderiza instantaneamente sem ir à rede!
+        if (cacheEntry.minStartMs <= startMs + 60000) {
+            state.historicoLeiturasAtuais = cachedInWindow;
+            atualizarKPIsHistoricoForno(cachedInWindow, mod);
+            renderizarGraficoHistoricoForno(cachedInWindow, ovenName);
+            renderizarCiclosDiariosHistorico(cachedInWindow, mod, ovenName);
+            renderizarTabelaLeiturasHistorico();
+            return;
+        }
+        // Se o cache cobre parte (ex: já tem 7d e pediu 15d), mostra os dados existentes na hora enquanto busca o restante!
+        if (cachedInWindow.length > 0) {
+            state.historicoLeiturasAtuais = cachedInWindow;
+            atualizarKPIsHistoricoForno(cachedInWindow, mod);
+            renderizarGraficoHistoricoForno(cachedInWindow, ovenName);
+        }
+    } else {
+        const container = $("listaQueimasHistorico");
+        if (container && state.historicoModoVisao === "cycles") {
+            container.innerHTML = `
+                <div class="loading-box" style="padding: 22px; text-align: center;">
+                    <div class="app-spinner"></div>
+                    <p>Carregando histórico do ${escapeHtml(ovenName)} (${escapeHtml(labelPeriodo)})...</p>
+                </div>
+            `;
+        }
+    }
+
+    // 2. BUSCA EM ONDAS PARALELAS (5 páginas simultâneas = 5.000 linhas por rodada de rede!)
+    try {
+        const pageSize = 1000;
+        const parallelPages = 5; // 5 requisições simultâneas por onda
+        let waveIndex = 0;
+        let acumulado = (cacheEntry && state.historicoPeriodoDias !== "custom") ? [...cacheEntry.rows] : [];
+
+        // Se já tínhamos dados até cacheEntry.minStartMs, buscamos apenas o complemento anterior a minStartMs!
+        const fetchEndIso = (cacheEntry && cacheEntry.rows.length > 0 && state.historicoPeriodoDias !== "custom")
+            ? new Date(cacheEntry.minStartMs - 1).toISOString()
+            : dataFim.toISOString();
+
+        const buildPageQuery = (fromIdx, toIdx) => {
+            let q = sb
+                .from("leituras")
+                .select("canal_1,canal_2,modulo_alutal,numero_serie,dispositivo_id,created_at")
+                .eq("modulo_alutal", mod)
+                .gte("created_at", dataInicio.toISOString())
+                .lte("created_at", fetchEndIso)
+                .order("created_at", { ascending: false })
+                .range(fromIdx, toIdx);
+
+            if (state.currentUser && state.currentUser.role !== "admin") {
+                const devFilters = [];
+                if (state.allowedSerials && state.allowedSerials.length > 0) {
+                    devFilters.push(`numero_serie.in.(${state.allowedSerials.join(",")})`);
+                }
+                if (state.allowedDeviceIds && state.allowedDeviceIds.length > 0) {
+                    devFilters.push(`dispositivo_id.in.(${state.allowedDeviceIds.join(",")})`);
+                }
+                if (devFilters.length > 0) {
+                    q = q.or(devFilters.join(","));
+                }
+            }
+            return q;
+        };
+
+        let renderizouPrimeiraOnda = false;
+
+        while (true) {
+            if (reqId !== historicoActiveRequestId) return; // Cancelado por novo clique do usuário
+
+            const promessas = [];
+            for (let i = 0; i < parallelPages; i++) {
+                const pageNum = waveIndex * parallelPages + i;
+                const fromIdx = pageNum * pageSize;
+                const toIdx = fromIdx + pageSize - 1;
+                promessas.push(buildPageQuery(fromIdx, toIdx));
+            }
+
+            const resultados = await Promise.all(promessas);
+            if (reqId !== historicoActiveRequestId) return;
+
+            let atingiuFim = false;
+            let novosRegistrosOnda = 0;
+
+            for (const res of resultados) {
+                if (res.error || !res.data || res.data.length === 0) {
+                    atingiuFim = true;
+                    break;
+                }
+                for (let j = 0; j < res.data.length; j++) {
+                    const row = res.data[j];
+                    if (state.currentUser && state.currentUser.role !== "admin") {
+                        const sOk = row.numero_serie && (state.allowedSerials || []).includes(row.numero_serie);
+                        const idOk = row.dispositivo_id && (state.allowedDeviceIds || []).includes(Number(row.dispositivo_id));
+                        if (!sOk && !idOk) continue;
+                    }
+                    row._ts = Date.parse(row.created_at);
+                    acumulado.push(row);
+                    novosRegistrosOnda++;
+                }
+                if (res.data.length < pageSize) {
+                    atingiuFim = true;
+                    break;
+                }
+            }
+
+            if ($("kpiTotalQueimas")) {
+                $("kpiTotalQueimas").textContent = acumulado.length.toLocaleString("pt-BR");
+            }
+
+            // Renderiza a tela imediatamente após a 1ª onda paralela para sensação instantânea!
+            if (!renderizouPrimeiraOnda && acumulado.length > 0) {
+                renderizouPrimeiraOnda = true;
+                state.historicoLeiturasAtuais = acumulado;
+                atualizarKPIsHistoricoForno(acumulado, mod);
+                renderizarGraficoHistoricoForno(acumulado, ovenName);
+                renderizarCiclosDiariosHistorico(acumulado, mod, ovenName);
+                renderizarTabelaLeiturasHistorico();
+            }
+
+            if (atingiuFim || novosRegistrosOnda === 0) {
+                break;
+            }
+            waveIndex++;
+        }
+
+        if (reqId !== historicoActiveRequestId) return;
+
+        // Salva no cache do módulo para que próximas trocas de período sejam instantâneas
+        if (state.historicoPeriodoDias !== "custom") {
+            const prevMin = cacheEntry ? cacheEntry.minStartMs : Infinity;
+            historicoCachePorModulo.set(mod, {
+                minStartMs: Math.min(prevMin, startMs),
+                rows: acumulado
+            });
+        }
+
+        const leiturasFiltradas = acumulado.filter(r => r._ts >= startMs && r._ts <= endMs);
+        state.historicoLeiturasAtuais = leiturasFiltradas;
+
+        // Atualização final consolidada
+        atualizarKPIsHistoricoForno(leiturasFiltradas, mod);
+        renderizarGraficoHistoricoForno(leiturasFiltradas, ovenName);
+        renderizarCiclosDiariosHistorico(leiturasFiltradas, mod, ovenName);
+        renderizarTabelaLeiturasHistorico();
+    } catch (err) {
+        console.error("[Histórico] Erro ao consultar leituras do forno:", err);
+    }
+}
+
+function atualizarKPIsHistoricoForno(leituras, mod) {
+    const total = leituras.length;
+    if ($("kpiTotalQueimas")) $("kpiTotalQueimas").textContent = total.toLocaleString("pt-BR");
+
+    if (total === 0) {
+        if ($("kpiSubTotalLeituras")) $("kpiSubTotalLeituras").textContent = "Sem registros no período";
+        if ($("kpiPicoMedio")) $("kpiPicoMedio").textContent = "-- °C";
+        if ($("kpiSubPicoHora")) $("kpiSubPicoHora").textContent = "Sem leituras";
+        if ($("kpiTempoMedio")) $("kpiTempoMedio").textContent = "-- °C";
+        if ($("kpiSubMediaC2")) $("kpiSubMediaC2").textContent = "C2 Médio: -- °C";
+        if ($("kpiTaxaSucesso")) {
+            $("kpiTaxaSucesso").textContent = "Sem Dados";
+            $("kpiTaxaSucesso").className = "kpi-val text-muted";
+        }
+        if ($("histActiveModuleStatus")) $("histActiveModuleStatus").textContent = `Módulo #${mod} • Sem leituras no período`;
+        return;
+    }
+
+    let maxC1 = -Infinity;
+    let maxC1Date = null;
+    let somaC1 = 0, countC1 = 0;
+    let somaC2 = 0, countC2 = 0;
+
+    leituras.forEach(r => {
+        const c1 = numVal(r.canal_1);
+        const c2 = numVal(r.canal_2);
+        if (c1 !== null) {
+            somaC1 += c1;
+            countC1++;
+            if (c1 > maxC1) {
+                maxC1 = c1;
+                maxC1Date = r.created_at || r.data_hora;
+            }
+        }
+        if (c2 !== null) {
+            somaC2 += c2;
+            countC2++;
+        }
+    });
+
+    const mediaC1 = countC1 > 0 ? Math.round(somaC1 / countC1) : 0;
+    const mediaC2 = countC2 > 0 ? Math.round(somaC2 / countC2) : 0;
+
+    if ($("kpiPicoMedio")) $("kpiPicoMedio").textContent = maxC1 > -Infinity ? `${maxC1} °C` : "-- °C";
+    if ($("kpiSubPicoHora") && maxC1Date) {
+        const dt = new Date(maxC1Date);
+        $("kpiSubPicoHora").textContent = `Em ${dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} às ${dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+    }
+    if ($("kpiTempoMedio")) $("kpiTempoMedio").textContent = `${mediaC1} °C`;
+    if ($("kpiSubMediaC2")) $("kpiSubMediaC2").textContent = `Média C2 (Inf.): ${mediaC2} °C`;
+
+    // Verifica status da última transmissão do módulo
+    const ultima = leituras[0];
+    const ultTs = new Date(ultima.created_at || ultima.data_hora).getTime();
+    const diffMin = Math.round((Date.now() - ultTs) / 60000);
+    const online = diffMin <= 15;
+
+    if ($("kpiTaxaSucesso")) {
+        $("kpiTaxaSucesso").textContent = online ? "Operando" : "Em Espera";
+        $("kpiTaxaSucesso").className = `kpi-val ${online ? "text-green" : "text-orange"}`;
+    }
+    if ($("kpiSubStatusMod")) {
+        $("kpiSubStatusMod").textContent = online ? `Transmitindo (há ${Math.max(0, diffMin)}m)` : `Último envio em ${new Date(ultTs).toLocaleDateString("pt-BR")}`;
+    }
+    if ($("histActiveModuleStatus")) {
+        $("histActiveModuleStatus").textContent = `Módulo RS485 #${String(mod).padStart(2, "0")} • ${total} leituras`;
+    }
+}
+
+function atualizarReadoutGraficoHistorico(leitura) {
+    if (!leitura) {
+        if ($("histReadoutTime")) $("histReadoutTime").textContent = "Sem leituras";
+        if ($("histReadoutC1")) $("histReadoutC1").textContent = "-- °C";
+        if ($("histReadoutC2")) $("histReadoutC2").textContent = "-- °C";
+        if ($("histReadoutDelta")) $("histReadoutDelta").textContent = "-- °C";
+        return;
+    }
+    const dt = new Date(leitura.created_at || leitura.data_hora || leitura._ts);
+    const strDataHora = !isNaN(dt.getTime())
+        ? `${dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })} ${dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+        : "--";
+    const c1 = numVal(leitura.canal_1);
+    const c2 = numVal(leitura.canal_2);
+    const delta = (c1 !== null && c2 !== null) ? Math.round(Math.abs(c1 - c2)) : null;
+
+    if ($("histReadoutTime")) $("histReadoutTime").textContent = strDataHora;
+    if ($("histReadoutC1")) $("histReadoutC1").textContent = c1 !== null ? `${Math.round(c1)} °C` : "-- °C";
+    if ($("histReadoutC2")) $("histReadoutC2").textContent = c2 !== null ? `${Math.round(c2)} °C` : "-- °C";
+    if ($("histReadoutDelta")) $("histReadoutDelta").textContent = delta !== null ? `${delta} °C` : "-- °C";
+}
+
+function renderizarGraficoHistoricoForno(leituras, ovenName) {
+    const canvas = $("historicoFornoChartCanvas");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (historicoFornoChartInstance) {
+        historicoFornoChartInstance.destroy();
+        historicoFornoChartInstance = null;
+    }
+
+    // Amostragem O(K) direta sobre o array sem clonar nem reordenar dezenas de milhares de objetos
+    const total = leituras.length;
+    const maxPoints = 320;
+    const step = total > maxPoints ? Math.ceil(total / maxPoints) : 1;
+    const amostradas = [];
+
+    for (let i = total - 1; i >= 0; i -= step) {
+        const r = leituras[i];
+        const ts = r._ts || Date.parse(r.created_at || r.data_hora);
+        if (Number.isFinite(ts) && ts > 0) {
+            r._ts = ts;
+            amostradas.push(r);
+        }
+    }
+    if (total > 0 && amostradas.length > 0 && amostradas[amostradas.length - 1] !== leituras[0]) {
+        const ultimo = leituras[0];
+        ultimo._ts = ultimo._ts || Date.parse(ultimo.created_at || ultimo.data_hora);
+        if (Number.isFinite(ultimo._ts)) amostradas.push(ultimo);
+    }
+
+    // Atualiza o painel de inspeção inicial com a leitura mais recente do período
+    atualizarReadoutGraficoHistorico(amostradas.length > 0 ? amostradas[amostradas.length - 1] : null);
+
+    // Pontos (x = tempo em ms, y = temperatura em °C) para gráfico real Temperatura × Tempo
+    const pontosC1 = new Array(amostradas.length);
+    const pontosC2 = new Array(amostradas.length);
+    for (let i = 0; i < amostradas.length; i++) {
+        const r = amostradas[i];
+        pontosC1[i] = { x: r._ts, y: numVal(r.canal_1) };
+        pontosC2[i] = { x: r._ts, y: numVal(r.canal_2) };
+    }
+
+    // Calcula limites do eixo X (Tempo) conforme o período selecionado (7d, 15d, 30d, 60d, 90d, Custom) ou foco nas leituras
+    let minTimeMs = state.historicoWindowStartMs || (Date.now() - 7 * 86400000);
+    let maxTimeMs = state.historicoWindowEndMs || Date.now();
+
+    if (state.historicoModoEscalaTempo === "data" && amostradas.length > 0) {
+        minTimeMs = amostradas[0]._ts;
+        maxTimeMs = amostradas[amostradas.length - 1]._ts;
+        if (maxTimeMs - minTimeMs < 600000) {
+            minTimeMs -= 300000;
+            maxTimeMs += 300000;
+        }
+    }
+
+    const spanMs = Math.max(1, maxTimeMs - minTimeMs);
+    const spanDias = spanMs / 86400000;
+
+    const ctx = canvas.getContext("2d");
+    const gradC1 = ctx.createLinearGradient(0, 0, 0, 260);
+    gradC1.addColorStop(0, "rgba(249, 115, 22, 0.38)");
+    gradC1.addColorStop(1, "rgba(249, 115, 22, 0.0)");
+
+    const gradC2 = ctx.createLinearGradient(0, 0, 0, 260);
+    gradC2.addColorStop(0, "rgba(56, 189, 248, 0.28)");
+    gradC2.addColorStop(1, "rgba(56, 189, 248, 0.0)");
+
+    historicoFornoChartInstance = new Chart(ctx, {
+        type: "line",
+        data: {
+            datasets: [
+                {
+                    label: "Canal 1 (Superior °C)",
+                    data: pontosC1,
+                    borderColor: "#f97316",
+                    backgroundColor: gradC1,
+                    borderWidth: 2.2,
+                    pointRadius: amostradas.length > 80 ? 0 : 2.5,
+                    pointHoverRadius: 5,
+                    tension: 0.22,
+                    fill: true
+                },
+                {
+                    label: "Canal 2 (Inferior °C)",
+                    data: pontosC2,
+                    borderColor: "#38bdf8",
+                    backgroundColor: gradC2,
+                    borderWidth: 2,
+                    pointRadius: amostradas.length > 80 ? 0 : 2.5,
+                    pointHoverRadius: 5,
+                    tension: 0.22,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            parsing: false,
+            normalized: true,
+            animation: {
+                duration: 140
+            },
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: "nearest",
+                axis: "x",
+                intersect: false
+            },
+            onClick: (evt, elements) => {
+                if (elements && elements.length > 0) {
+                    const idx = elements[0].index;
+                    if (amostradas[idx]) atualizarReadoutGraficoHistorico(amostradas[idx]);
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: "#cbd5e1",
+                        font: { size: 11, weight: "600" },
+                        boxWidth: 12
+                    }
+                },
+                tooltip: {
+                    backgroundColor: "rgba(7, 27, 43, 0.95)",
+                    borderColor: "rgba(249, 115, 22, 0.45)",
+                    borderWidth: 1,
+                    titleColor: "#ffffff",
+                    bodyColor: "#e2e8f0",
+                    callbacks: {
+                        title: (items) => {
+                            if (!items || !items.length) return "";
+                            const ts = items[0].parsed.x;
+                            const d = new Date(ts);
+                            return `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })} às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+                        },
+                        label: (item) => {
+                            const val = item.parsed.y;
+                            return `${item.dataset.label}: ${val !== null && val !== undefined ? Math.round(val) + " °C" : "--"}`;
+                        }
+                    },
+                    external: (context) => {
+                        const tp = context.tooltip;
+                        if (tp && tp.dataPoints && tp.dataPoints.length > 0) {
+                            const idx = tp.dataPoints[0].dataIndex;
+                            if (amostradas[idx]) atualizarReadoutGraficoHistorico(amostradas[idx]);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: "linear",
+                    min: minTimeMs,
+                    max: maxTimeMs,
+                    title: {
+                        display: true,
+                        text: "Tempo (Data / Horário)",
+                        color: "#94a3b8",
+                        font: { size: 10, weight: "700" }
+                    },
+                    ticks: {
+                        color: "#94a3b8",
+                        font: { size: 10 },
+                        maxTicksLimit: 8,
+                        callback: (value) => {
+                            const d = new Date(Number(value));
+                            if (isNaN(d.getTime())) return "";
+                            const dia = String(d.getDate()).padStart(2, "0");
+                            const mes = String(d.getMonth() + 1).padStart(2, "0");
+                            if (spanDias <= 2) {
+                                const h = String(d.getHours()).padStart(2, "0");
+                                const m = String(d.getMinutes()).padStart(2, "0");
+                                return `${dia}/${mes} ${h}:${m}`;
+                            }
+                            if (spanDias <= 16) {
+                                return `${dia}/${mes} ${d.getHours()}h`;
+                            }
+                            return `${dia}/${mes}`;
+                        }
+                    },
+                    grid: {
+                        color: "rgba(255, 255, 255, 0.05)"
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: "Temperatura (°C)",
+                        color: "#94a3b8",
+                        font: { size: 10, weight: "700" }
+                    },
+                    ticks: {
+                        color: "#94a3b8",
+                        font: { size: 10 },
+                        callback: (v) => `${v}°C`
+                    },
+                    grid: {
+                        color: "rgba(255, 255, 255, 0.06)"
+                    }
+                }
+            }
+        }
+    });
+}
+
+function formatarHoraCurtaTs(ts) {
+    if (!Number.isFinite(ts) || ts <= 0) return "--:--";
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Agrupa as leituras do forno selecionado por Dia/Ciclo em passo único O(N) ultra-rápido
+ * e popula a Caixa de Registros Diários interativa
+ */
+function renderizarCiclosDiariosHistorico(leituras, mod, ovenName) {
     const container = $("listaQueimasHistorico");
     if (!container) return;
 
-    const availableOvens = state.ovens && state.ovens.length > 0 ? state.ovens : [];
-    if (filterContainer) {
-        const btnsHtml = [
-            `<button class="pill-btn ${state.historicoFornoFiltro === 'all' ? 'active' : ''}" onclick="filtrarHistoricoForno('all', this)">Todos</button>`,
-            ...availableOvens.map(o => {
-                const mod = Number(o.numero);
-                const isActive = state.historicoFornoFiltro === String(mod);
-                return `<button class="pill-btn ${isActive ? 'active' : ''}" onclick="filtrarHistoricoForno('${mod}', this)">${escapeHtml(o.nome || `Forno ${String(mod).padStart(2, '0')}`)}</button>`;
-            })
-        ].join("");
-        filterContainer.innerHTML = btnsHtml;
+    // Garante que a caixa de dias apareça e a visão de dia individual feche ao recarregar o forno/período
+    if (state.historicoModoVisao !== "table") {
+        $("histDailyBoxWrapper")?.classList.remove("hidden");
+        $("histSingleDayDetailBox")?.classList.add("hidden");
     }
 
-    const queimasBase = [
-        { id: "QUEIMA #54", lote: "LOTE-920", mod: 1, fornoNome: "Forno 01", data: "10/09/2026", horario: "06:15 às 15:00", duracao: "8h 45m", picoC1: 984, picoC2: 960, media: 742, delta: 24, status: "Concluída no Padrão" },
-        { id: "QUEIMA #53", lote: "LOTE-919", mod: 2, fornoNome: "Forno 02", data: "09/09/2026", horario: "07:00 às 15:30", duracao: "8h 30m", picoC1: 976, picoC2: 955, media: 735, delta: 21, status: "Concluída no Padrão" },
-        { id: "QUEIMA #52", lote: "LOTE-918", mod: 1, fornoNome: "Forno 01", data: "07/09/2026", horario: "06:30 às 15:45", duracao: "9h 15m", picoC1: 988, picoC2: 962, media: 748, delta: 26, status: "Concluída no Padrão" },
-        { id: "QUEIMA #51", lote: "LOTE-917", mod: 2, fornoNome: "Forno 02", data: "05/09/2026", horario: "06:00 às 14:45", duracao: "8h 45m", picoC1: 968, picoC2: 948, media: 729, delta: 20, status: "Concluída no Padrão" },
-        { id: "QUEIMA #50", lote: "LOTE-916", mod: 3, fornoNome: "Forno 03", data: "04/09/2026", horario: "08:00 às 16:30", duracao: "8h 30m", picoC1: 980, picoC2: 958, media: 738, delta: 22, status: "Concluída no Padrão" },
-        { id: "QUEIMA #49", lote: "LOTE-915", mod: 1, fornoNome: "Forno 01", data: "02/09/2026", horario: "06:15 às 15:15", duracao: "9h 00m", picoC1: 982, picoC2: 961, media: 740, delta: 21, status: "Concluída no Padrão" }
-    ];
-
-    const queimasAdaptadas = queimasBase.map(q => {
-        const found = availableOvens.find(o => Number(o.numero) === q.mod);
-        return {
-            ...q,
-            fornoNome: found ? (found.nome || `Forno ${String(q.mod).padStart(2, '0')}`) : q.fornoNome
-        };
-    });
-
-    const filtradas = state.historicoFornoFiltro === "all"
-        ? queimasAdaptadas
-        : queimasAdaptadas.filter(q => String(q.mod) === state.historicoFornoFiltro);
-
-    if ($("kpiTotalQueimas")) $("kpiTotalQueimas").textContent = `${filtradas.length}`;
-    if ($("kpiTempoMedio")) $("kpiTempoMedio").textContent = "8h 45m";
-    if ($("kpiTaxaSucesso")) $("kpiTaxaSucesso").textContent = "100%";
-    if ($("statHistoricoCount")) $("statHistoricoCount").textContent = `${filtradas.length} Ciclos`;
-
-    if (filtradas.length) {
-        const picos = filtradas.map(q => q.picoC1);
-        const avgPico = Math.round(picos.reduce((a, b) => a + b, 0) / picos.length);
-        if ($("kpiPicoMedio")) $("kpiPicoMedio").textContent = `${avgPico} °C`;
-    } else {
-        if ($("kpiPicoMedio")) $("kpiPicoMedio").textContent = "-- °C";
+    if ($("histTableCounterText")) {
+        $("histTableCounterText").textContent = `${leituras.length.toLocaleString("pt-BR")} leituras coletadas do ${ovenName} no período`;
     }
 
-    if (!filtradas.length) {
+    if (!leituras || leituras.length === 0) {
+        state.historicoGruposPorDia = new Map();
+        if ($("histDailyCountBadge")) $("histDailyCountBadge").textContent = "0 dias registrados";
         container.innerHTML = `
             <div class="loading-box" style="padding: 30px; text-align: center;">
                 <i class="fa-solid fa-clock-rotate-left" style="font-size: 32px; color: #f97316; margin-bottom: 10px;"></i>
-                <p style="color: #94a3b8; font-size: 13px;">Nenhuma queima registrada para este filtro.</p>
+                <p style="color: #94a3b8; font-size: 13px;">Nenhuma leitura encontrada para o <b>${escapeHtml(ovenName)}</b> neste período.</p>
             </div>
         `;
         return;
     }
 
-    container.innerHTML = filtradas.map(q => `
-        <article class="queima-card">
-            <div class="queima-card-top">
-                <div class="queima-card-title-group">
-                    <span class="queima-id-tag">${escapeHtml(q.id)} • ${escapeHtml(q.lote)}</span>
-                    <h3 class="queima-forno-nome">${escapeHtml(q.fornoNome)}</h3>
-                </div>
-                <span class="queima-status-badge">
-                    <i class="fa-solid fa-circle-check"></i>
-                    ${escapeHtml(q.status)}
-                </span>
-            </div>
+    // Agregação direta em passo único O(N) capturando Pico Máx, Pico Mín, Média e respectivos horários exatos
+    const gruposPorDia = new Map();
+    for (let i = 0; i < leituras.length; i++) {
+        const r = leituras[i];
+        const ts = r._ts || Date.parse(r.created_at || r.data_hora);
+        if (!Number.isFinite(ts) || ts <= 0) continue;
+        r._ts = ts;
 
-            <div class="queima-metrics-grid">
-                <div class="queima-metric-item">
-                    <span class="queima-metric-lbl">Duração</span>
-                    <strong class="queima-metric-val">${escapeHtml(q.duracao)}</strong>
-                </div>
-                <div class="queima-metric-item">
-                    <span class="queima-metric-lbl">Pico Máx</span>
-                    <strong class="queima-metric-val text-orange">${q.picoC1} °C</strong>
-                </div>
-                <div class="queima-metric-item">
-                    <span class="queima-metric-lbl">Média Ciclo</span>
-                    <strong class="queima-metric-val text-blue">${q.media} °C</strong>
-                </div>
-            </div>
+        const dt = new Date(ts);
+        const dia = String(dt.getDate()).padStart(2, "0");
+        const mes = String(dt.getMonth() + 1).padStart(2, "0");
+        const ano = dt.getFullYear();
+        const chaveDia = `${dia}/${mes}/${ano}`;
 
-            <div class="queima-cycle-bar">
-                <div class="queima-cycle-fill" style="width: 100%;"></div>
-            </div>
+        let g = gruposPorDia.get(chaveDia);
+        if (!g) {
+            g = {
+                count: 0,
+                picoC1: -Infinity,
+                picoC1Ts: ts,
+                minC1: Infinity,
+                minC1Ts: ts,
+                picoC2: -Infinity,
+                picoC2Ts: ts,
+                somaC1: 0,
+                countC1: 0,
+                mediaC1: 0,
+                mediaC1Ts: ts,
+                minTs: ts,
+                maxTs: ts,
+                rows: []
+            };
+            gruposPorDia.set(chaveDia, g);
+        }
+        g.count++;
+        g.rows.push(r);
+        if (ts < g.minTs) g.minTs = ts;
+        if (ts > g.maxTs) g.maxTs = ts;
 
-            <div class="queima-card-foot">
-                <span><i class="fa-regular fa-calendar" style="margin-right: 4px;"></i> ${escapeHtml(q.data)} • ${escapeHtml(q.horario)}</span>
-                <button class="queima-btn-action" onclick="abrirDetalheForno(${q.mod})">
-                    <i class="fa-solid fa-chart-line"></i>
-                    <span>Ver Análise</span>
-                </button>
-            </div>
-        </article>
-    `).join("");
+        const c1 = numVal(r.canal_1);
+        const c2 = numVal(r.canal_2);
+        if (c1 !== null) {
+            if (c1 > g.picoC1) {
+                g.picoC1 = c1;
+                g.picoC1Ts = ts;
+            }
+            if (c1 < g.minC1) {
+                g.minC1 = c1;
+                g.minC1Ts = ts;
+            }
+            g.somaC1 += c1;
+            g.countC1++;
+        }
+        if (c2 !== null && c2 > g.picoC2) {
+            g.picoC2 = c2;
+            g.picoC2Ts = ts;
+        }
+    }
+
+    state.historicoGruposPorDia = gruposPorDia;
+
+    if ($("histDailyCountBadge")) {
+        const totalDias = gruposPorDia.size;
+        $("histDailyCountBadge").textContent = `${totalDias} ${totalDias === 1 ? "dia registrado" : "dias registrados"}`;
+    }
+
+    const cardsHtml = [];
+    let indiceCiclo = gruposPorDia.size;
+
+    gruposPorDia.forEach((g, dataStr) => {
+        if (g.picoC1 === -Infinity) g.picoC1 = 0;
+        if (g.minC1 === Infinity) g.minC1 = 0;
+        if (g.picoC2 === -Infinity) g.picoC2 = 0;
+
+        const mediaC1 = g.countC1 > 0 ? Math.round(g.somaC1 / g.countC1) : 0;
+        g.mediaC1 = mediaC1;
+
+        // Identifica o horário exato em que a temperatura do dia esteve mais próxima da Média Térmica
+        let menorDiffMedia = Infinity;
+        let tsMedia = g.minTs;
+        for (let k = 0; k < g.rows.length; k++) {
+            const rk = g.rows[k];
+            const valC1 = numVal(rk.canal_1);
+            if (valC1 !== null) {
+                const diff = Math.abs(valC1 - mediaC1);
+                if (diff < menorDiffMedia) {
+                    menorDiffMedia = diff;
+                    tsMedia = rk._ts;
+                }
+            }
+        }
+        g.mediaC1Ts = tsMedia;
+        g.indiceCiclo = indiceCiclo;
+        g.mod = mod;
+        g.ovenName = ovenName;
+
+        const diffHoras = Math.max(0.05, (g.maxTs - g.minTs) / 3600000);
+        const hInt = Math.floor(diffHoras);
+        const mInt = Math.round((diffHoras - hInt) * 60);
+        const duracaoMonitorada = hInt > 0 ? `${hInt}h ${mInt}m` : `${Math.max(1, mInt)} min`;
+
+        const horaInicio = formatarHoraCurtaTs(g.minTs);
+        const horaFim = formatarHoraCurtaTs(g.maxTs);
+        const horaPicoMax = formatarHoraCurtaTs(g.picoC1Ts);
+        const horaMedia = formatarHoraCurtaTs(g.mediaC1Ts);
+        const horaPicoMin = formatarHoraCurtaTs(g.minC1Ts);
+
+        const statusCiclo = g.picoC1 >= 500 ? "Queima Ativa / Alta Temp." : (g.picoC1 >= 150 ? "Aquecimento / Resfriamento" : "Monitoramento Contínuo");
+
+        cardsHtml.push(`
+            <article class="queima-card clickable-day-card" onclick="inspecionarDiaHistorico('${dataStr}', ${indiceCiclo})">
+                <div class="queima-card-top">
+                    <div class="queima-card-title-group">
+                        <span class="queima-id-tag">REGISTRO DIÁRIO #${indiceCiclo} • MÓDULO ${String(mod).padStart(2, "0")}</span>
+                        <h3 class="queima-forno-nome">${escapeHtml(ovenName)} — ${escapeHtml(dataStr)}</h3>
+                    </div>
+                    <span class="queima-status-badge">
+                        <i class="fa-solid fa-circle-check"></i>
+                        ${escapeHtml(statusCiclo)}
+                    </span>
+                </div>
+
+                <div class="queima-metrics-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+                    <div class="queima-metric-item">
+                        <span class="queima-metric-lbl">Leituras no Dia</span>
+                        <strong class="queima-metric-val">${g.count.toLocaleString("pt-BR")} envios</strong>
+                    </div>
+                    <div class="queima-metric-item">
+                        <span class="queima-metric-lbl">Pico Máximo (C1)</span>
+                        <strong class="queima-metric-val text-orange">${g.picoC1} °C <small style="color:#fdba74;font-weight:600;">às ${horaPicoMax}</small></strong>
+                    </div>
+                    <div class="queima-metric-item">
+                        <span class="queima-metric-lbl">Média Térmica</span>
+                        <strong class="queima-metric-val text-blue">${mediaC1} °C <small style="color:#7dd3fc;font-weight:600;">às ${horaMedia}</small></strong>
+                    </div>
+                    <div class="queima-metric-item">
+                        <span class="queima-metric-lbl">Pico Mínimo (C1)</span>
+                        <strong class="queima-metric-val" style="color:#34d399;">${g.minC1} °C <small style="color:#6ee7b7;font-weight:600;">às ${horaPicoMin}</small></strong>
+                    </div>
+                </div>
+
+                <div class="queima-cycle-bar">
+                    <div class="queima-cycle-fill" style="width: ${Math.min(100, Math.max(15, Math.round((g.picoC1 / 1100) * 100)))}%;"></div>
+                </div>
+
+                <div class="queima-card-foot">
+                    <span><i class="fa-regular fa-clock" style="margin-right: 4px;"></i> ${horaInicio} às ${horaFim} (Janela: ${duracaoMonitorada})</span>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <button type="button" class="queima-btn-action" onclick="event.stopPropagation(); inspecionarDiaHistorico('${dataStr}', ${indiceCiclo})">
+                            <i class="fa-solid fa-magnifying-glass-chart"></i>
+                            <span>Ver Gráfico & Resumo do Dia</span>
+                        </button>
+                        <button type="button" class="queima-btn-action" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.12); color: #cbd5e1;" onclick="event.stopPropagation(); abrirDetalheForno(${mod})">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            <span>Abrir Tela do Forno</span>
+                        </button>
+                    </div>
+                </div>
+            </article>
+        `);
+        indiceCiclo--;
+    });
+
+    container.innerHTML = cardsHtml.join("");
 }
 
-function filtrarHistoricoForno(modulo, btn) {
-    state.historicoFornoFiltro = String(modulo);
-    document.querySelectorAll("#histFiltroForno .pill-btn").forEach(b => b.classList.remove("active"));
-    if (btn) btn.classList.add("active");
-    carregarHistoricoQueimas();
+/**
+ * Abre a visão detalhada de UM DIA ESPECÍFICO selecionado na Caixa de Registros Diários:
+ * Exibe o Gráfico exclusivo do dia + Cards de Pico Máximo, Média e Pico Mínimo com horários + Lista Resumida do Dia
+ */
+function inspecionarDiaHistorico(dataStr, indiceCiclo) {
+    const grupos = state.historicoGruposPorDia;
+    if (!grupos || !grupos.has(dataStr)) return;
+
+    const g = grupos.get(dataStr);
+    const mod = g.mod || Number(state.historicoFornoSelecionado || 1);
+    const ovenName = g.ovenName || `Forno ${String(mod).padStart(2, "0")}`;
+
+    $("histDailyBoxWrapper")?.classList.add("hidden");
+    const detailBox = $("histSingleDayDetailBox");
+    if (detailBox) {
+        detailBox.classList.remove("hidden");
+    }
+
+    const diffHoras = Math.max(0.05, (g.maxTs - g.minTs) / 3600000);
+    const hInt = Math.floor(diffHoras);
+    const mInt = Math.round((diffHoras - hInt) * 60);
+    const duracaoMonitorada = hInt > 0 ? `${hInt}h ${mInt}m` : `${Math.max(1, mInt)} min`;
+
+    const horaInicio = formatarHoraCurtaTs(g.minTs);
+    const horaFim = formatarHoraCurtaTs(g.maxTs);
+    const horaPicoMax = formatarHoraCurtaTs(g.picoC1Ts);
+    const horaMedia = formatarHoraCurtaTs(g.mediaC1Ts);
+    const horaPicoMin = formatarHoraCurtaTs(g.minC1Ts);
+    const horaPicoC2 = formatarHoraCurtaTs(g.picoC2Ts);
+
+    if ($("histDayDetailBadge")) {
+        $("histDayDetailBadge").textContent = `REGISTRO DIÁRIO #${indiceCiclo || g.indiceCiclo || 1} • MÓDULO ${String(mod).padStart(2, "0")}`;
+    }
+    if ($("histDayDetailTitle")) {
+        $("histDayDetailTitle").textContent = `${ovenName} — ${dataStr}`;
+    }
+    if ($("histDayDetailSub")) {
+        $("histDayDetailSub").textContent = `${g.count.toLocaleString("pt-BR")} leituras no dia • Janela monitorada: ${horaInicio} às ${horaFim} (${duracaoMonitorada})`;
+    }
+
+    // Preenche os 3 Cards de Destaques do Dia (Pico Máximo, Média Térmica, Pico Mínimo) com Horários Exatos
+    if ($("histDayMaxVal")) $("histDayMaxVal").textContent = `${g.picoC1} °C`;
+    if ($("histDayMaxTime")) $("histDayMaxTime").textContent = `às ${horaPicoMax}`;
+
+    if ($("histDayAvgVal")) $("histDayAvgVal").textContent = `${g.mediaC1} °C`;
+    if ($("histDayAvgTime")) $("histDayAvgTime").textContent = `às ${horaMedia}`;
+
+    if ($("histDayMinVal")) $("histDayMinVal").textContent = `${g.minC1} °C`;
+    if ($("histDayMinTime")) $("histDayMinTime").textContent = `às ${horaPicoMin}`;
+
+    // Renderiza o Gráfico exclusivo daquele dia
+    renderizarGraficoDiaEspecifico(g, dataStr, ovenName);
+
+    // Popula a Lista Resumida dos Principais Valores do Dia com seus respectivos horários
+    const summaryList = $("histDaySummaryList");
+    if (summaryList) {
+        // Agrupa também um ponto de referência por hora do dia (ordenada das 00h às 23h)
+        const leiturasAsc = g.rows.slice().sort((a, b) => a._ts - b._ts);
+        const marcosPorHora = new Map();
+        for (let i = 0; i < leiturasAsc.length; i++) {
+            const r = leiturasAsc[i];
+            const d = new Date(r._ts);
+            const hKey = d.getHours();
+            const c1 = numVal(r.canal_1) ?? 0;
+            const c2 = numVal(r.canal_2) ?? 0;
+            const atual = marcosPorHora.get(hKey);
+            // Guarda a leitura de maior temperatura dentro daquela hora para representar o marco horário
+            if (!atual || c1 >= atual.c1) {
+                marcosPorHora.set(hKey, {
+                    ts: r._ts,
+                    horaStr: formatarHoraCurtaTs(r._ts),
+                    c1,
+                    c2
+                });
+            }
+        }
+
+        const principaisMarcosHtml = [
+            `
+            <div class="hist-day-summary-row" style="border-color: rgba(249, 115, 22, 0.35); background: rgba(249, 115, 22, 0.08);">
+                <div class="hist-day-summary-left">
+                    <span class="hist-day-summary-tag max"><i class="fa-solid fa-fire-flame-curved"></i> Pico Máximo (C1)</span>
+                    <span class="hist-day-summary-desc">Maior temperatura registrada no Canal 1 neste dia</span>
+                </div>
+                <div class="hist-day-summary-right">
+                    <strong class="hist-day-summary-temp" style="color: #fb923c;">${g.picoC1} °C</strong>
+                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaPicoMax}</span>
+                </div>
+            </div>
+            `,
+            `
+            <div class="hist-day-summary-row" style="border-color: rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.08);">
+                <div class="hist-day-summary-left">
+                    <span class="hist-day-summary-tag avg"><i class="fa-solid fa-scale-balanced"></i> Média Térmica (C1)</span>
+                    <span class="hist-day-summary-desc">Temperatura média do dia e horário de referência na curva</span>
+                </div>
+                <div class="hist-day-summary-right">
+                    <strong class="hist-day-summary-temp" style="color: #38bdf8;">${g.mediaC1} °C</strong>
+                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaMedia}</span>
+                </div>
+            </div>
+            `,
+            `
+            <div class="hist-day-summary-row" style="border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08);">
+                <div class="hist-day-summary-left">
+                    <span class="hist-day-summary-tag min"><i class="fa-solid fa-temperature-arrow-down"></i> Pico Mínimo (C1)</span>
+                    <span class="hist-day-summary-desc">Menor temperatura registrada no Canal 1 neste dia</span>
+                </div>
+                <div class="hist-day-summary-right">
+                    <strong class="hist-day-summary-temp" style="color: #34d399;">${g.minC1} °C</strong>
+                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaPicoMin}</span>
+                </div>
+            </div>
+            `,
+            `
+            <div class="hist-day-summary-row">
+                <div class="hist-day-summary-left">
+                    <span class="hist-day-summary-tag avg" style="background: rgba(168, 85, 247, 0.16); color: #c084fc; border-color: rgba(168, 85, 247, 0.35);"><i class="fa-solid fa-layer-group"></i> Pico Canal 2 (Inf.)</span>
+                    <span class="hist-day-summary-desc">Maior temperatura registrada no Canal 2 (Inferior) no dia</span>
+                </div>
+                <div class="hist-day-summary-right">
+                    <strong class="hist-day-summary-temp" style="color: #c084fc;">${g.picoC2} °C</strong>
+                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaPicoC2}</span>
+                </div>
+            </div>
+            `
+        ];
+
+        // Adiciona os marcos horários enxutos do dia (1 linha por hora registrada)
+        marcosPorHora.forEach((m, horaNum) => {
+            const hLabel = `${String(horaNum).padStart(2, "0")}h`;
+            principaisMarcosHtml.push(`
+                <div class="hist-day-summary-row">
+                    <div class="hist-day-summary-left">
+                        <span class="hist-day-summary-tag step"><i class="fa-regular fa-clock"></i> Marco ${hLabel}</span>
+                        <span class="hist-day-summary-desc">C1 (Sup.): <b style="color:#fb923c;">${m.c1}°C</b> &nbsp;|&nbsp; C2 (Inf.): <b style="color:#38bdf8;">${m.c2}°C</b></span>
+                    </div>
+                    <div class="hist-day-summary-right">
+                        <strong class="hist-day-summary-temp">${m.c1} °C</strong>
+                        <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${m.horaStr}</span>
+                    </div>
+                </div>
+            `);
+        });
+
+        summaryList.innerHTML = principaisMarcosHtml.join("");
+    }
+
+    detailBox?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function fecharDetalheDiaHistorico() {
+    $("histSingleDayDetailBox")?.classList.add("hidden");
+    $("histDailyBoxWrapper")?.classList.remove("hidden");
+}
+
+/**
+ * Renderiza o gráfico linear Temperatura (°C) x Horário do Dia (HH:mm) exclusivo para o dia selecionado
+ */
+function renderizarGraficoDiaEspecifico(g, dataStr, ovenName) {
+    const canvas = $("historicoDiaChartCanvas");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (historicoDiaChartInstance) {
+        historicoDiaChartInstance.destroy();
+        historicoDiaChartInstance = null;
+    }
+
+    const ordenadas = (g.rows || []).slice().sort((a, b) => a._ts - b._ts);
+    if (ordenadas.length === 0) return;
+
+    const maxPoints = 350;
+    const step = Math.max(1, Math.ceil(ordenadas.length / maxPoints));
+    const amostradas = [];
+
+    for (let i = 0; i < ordenadas.length; i += step) {
+        amostradas.push(ordenadas[i]);
+    }
+    if (amostradas[amostradas.length - 1] !== ordenadas[ordenadas.length - 1]) {
+        amostradas.push(ordenadas[ordenadas.length - 1]);
+    }
+
+    const ptsC1 = [];
+    const ptsC2 = [];
+    for (let i = 0; i < amostradas.length; i++) {
+        const r = amostradas[i];
+        const ts = r._ts;
+        ptsC1.push({ x: ts, y: numVal(r.canal_1) ?? 0 });
+        ptsC2.push({ x: ts, y: numVal(r.canal_2) ?? 0 });
+    }
+
+    const readoutEl = $("histDayChartReadout");
+    if (readoutEl) {
+        readoutEl.innerHTML = `<i class="fa-solid fa-fire-flame-curved"></i> <span><b>${escapeHtml(dataStr)}</b> • Pico Máx: <b style="color:#fb923c">${g.picoC1}°C às ${formatarHoraCurtaTs(g.picoC1Ts)}</b> | Média: <b style="color:#38bdf8">${g.mediaC1}°C às ${formatarHoraCurtaTs(g.mediaC1Ts)}</b> | Mín: <b style="color:#34d399">${g.minC1}°C às ${formatarHoraCurtaTs(g.minC1Ts)}</b></span>`;
+    }
+
+    const ctx = canvas.getContext("2d");
+    const gradC1 = ctx.createLinearGradient(0, 0, 0, 250);
+    gradC1.addColorStop(0, "rgba(249, 115, 22, 0.36)");
+    gradC1.addColorStop(1, "rgba(249, 115, 22, 0.0)");
+
+    const gradC2 = ctx.createLinearGradient(0, 0, 0, 250);
+    gradC2.addColorStop(0, "rgba(56, 189, 248, 0.24)");
+    gradC2.addColorStop(1, "rgba(56, 189, 248, 0.0)");
+
+    historicoDiaChartInstance = new Chart(ctx, {
+        type: "line",
+        data: {
+            datasets: [
+                {
+                    label: `${ovenName} — Canal 1 (Superior °C)`,
+                    data: ptsC1,
+                    borderColor: "#f97316",
+                    backgroundColor: gradC1,
+                    borderWidth: 2.5,
+                    pointRadius: amostradas.length <= 50 ? 3 : 0,
+                    pointHoverRadius: 6,
+                    tension: 0.25,
+                    fill: true
+                },
+                {
+                    label: `${ovenName} — Canal 2 (Inferior °C)`,
+                    data: ptsC2,
+                    borderColor: "#38bdf8",
+                    backgroundColor: gradC2,
+                    borderWidth: 2,
+                    pointRadius: amostradas.length <= 50 ? 2.5 : 0,
+                    pointHoverRadius: 5,
+                    tension: 0.25,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 220 },
+            interaction: {
+                mode: "index",
+                intersect: false
+            },
+            onHover: (event, activeElements) => {
+                if (!readoutEl || !activeElements || activeElements.length === 0) return;
+                const idx = activeElements[0].index;
+                const p1 = ptsC1[idx];
+                const p2 = ptsC2[idx];
+                if (!p1) return;
+                const hStr = formatarHoraCurtaTs(p1.x);
+                const c1Val = p1.y ?? "--";
+                const c2Val = p2 ? (p2.y ?? "--") : "--";
+                readoutEl.innerHTML = `<i class="fa-regular fa-clock"></i> <span><b>${escapeHtml(dataStr)} às ${hStr}</b> &nbsp;•&nbsp; C1: <b style="color:#fb923c">${c1Val} °C</b> &nbsp;|&nbsp; C2: <b style="color:#38bdf8">${c2Val} °C</b></span>`;
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: "#cbd5e1",
+                        font: { size: 11, weight: "600" }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: "rgba(15, 23, 42, 0.96)",
+                    titleColor: "#ffffff",
+                    bodyColor: "#e2e8f0",
+                    borderColor: "rgba(249, 115, 22, 0.45)",
+                    borderWidth: 1,
+                    padding: 10,
+                    callbacks: {
+                        title: (items) => {
+                            if (!items || !items.length) return "";
+                            const ts = Number(items[0].parsed.x);
+                            return `${dataStr} — Horário: ${formatarHoraCurtaTs(ts)}`;
+                        },
+                        label: (ctxItem) => `${ctxItem.dataset.label}: ${ctxItem.parsed.y} °C`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: "linear",
+                    min: g.minTs,
+                    max: g.maxTs > g.minTs ? g.maxTs : g.minTs + 60000,
+                    title: {
+                        display: true,
+                        text: `Horário do Dia (${dataStr})`,
+                        color: "#94a3b8",
+                        font: { size: 10, weight: "700" }
+                    },
+                    ticks: {
+                        color: "#94a3b8",
+                        maxTicksLimit: 10,
+                        font: { size: 10 },
+                        callback: (val) => formatarHoraCurtaTs(Number(val))
+                    },
+                    grid: {
+                        color: "rgba(255, 255, 255, 0.04)"
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: "Temperatura (°C)",
+                        color: "#94a3b8",
+                        font: { size: 10, weight: "700" }
+                    },
+                    ticks: {
+                        color: "#94a3b8",
+                        font: { size: 10 },
+                        callback: (v) => `${v}°C`
+                    },
+                    grid: {
+                        color: "rgba(255, 255, 255, 0.06)"
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Renderiza a tabela paginada com todas as leituras coletadas do forno selecionado
+ */
+function renderizarTabelaLeiturasHistorico() {
+    const tbody = $("histRawTableBody");
+    const paginationBar = $("histPaginationBar");
+    if (!tbody) return;
+
+    const leituras = state.historicoLeiturasAtuais || [];
+    const pageSize = 50;
+    const totalPages = Math.max(1, Math.ceil(leituras.length / pageSize));
+    if (state.historicoPaginaTabela > totalPages) state.historicoPaginaTabela = totalPages;
+
+    const startIdx = (state.historicoPaginaTabela - 1) * pageSize;
+    const paginaAtual = leituras.slice(startIdx, startIdx + pageSize);
+
+    if (paginaAtual.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align: center; padding: 24px; color: #94a3b8;">
+                    Nenhuma leitura encontrada para o período selecionado.
+                </td>
+            </tr>
+        `;
+        if (paginationBar) paginationBar.innerHTML = "";
+        return;
+    }
+
+    tbody.innerHTML = paginaAtual.map(r => {
+        const dt = new Date(r.created_at || r.data_hora);
+        const dataHoraStr = !isNaN(dt.getTime())
+            ? `${dt.toLocaleDateString("pt-BR")} ${dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+            : "--";
+        const mod = Number(r.modulo_alutal || r.forno_id || state.historicoFornoSelecionado || 1);
+        const c1 = numVal(r.canal_1);
+        const c2 = numVal(r.canal_2);
+        const delta = (c1 !== null && c2 !== null) ? Math.abs(c1 - c2) : null;
+
+        return `
+            <tr>
+                <td style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${escapeHtml(dataHoraStr)}</td>
+                <td><span class="badge-mod" style="color:#38bdf8; font-weight:700;">Mód. ${String(mod).padStart(2, "0")}</span></td>
+                <td class="text-orange" style="font-weight: 800;">${c1 !== null ? `${c1} °C` : "--"}</td>
+                <td class="text-blue" style="font-weight: 800;">${c2 !== null ? `${c2} °C` : "--"}</td>
+                <td style="color: #a78bfa; font-weight: 700;">${delta !== null ? `${delta} °C` : "--"}</td>
+                <td><span style="color: #34d399; font-size: 11px; font-weight: 700;"><i class="fa-solid fa-check-circle"></i> OK</span></td>
+            </tr>
+        `;
+    }).join("");
+
+    if (paginationBar) {
+        paginationBar.innerHTML = `
+            <span>Mostrando ${startIdx + 1}–${Math.min(startIdx + pageSize, leituras.length)} de ${leituras.length} leituras</span>
+            <div style="display: flex; gap: 6px;">
+                <button type="button" class="hist-page-btn" ${state.historicoPaginaTabela <= 1 ? "disabled" : ""} onclick="mudarPaginaTabelaHistorico(-1)">
+                    <i class="fa-solid fa-chevron-left"></i> Anterior
+                </button>
+                <span style="padding: 5px 8px; color: #ffffff; font-weight: 700;">Pág. ${state.historicoPaginaTabela} / ${totalPages}</span>
+                <button type="button" class="hist-page-btn" ${state.historicoPaginaTabela >= totalPages ? "disabled" : ""} onclick="mudarPaginaTabelaHistorico(1)">
+                    Próxima <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        `;
+    }
+}
+
+function mudarPaginaTabelaHistorico(delta) {
+    state.historicoPaginaTabela = Math.max(1, (state.historicoPaginaTabela || 1) + delta);
+    renderizarTabelaLeiturasHistorico();
+}
+
+function exportarCSVHistoricoForno() {
+    const leituras = state.historicoLeiturasAtuais || [];
+    if (!leituras.length) {
+        alert("Não há leituras carregadas neste período para exportar.");
+        return;
+    }
+    const mod = state.historicoFornoSelecionado || 1;
+    const linhas = ["Data_Hora;Modulo_RS485;Serial;Canal_1_Superior_C;Canal_2_Inferior_C;Delta_C"];
+    leituras.forEach(r => {
+        const dt = new Date(r.created_at || r.data_hora);
+        const dtStr = !isNaN(dt.getTime()) ? dt.toLocaleString("pt-BR") : "";
+        const c1 = numVal(r.canal_1) ?? "";
+        const c2 = numVal(r.canal_2) ?? "";
+        const delta = (c1 !== "" && c2 !== "") ? Math.abs(c1 - c2) : "";
+        linhas.push(`${dtStr};${r.modulo_alutal || r.forno_id || mod};${r.numero_serie || ""};${c1};${c2};${delta}`);
+    });
+
+    const blob = new Blob(["\uFEFF" + linhas.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `historico_forno_${String(mod).padStart(2, "0")}_${state.historicoPeriodoDias}d.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // ==========================================================================
@@ -2482,9 +3762,18 @@ window.ThermoSetpoints = {
 
     async carregarDoSupabase() {
         try {
-            const { data, error } = await sb
+            let query = sb
                 .from("fornos")
-                .select("id, modulo_alutal, numero, nome, setpoint_1, setpoint_2, novo_setpoint_1, novo_setpoint_2, setpoint_pendente, comando_setpoint, setpoint_atualizado_em");
+                .select("id, modulo_alutal, numero, nome, ceramica_id, dispositivo_id, setpoint_1, setpoint_2, novo_setpoint_1, novo_setpoint_2, setpoint_pendente, comando_setpoint, setpoint_atualizado_em");
+
+            const cid = state.currentUser?.ceramicaId || null;
+            if (cid) {
+                query = query.eq("ceramica_id", cid);
+            } else if (state.allowedDeviceIds && state.allowedDeviceIds.length > 0) {
+                query = query.in("dispositivo_id", state.allowedDeviceIds);
+            }
+
+            const { data, error } = await query;
 
             if (!error && Array.isArray(data) && data.length > 0) {
                 data.forEach(item => {
@@ -2788,8 +4077,8 @@ window.ThermoSetpoints = {
                                 <div class="getsp-val" id="modalDispGetSp2">-- °C</div>
                             </div>
                         </div>
-                        <button type="button" class="btn-query-getsp" onclick="solicitarLeituraSetpoint()">
-                            <i class="fa-solid fa-rotate"></i> Consultar Módulo (GETSP ${mod})
+                        <button type="button" class="btn-query-getsp" id="modalBtnQueryGetsp" onclick="solicitarLeituraSetpoint(${mod})">
+                            <i class="fa-solid fa-rotate" id="modalIconGetspSpin"></i> <span id="modalLblBtnGetsp">Consultar Módulo (GETSP ${mod})</span>
                         </button>
                     </div>
 
@@ -2821,11 +4110,15 @@ window.ThermoSetpoints = {
         }
 
         if (modal) modal.classList.remove("hidden");
+        window._modalSpEditadoPeloUsuario = false;
+        window._setpointEnvioEmAndamento = false;
         this.sincronizarModalSeAberto();
+        solicitarLeituraSetpoint(mod);
     },
 
     fecharModal() {
         $("modalSetpoints")?.classList.add("hidden");
+        window._modalSpEditadoPeloUsuario = false;
     },
 
     sincronizarModalSeAberto() {
@@ -2841,11 +4134,13 @@ window.ThermoSetpoints = {
 
         const mInp1 = $("modalInpSetSp1");
         const mInp2 = $("modalInpSetSp2");
-        if (mInp1 && document.activeElement !== mInp1) mInp1.value = data.novoSp1 || data.sp1 || 650;
-        if (mInp2 && document.activeElement !== mInp2) mInp2.value = data.novoSp2 || data.sp2 || 900;
+        if (!window._modalSpEditadoPeloUsuario && !window._setpointEnvioEmAndamento) {
+            if (mInp1 && document.activeElement !== mInp1) mInp1.value = data.novoSp1 || data.sp1 || 650;
+            if (mInp2 && document.activeElement !== mInp2) mInp2.value = data.novoSp2 || data.sp2 || 900;
+        }
 
         const btnLbl = $("modalBtnGravarLbl");
-        if (btnLbl) {
+        if (btnLbl && !window._setpointEnvioEmAndamento) {
             const v1 = mInp1?.value || 650;
             const v2 = mInp2?.value || 900;
             btnLbl.textContent = `Gravar no Módulo (SETSP ${mod} ${v1} ${v2})`;
@@ -2853,6 +4148,7 @@ window.ThermoSetpoints = {
     },
 
     sincronizarModalInputs(canal, val) {
+        window._modalSpEditadoPeloUsuario = true;
         if (canal === 1) {
             if ($("inpSetSp1")) $("inpSetSp1").value = val;
             if ($("inpNovoSetpoint1")) $("inpNovoSetpoint1").value = val;
@@ -2991,13 +4287,17 @@ async function garantirFornoExiste(modulo, novoSp1 = 650, novoSp2 = 900, comando
 }
 
 // 1. SOLICITAR LEITURA DE SETPOINT DO APARELHO (GETSP)
-async function solicitarLeituraSetpoint() {
+async function solicitarLeituraSetpoint(moduloExplicito) {
     const sel = $("selModuloSetpoint") || $("selModuloSetpoints");
-    const mod = Number(sel?.value) || state.selectedModule || 1;
+    const mod = Number(moduloExplicito) || Number(sel?.value) || window.ThermoSetpoints?.currentModule || state.analysisModule || state.selectedModule || 1;
 
-    const btn = $("btnSolicitarLeitura") || $("btnConsultarGetsp");
-    const icon = $("iconSpinLeitura") || $("iconGetspSpin");
-    const lbl = $("lblBtnSolicitarLeitura") || $("lblBtnGetsp");
+    if (window.ThermoSetpoints) {
+        window.ThermoSetpoints.currentModule = mod;
+    }
+
+    const btn = $("btnSolicitarLeitura") || $("btnConsultarGetsp") || $("modalBtnQueryGetsp");
+    const icon = $("iconSpinLeitura") || $("iconGetspSpin") || $("modalIconGetspSpin");
+    const lbl = $("lblBtnSolicitarLeitura") || $("lblBtnGetsp") || $("modalLblBtnGetsp");
     const badge = $("badgeStatusSetpoint") || $("cfgSpBadgeStatus");
     const feedback = $("setpointLiveFeedback");
     const feedbackText = $("setpointLiveFeedbackText");
@@ -3025,7 +4325,20 @@ async function solicitarLeituraSetpoint() {
     let fornoId = null;
     try {
         const forno = await garantirFornoExiste(mod, 650, 900, 'GETSP', true);
-        if (forno) fornoId = forno.id;
+        if (forno) {
+            fornoId = forno.id;
+            // Já exibe imediatamente o último valor registrado deste módulo específico no banco enquanto aguarda a leitura física
+            if (window.ThermoSetpoints && (forno.setpoint_1 !== undefined || forno.setpoint_2 !== undefined)) {
+                const c = window.ThermoSetpoints.obterDadosModulo(mod);
+                if (forno.setpoint_1 !== null && forno.setpoint_1 !== undefined) c.sp1 = Number(forno.setpoint_1);
+                if (forno.setpoint_2 !== null && forno.setpoint_2 !== undefined) c.sp2 = Number(forno.setpoint_2);
+                c.novoSp1 = c.sp1;
+                c.novoSp2 = c.sp2;
+                window.ThermoSetpoints.salvarCacheLocal();
+                window.ThermoSetpoints.sincronizarModalSeAberto();
+                window.ThermoSetpoints.atualizarResumoForno(mod);
+            }
+        }
 
         const updateData = {
             comando_setpoint: "GETSP",
@@ -3083,26 +4396,36 @@ async function solicitarLeituraSetpoint() {
                     if ($("lblSetpointUltimaLeitura")) $("lblSetpointUltimaLeitura").textContent = horaAtual;
                     if ($("dispGetSp1")) $("dispGetSp1").textContent = `${sp1} °C`;
                     if ($("dispGetSp2")) $("dispGetSp2").textContent = `${sp2} °C`;
+                    if ($("modalDispGetSp1")) $("modalDispGetSp1").textContent = `${sp1} °C`;
+                    if ($("modalDispGetSp2")) $("modalDispGetSp2").textContent = `${sp2} °C`;
+                    if ($("modalSpTime")) $("modalSpTime").textContent = horaAtual;
 
-                    // Preenche os inputs de edição com os valores reais lidos do aparelho
-                    if ($("inpNovoSetpoint1")) $("inpNovoSetpoint1").value = sp1;
-                    if ($("inpNovoSetpoint2")) $("inpNovoSetpoint2").value = sp2;
-                    if ($("inpSetSp1")) $("inpSetSp1").value = sp1;
-                    if ($("inpSetSp2")) $("inpSetSp2").value = sp2;
-
-                    atualizarLabelBotaoGravar();
+                    // Preenche os inputs de edição com os valores reais lidos do aparelho (apenas se o usuário não estiver digitando um novo valor)
+                    if (!window._modalSpEditadoPeloUsuario && !window._setpointEnvioEmAndamento) {
+                        if ($("inpNovoSetpoint1")) $("inpNovoSetpoint1").value = sp1;
+                        if ($("inpNovoSetpoint2")) $("inpNovoSetpoint2").value = sp2;
+                        if ($("inpSetSp1")) $("inpSetSp1").value = sp1;
+                        if ($("inpSetSp2")) $("inpSetSp2").value = sp2;
+                        if ($("modalInpSetSp1") && document.activeElement !== $("modalInpSetSp1")) $("modalInpSetSp1").value = sp1;
+                        if ($("modalInpSetSp2") && document.activeElement !== $("modalInpSetSp2")) $("modalInpSetSp2").value = sp2;
+                        atualizarLabelBotaoGravar();
+                    }
 
                     // Atualiza cache e logs
                     if (window.ThermoSetpoints) {
                         const c = window.ThermoSetpoints.obterDadosModulo(mod);
                         c.sp1 = sp1;
                         c.sp2 = sp2;
-                        c.novoSp1 = sp1;
-                        c.novoSp2 = sp2;
+                        if (!window._modalSpEditadoPeloUsuario && !window._setpointEnvioEmAndamento) {
+                            c.novoSp1 = sp1;
+                            c.novoSp2 = sp2;
+                        }
                         c.updatedAt = horaAtual;
                         c.pendenteLeitura = false;
                         window.ThermoSetpoints.salvarCacheLocal();
                         window.ThermoSetpoints.renderizar();
+                        window.ThermoSetpoints.sincronizarModalSeAberto();
+                        window.ThermoSetpoints.atualizarResumoForno(mod);
                         window.ThermoSetpoints.adicionarLog(`<< [GETSP] Módulo ${mod} confirmado no aparelho: SP1=${sp1}°C | SP2=${sp2}°C`, "cmd-rx");
                     }
 
@@ -3118,7 +4441,7 @@ async function solicitarLeituraSetpoint() {
 
                     if (btn) btn.disabled = false;
                     if (icon) icon.classList.remove("fa-spin");
-                    if (lbl) lbl.textContent = `Ler do Aparelho (GETSP ${mod})`;
+                    if (lbl) lbl.textContent = `Consultar Módulo (GETSP ${mod})`;
                     return;
                 } else if (cmd === "ERRO") {
                     clearInterval(window._setpointPollingTimer);
@@ -3136,7 +4459,7 @@ async function solicitarLeituraSetpoint() {
 
                     if (btn) btn.disabled = false;
                     if (icon) icon.classList.remove("fa-spin");
-                    if (lbl) lbl.textContent = `Ler do Aparelho (GETSP ${mod})`;
+                    if (lbl) lbl.textContent = `Consultar Módulo (GETSP ${mod})`;
                     return;
                 }
             }
@@ -3150,7 +4473,7 @@ async function solicitarLeituraSetpoint() {
 
             if (btn) btn.disabled = false;
             if (icon) icon.classList.remove("fa-spin");
-            if (lbl) lbl.textContent = `Ler do Aparelho (GETSP ${mod})`;
+            if (lbl) lbl.textContent = `Consultar Módulo (GETSP ${mod})`;
 
             if (badge) {
                 badge.className = "setpoints-badge-status";
@@ -3182,9 +4505,23 @@ async function enviarNovoSetpoint() {
         return;
     }
 
-    const btn = $("btnEnviarNovoSetpoint") || $("btnGravarSetsp");
+    // Cancela qualquer polling de GETSP anterior para não conflitar com a gravação SETSP
+    if (window._setpointPollingTimer) {
+        clearInterval(window._setpointPollingTimer);
+        window._setpointPollingTimer = null;
+    }
+    const btnGet = $("btnSolicitarLeitura") || $("btnConsultarGetsp") || $("modalBtnQueryGetsp");
+    const iconGet = $("iconSpinLeitura") || $("iconGetspSpin") || $("modalIconGetspSpin");
+    const lblGet = $("lblBtnSolicitarLeitura") || $("lblBtnGetsp") || $("modalLblBtnGetsp");
+    if (btnGet) btnGet.disabled = false;
+    if (iconGet) iconGet.classList.remove("fa-spin");
+    if (lblGet) lblGet.textContent = `Consultar Módulo (GETSP ${mod})`;
+
+    window._setpointEnvioEmAndamento = true;
+
+    const btn = $("btnEnviarNovoSetpoint") || $("btnGravarSetsp") || $("modalBtnGravar");
     const icon = $("iconSpinGravar") || $("iconBtnSetsp");
-    const lbl = $("lblBtnEnviarNovoSetpoint") || $("lblBtnSetspGravar");
+    const lbl = $("lblBtnEnviarNovoSetpoint") || $("lblBtnSetspGravar") || $("modalBtnGravarLbl");
     const badge = $("badgeStatusSetpoint") || $("cfgSpBadgeStatus");
     const feedback = $("setpointLiveFeedback");
     const feedbackText = $("setpointLiveFeedbackText");
@@ -3261,11 +4598,31 @@ async function enviarNovoSetpoint() {
                 const cmd = data.comando_setpoint || "";
 
                 if (cmd === "SUCESSO" && !pendente) {
-                    clearInterval(window._setpointPollingTimer);
-                    window._setpointPollingTimer = null;
-
                     const sp1Confirmado = data.setpoint_1 !== null ? Number(data.setpoint_1) : sp1;
                     const sp2Confirmado = data.setpoint_2 !== null ? Number(data.setpoint_2) : sp2;
+
+                    // Se um GETSP antigo respondeu exatamente quando o usuário clicou em SETSP (valores diferentes dos solicitados nas primeiras tentativas), reenvia o SETSP
+                    if ((sp1Confirmado !== sp1 || sp2Confirmado !== sp2) && tentativas <= 3) {
+                        const retryData = {
+                            novo_setpoint_1: sp1,
+                            novo_setpoint_2: sp2,
+                            comando_setpoint: "SETSP",
+                            setpoint_pendente: true,
+                            setpoint_atualizado_em: new Date().toISOString()
+                        };
+                        if (fornoId) {
+                            await sb.from("fornos").update(retryData).eq("id", fornoId);
+                        } else {
+                            await sb.from("fornos").update(retryData).eq("modulo_alutal", mod);
+                        }
+                        return;
+                    }
+
+                    clearInterval(window._setpointPollingTimer);
+                    window._setpointPollingTimer = null;
+                    window._setpointEnvioEmAndamento = false;
+                    window._modalSpEditadoPeloUsuario = false;
+
                     const horaAtual = data.setpoint_atualizado_em
                         ? new Date(data.setpoint_atualizado_em).toLocaleTimeString("pt-BR")
                         : new Date().toLocaleTimeString("pt-BR");
@@ -3276,6 +4633,9 @@ async function enviarNovoSetpoint() {
                     if ($("lblSetpointUltimaLeitura")) $("lblSetpointUltimaLeitura").textContent = horaAtual;
                     if ($("dispGetSp1")) $("dispGetSp1").textContent = `${sp1Confirmado} °C`;
                     if ($("dispGetSp2")) $("dispGetSp2").textContent = `${sp2Confirmado} °C`;
+                    if ($("modalDispGetSp1")) $("modalDispGetSp1").textContent = `${sp1Confirmado} °C`;
+                    if ($("modalDispGetSp2")) $("modalDispGetSp2").textContent = `${sp2Confirmado} °C`;
+                    if ($("modalSpTime")) $("modalSpTime").textContent = horaAtual;
 
                     // Atualiza cache
                     if (window.ThermoSetpoints) {
@@ -3288,6 +4648,7 @@ async function enviarNovoSetpoint() {
                         c.pendenteGravacao = false;
                         window.ThermoSetpoints.salvarCacheLocal();
                         window.ThermoSetpoints.renderizar();
+                        window.ThermoSetpoints.sincronizarModalSeAberto();
                         window.ThermoSetpoints.atualizarResumoForno(mod);
                         window.ThermoSetpoints.adicionarLog(`<< [SETSP] Módulo ${mod} gravado e confirmado! SP1=${sp1Confirmado}°C | SP2=${sp2Confirmado}°C`, "cmd-rx");
                     }
@@ -3309,6 +4670,7 @@ async function enviarNovoSetpoint() {
                 } else if (cmd === "ERRO") {
                     clearInterval(window._setpointPollingTimer);
                     window._setpointPollingTimer = null;
+                    window._setpointEnvioEmAndamento = false;
 
                     if (badge) {
                         badge.className = "setpoints-badge-status is-error";
@@ -3333,6 +4695,7 @@ async function enviarNovoSetpoint() {
         if (tentativas >= maxTentativas) {
             clearInterval(window._setpointPollingTimer);
             window._setpointPollingTimer = null;
+            window._setpointEnvioEmAndamento = false;
 
             if (btn) btn.disabled = false;
             if (icon) icon.className = "fa-solid fa-bolt";
@@ -3381,9 +4744,9 @@ function aoMudarModuloSetpoint(modulo) {
 // 5. ATUALIZA RÓTULO DO BOTÃO DE GRAVAÇÃO
 function atualizarLabelBotaoGravar() {
     const sel = $("selModuloSetpoint") || $("selModuloSetpoints");
-    const mod = Number(sel?.value) || state.selectedModule || 1;
-    const inp1 = $("inpNovoSetpoint1") || $("inpSetSp1");
-    const inp2 = $("inpNovoSetpoint2") || $("inpSetSp2");
+    const mod = Number(sel?.value) || window.ThermoSetpoints?.currentModule || state.analysisModule || state.selectedModule || 1;
+    const inp1 = $("inpNovoSetpoint1") || $("inpSetSp1") || $("modalInpSetSp1");
+    const inp2 = $("inpNovoSetpoint2") || $("inpSetSp2") || $("modalInpSetSp2");
 
     const sp1 = inp1?.value || 650;
     const sp2 = inp2?.value || 900;
@@ -3391,6 +4754,11 @@ function atualizarLabelBotaoGravar() {
     const lbl = $("lblBtnEnviarNovoSetpoint");
     if (lbl) {
         lbl.textContent = `Gravar no Aparelho (SETSP ${mod} ${sp1} ${sp2})`;
+    }
+
+    const modalLbl = $("modalBtnGravarLbl");
+    if (modalLbl) {
+        modalLbl.textContent = `Gravar no Módulo (SETSP ${mod} ${sp1} ${sp2})`;
     }
 
     if (window.ThermoSetpoints) {
@@ -3484,6 +4852,8 @@ window.aoMudarModuloSetpoint = aoMudarModuloSetpoint;
 window.atualizarLabelBotaoGravar = atualizarLabelBotaoGravar;
 window.aplicarPresetRapido = aplicarPresetRapido;
 window.sincronizarPainelSetpointsAnalise = sincronizarPainelSetpointsAnalise;
+window.inspecionarDiaHistorico = inspecionarDiaHistorico;
+window.fecharDetalheDiaHistorico = fecharDetalheDiaHistorico;
 
 // Inicialização automática após carregamento da página
 if (typeof document !== "undefined") {

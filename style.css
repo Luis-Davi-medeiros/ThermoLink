@@ -2834,9 +2834,9 @@ button {
     color: #ffffff;
 }
 
-.chart-tool-btn:active {
-    transform: scale(0.92);
-    background: rgba(244, 123, 32, 0.35);
+.chart-tool-btn:active,
+.chart-tool-btn.active {
+    background: rgba(244, 123, 32, 0.28);
     border-color: var(--orange);
     color: #ffffff;
 }
@@ -3801,6 +3801,668 @@ button {
     background: rgba(239, 68, 68, 0.15);
     border: 1px solid rgba(239, 68, 68, 0.4);
     color: #f87171;
+}
+
+/* ==========================================================================
+   NOVA ABA DE HISTÓRICO DE QUEIMA DINÂMICO (PASSOS 1, 2 & 3)
+   ========================================================================== */
+.hist-step-card {
+    margin-bottom: 14px;
+    border: 1px solid rgba(244, 123, 32, 0.22);
+    background: linear-gradient(155deg, rgba(13, 40, 60, 0.92) 0%, var(--card) 100%);
+}
+
+.hist-step-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.hist-step-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--orange-light);
+    background: rgba(244, 123, 32, 0.14);
+    border: 1px solid rgba(244, 123, 32, 0.3);
+    padding: 3px 8px;
+    border-radius: 6px;
+    margin-bottom: 5px;
+}
+
+.hist-step-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0 0 3px 0;
+}
+
+.hist-step-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.btn-hist-refresh {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #cbd5e1;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.btn-hist-refresh:hover {
+    background: rgba(244, 123, 32, 0.2);
+    border-color: var(--orange);
+    color: #ffffff;
+}
+
+.hist-ovens-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+@media (min-width: 560px) {
+    .hist-ovens-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.hist-oven-select-card {
+    background: rgba(4, 18, 29, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    padding: 12px;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.18s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.hist-oven-select-card:hover {
+    border-color: rgba(244, 123, 32, 0.45);
+    transform: translateY(-2px);
+    background: rgba(13, 40, 60, 0.85);
+}
+
+.hist-oven-select-card.active {
+    background: linear-gradient(145deg, rgba(244, 123, 32, 0.22) 0%, rgba(13, 40, 60, 0.95) 100%);
+    border: 1.5px solid var(--orange);
+    box-shadow: 0 4px 18px rgba(244, 123, 32, 0.22);
+}
+
+.hist-oven-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.hist-oven-icon-box {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: rgba(244, 123, 32, 0.15);
+    color: var(--orange-light);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.hist-oven-select-card.active .hist-oven-icon-box {
+    background: var(--orange);
+    color: #ffffff;
+}
+
+.hist-oven-status-dot {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.hist-oven-status-dot.online {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.hist-oven-status-dot.standby {
+    background: rgba(148, 163, 184, 0.12);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.hist-oven-card-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0;
+}
+
+.hist-oven-card-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    font-feature-settings: "tnum";
+}
+
+.hist-oven-card-temps {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hist-period-card {
+    margin-bottom: 14px;
+    padding: 14px;
+}
+
+.hist-period-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hist-selected-oven-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.hist-oven-pill {
+    background: rgba(244, 123, 32, 0.18);
+    border: 1px solid rgba(244, 123, 32, 0.4);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 4px 11px;
+    border-radius: 9px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.hist-oven-pill i {
+    color: var(--orange-light);
+}
+
+.hist-module-status {
+    font-size: 11px;
+    font-weight: 700;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    padding: 3px 9px;
+    border-radius: 8px;
+}
+
+.hist-period-range-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+}
+
+.hist-custom-date-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    align-items: end;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+@media (max-width: 520px) {
+    .hist-custom-date-box {
+        grid-template-columns: 1fr 1fr;
+    }
+    .btn-hist-apply-date {
+        grid-column: span 2;
+    }
+}
+
+.hist-date-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.hist-date-field label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.hist-date-input {
+    background: rgba(4, 18, 29, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 9px;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 10px;
+    outline: none;
+    font-family: inherit;
+}
+
+.hist-date-input:focus {
+    border-color: var(--orange);
+}
+
+.btn-hist-apply-date {
+    background: linear-gradient(135deg, var(--orange) 0%, #ea580c 100%);
+    border: none;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 9px 14px;
+    border-radius: 9px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.hist-chart-card {
+    margin-bottom: 14px;
+    padding: 14px;
+}
+
+.hist-chart-header,
+.hist-readings-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.hist-section-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0 0 3px 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.hist-section-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.btn-hist-export {
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #34d399;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 6px 11px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+}
+
+.btn-hist-export:hover {
+    background: rgba(16, 185, 129, 0.25);
+    color: #ffffff;
+}
+
+.hist-canvas-container {
+    position: relative;
+    width: 100%;
+    height: 250px;
+}
+
+.hist-readings-card {
+    padding: 14px;
+    margin-bottom: 20px;
+}
+
+.hist-view-switcher {
+    display: inline-flex;
+    background: rgba(4, 18, 29, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 4px;
+}
+
+.hist-switch-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s ease;
+}
+
+.hist-switch-btn.active {
+    background: var(--orange);
+    color: #ffffff;
+}
+
+.hist-pagination-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+
+.hist-page-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 11px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+.hist-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* CAIXA DE REGISTROS DIÁRIOS E INSPEÇÃO DO DIA SELECIONADO */
+.hist-daily-box-wrapper {
+    background: rgba(4, 18, 29, 0.65);
+    border: 1px solid rgba(244, 123, 32, 0.28);
+    border-radius: 16px;
+    padding: 12px;
+    box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+.hist-daily-box-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 4px 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 11px;
+    font-weight: 600;
+    color: #cbd5e1;
+    flex-wrap: wrap;
+}
+
+.hist-daily-count-pill {
+    background: rgba(244, 123, 32, 0.16);
+    border: 1px solid rgba(244, 123, 32, 0.35);
+    color: var(--orange-light);
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.hist-daily-scroll-box {
+    max-height: 430px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.hist-daily-scroll-box::-webkit-scrollbar {
+    width: 6px;
+}
+
+.hist-daily-scroll-box::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+}
+
+.hist-daily-scroll-box::-webkit-scrollbar-thumb {
+    background: rgba(244, 123, 32, 0.4);
+    border-radius: 6px;
+}
+
+.queima-card.clickable-day-card {
+    cursor: pointer;
+}
+
+.queima-card.clickable-day-card:hover {
+    border-color: var(--orange);
+    box-shadow: 0 4px 16px rgba(244, 123, 32, 0.18);
+}
+
+.hist-single-day-box {
+    background: linear-gradient(155deg, rgba(11, 34, 51, 0.95) 0%, rgba(4, 18, 29, 0.95) 100%);
+    border: 1.5px solid rgba(244, 123, 32, 0.45);
+    border-radius: 16px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.hist-day-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hist-day-detail-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 150px;
+}
+
+.hist-day-detail-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0;
+}
+
+.hist-day-highlights-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+@media (max-width: 520px) {
+    .hist-day-highlights-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.hist-day-highlight-card {
+    background: rgba(4, 18, 29, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 12px;
+    padding: 11px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.hist-day-highlight-card.is-max {
+    border-left: 3.5px solid var(--orange);
+}
+
+.hist-day-highlight-card.is-avg {
+    border-left: 3.5px solid #38bdf8;
+}
+
+.hist-day-highlight-card.is-min {
+    border-left: 3.5px solid #10b981;
+}
+
+.hist-hl-label {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.hist-hl-val {
+    font-size: 19px;
+    font-weight: 800;
+    font-feature-settings: "tnum";
+}
+
+.hist-hl-time {
+    font-size: 11px;
+    font-weight: 700;
+    color: #e2e8f0;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+}
+
+.hist-day-chart-box {
+    background: rgba(4, 18, 29, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 13px;
+    padding: 12px;
+}
+
+.hist-day-chart-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #e2e8f0;
+    flex-wrap: wrap;
+}
+
+.hist-day-chart-readout {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--orange-light);
+    background: rgba(244, 123, 32, 0.12);
+    border: 1px solid rgba(244, 123, 32, 0.3);
+    padding: 3px 9px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+}
+
+.hist-day-summary-section {
+    background: rgba(4, 18, 29, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 13px;
+    padding: 12px;
+}
+
+.hist-day-summary-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #e2e8f0;
+    flex-wrap: wrap;
+}
+
+.hist-day-summary-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.hist-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    flex-wrap: wrap;
+}
+
+.hist-summary-row.is-highlight {
+    background: rgba(244, 123, 32, 0.09);
+    border-color: rgba(244, 123, 32, 0.3);
+}
+
+.hist-summary-row-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.hist-summary-row-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace, sans-serif;
+    font-size: 11.5px;
+    font-weight: 700;
 }
 
 /* ==========================================================================

@@ -350,7 +350,7 @@
         </section>
 
         <!-- ====================================================
-             ABA 2: HISTÓRICO DE QUEIMAS (CICLOS, LOTES & RELATÓRIOS)
+             ABA 2: HISTÓRICO DE QUEIMA DINÂMICO (POR FORNO & PERÍODO)
         ===================================================== -->
         <section id="screenHistoricoQueimas" class="screen-view hidden">
             
@@ -358,51 +358,259 @@
             <div class="section-title-bar">
                 <div class="section-title-left">
                     <i class="fa-solid fa-clock-rotate-left text-orange"></i>
-                    <h2>Histórico de Queimas</h2>
+                    <h2>Histórico de Queima</h2>
                 </div>
-                <span class="badge-online-count" id="statHistoricoCount">Ciclos Anteriores</span>
+                <span class="badge-online-count" id="statHistoricoCount">Carregando Fornos...</span>
             </div>
 
-            <!-- CARDS DE MÉTRICAS GERAIS (KPIS) -->
-            <div class="historico-kpi-grid">
-                <div class="historico-kpi-card">
-                    <span class="kpi-lbl">Total de Queimas</span>
-                    <strong class="kpi-val text-orange" id="kpiTotalQueimas">--</strong>
-                    <span class="kpi-sub">Ciclos registrados</span>
+            <!-- PASSO 1: IDENTIFICAÇÃO DOS FORNOS CADASTRADOS NA CERÂMICA (TELA INICIAL DO HISTÓRICO) -->
+            <div id="histStep1Card" class="card-dark hist-step-card">
+                <div class="hist-step-header">
+                    <div>
+                        <span class="hist-step-badge">PASSO 1 • SELEÇÃO DE EQUIPAMENTO</span>
+                        <h3 class="hist-step-title">Fornos Identificados da Cerâmica</h3>
+                        <p class="hist-step-sub">Toque em um forno abaixo para abrir o histórico individual de leituras e curvas térmicas.</p>
+                    </div>
+                    <button type="button" class="btn-hist-refresh" onclick="carregarHistoricoQueimas(true)" title="Atualizar lista de fornos e leituras">
+                        <i class="fa-solid fa-rotate" id="iconRefreshHistorico"></i>
+                    </button>
                 </div>
-                <div class="historico-kpi-card">
-                    <span class="kpi-lbl">Tempo Médio</span>
-                    <strong class="kpi-val text-blue" id="kpiTempoMedio">8h 45m</strong>
-                    <span class="kpi-sub">Ciclo completo</span>
-                </div>
-                <div class="historico-kpi-card">
-                    <span class="kpi-lbl">Pico Médio</span>
-                    <strong class="kpi-val" id="kpiPicoMedio">-- °C</strong>
-                    <span class="kpi-sub">Queima nominal</span>
-                </div>
-                <div class="historico-kpi-card">
-                    <span class="kpi-lbl">Conformidade</span>
-                    <strong class="kpi-val text-green" id="kpiTaxaSucesso">100%</strong>
-                    <span class="kpi-sub">No padrão de queima</span>
-                </div>
-            </div>
 
-            <!-- FILTRO POR FORNO NO HISTÓRICO -->
-            <div class="card-dark filters-control-card">
-                <div class="filter-row">
-                    <span class="filter-row-title"><i class="fa-solid fa-fire text-orange"></i> Filtrar Forno:</span>
-                    <div class="filter-pill-scroll" id="histFiltroForno">
-                        <button class="pill-btn active" onclick="filtrarHistoricoForno('all', this)">Todos</button>
+                <!-- Grid dinâmico de Cards de Forno gerados via banco de dados -->
+                <div id="histOvensSelectorGrid" class="hist-ovens-grid">
+                    <div class="loading-box" style="grid-column: 1 / -1; padding: 20px;">
+                        <div class="app-spinner"></div>
+                        <p>Identificando fornos vinculados no banco de dados...</p>
                     </div>
                 </div>
             </div>
 
-            <!-- LISTAGEM DOS CICLOS DE QUEIMA ANTERIORES -->
-            <div id="listaQueimasHistorico" class="historico-queimas-container">
-                <div class="loading-box">
-                    <div class="app-spinner"></div>
-                    <p>Consultando histórico de queimas...</p>
+            <!-- PASSO 2 & 3: TELA INTERNA DO FORNO SELECIONADO (ABRE AO CLICAR EM UM FORNO) -->
+            <div id="histSelectedOvenPanel" class="hist-oven-detail-wrapper hidden">
+                
+                <!-- BARRA DE TOPO DO FORNO + FILTRO TEMPORAL (7d, 15d, 30d, 60d, 90d e Customizado) -->
+                <div class="card-dark hist-period-card">
+                    <div class="hist-period-top">
+                        <div class="hist-selected-oven-info">
+                            <button type="button" class="analise-btn-back" onclick="voltarListaFornosHistorico()">
+                                <i class="fa-solid fa-arrow-left"></i>
+                                <span>Fornos</span>
+                            </button>
+                            <span class="hist-oven-pill" id="histActiveOvenBadge">
+                                <i class="fa-solid fa-fire-flame-curved"></i>
+                                <span id="histActiveOvenName">Selecione um Forno</span>
+                            </span>
+                            <span class="hist-module-status" id="histActiveModuleStatus">Módulo RS485</span>
+                        </div>
+                        <span class="hist-period-range-label" id="histPeriodRangeLabel">--</span>
+                    </div>
+
+                    <div class="filter-row" style="margin-top: 10px;">
+                        <span class="filter-row-title"><i class="fa-regular fa-calendar-days text-orange"></i> Período do Histórico:</span>
+                        <div class="filter-pill-scroll" id="histPeriodTabs">
+                            <button type="button" class="pill-btn active" data-days="7" onclick="selecionarPeriodoHistorico('7', this)">Última semana (7d)</button>
+                            <button type="button" class="pill-btn" data-days="15" onclick="selecionarPeriodoHistorico('15', this)">Últimos 15 dias</button>
+                            <button type="button" class="pill-btn" data-days="30" onclick="selecionarPeriodoHistorico('30', this)">Último mês (30d)</button>
+                            <button type="button" class="pill-btn" data-days="60" onclick="selecionarPeriodoHistorico('60', this)">Últimos 2 meses (60d)</button>
+                            <button type="button" class="pill-btn" data-days="90" onclick="selecionarPeriodoHistorico('90', this)">Últimos 3 meses (90d)</button>
+                            <button type="button" class="pill-btn" data-days="custom" onclick="selecionarPeriodoHistorico('custom', this)">
+                                <i class="fa-solid fa-sliders"></i> Personalizado
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Seletor de Datas Customizado (Exibido quando "Personalizado" está ativo) -->
+                    <div id="histCustomDateBox" class="hist-custom-date-box hidden">
+                        <div class="hist-date-field">
+                            <label for="histDateStart">Data Inicial</label>
+                            <input type="date" id="histDateStart" class="hist-date-input">
+                        </div>
+                        <div class="hist-date-field">
+                            <label for="histDateEnd">Data Final</label>
+                            <input type="date" id="histDateEnd" class="hist-date-input">
+                        </div>
+                        <button type="button" class="btn-hist-apply-date" onclick="aplicarFiltroDataCustomHistorico()">
+                            <i class="fa-solid fa-magnifying-glass"></i> Filtrar Período
+                        </button>
+                    </div>
                 </div>
+
+                <!-- CARDS DE MÉTRICAS DO FORNO NO PERÍODO SELECIONADO -->
+                <div class="historico-kpi-grid">
+                    <div class="historico-kpi-card">
+                        <span class="kpi-lbl">Leituras Coletadas</span>
+                        <strong class="kpi-val text-orange" id="kpiTotalQueimas">--</strong>
+                        <span class="kpi-sub" id="kpiSubTotalLeituras">No período filtrado</span>
+                    </div>
+                    <div class="historico-kpi-card">
+                        <span class="kpi-lbl">Pico Máximo (C1)</span>
+                        <strong class="kpi-val text-red" id="kpiPicoMedio">-- °C</strong>
+                        <span class="kpi-sub" id="kpiSubPicoHora">Maior temperatura</span>
+                    </div>
+                    <div class="historico-kpi-card">
+                        <span class="kpi-lbl">Média Térmica</span>
+                        <strong class="kpi-val text-blue" id="kpiTempoMedio">-- °C</strong>
+                        <span class="kpi-sub" id="kpiSubMediaC2">Canal 1 / Canal 2</span>
+                    </div>
+                    <div class="historico-kpi-card">
+                        <span class="kpi-lbl">Status do Módulo</span>
+                        <strong class="kpi-val text-green" id="kpiTaxaSucesso">--</strong>
+                        <span class="kpi-sub" id="kpiSubStatusMod">Comunicação RS485</span>
+                    </div>
+                </div>
+
+                <!-- GRÁFICO EVOLUTIVO DO HISTÓRICO DO FORNO (TEMPERATURA × TEMPO) -->
+                <div class="card-dark hist-chart-card">
+                    <div class="hist-chart-header">
+                        <div>
+                            <h3 class="hist-section-title">
+                                <i class="fa-solid fa-chart-area text-orange"></i>
+                                Curva Histórica de Temperatura × Tempo (<span id="histChartOvenTitle">Forno</span>)
+                            </h3>
+                            <p class="hist-section-sub" id="histChartSubtitle">Evolução térmica de Canal 1 (Superior) e Canal 2 (Inferior) em relação ao tempo</p>
+                        </div>
+                        <div class="hist-chart-actions" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" class="chart-tool-btn active" id="btnHistScalePeriod" onclick="alternarEscalaTempoGraficoHistorico('period')" title="Exibir linha do tempo completa do período selecionado (7d, 15d, 30d...)">
+                                <i class="fa-regular fa-calendar"></i>
+                                <span>Escala do Período</span>
+                            </button>
+                            <button type="button" class="chart-tool-btn" id="btnHistScaleData" onclick="alternarEscalaTempoGraficoHistorico('data')" title="Dar zoom automático na janela onde há leituras gravadas">
+                                <i class="fa-solid fa-magnifying-glass-chart"></i>
+                                <span>Focar Leituras</span>
+                            </button>
+                            <button type="button" class="btn-hist-export" onclick="exportarCSVHistoricoForno()" title="Exportar leituras do período em CSV">
+                                <i class="fa-solid fa-file-csv"></i>
+                                <span>Exportar CSV</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Painel de Inspeção de Ponto (Data/Hora, C1, C2 e Delta ao tocar/passar o mouse no gráfico) -->
+                    <div class="analysis-chart-readout" id="histChartReadout">
+                        <span class="readout-clock"><i class="fa-regular fa-clock"></i> <b id="histReadoutTime">Toque no gráfico</b></span>
+                        <span class="readout-c1">C1 (Sup): <b id="histReadoutC1">-- °C</b></span>
+                        <span class="readout-c2">C2 (Inf): <b id="histReadoutC2">-- °C</b></span>
+                        <span class="readout-delta">&Delta;T: <b id="histReadoutDelta">-- °C</b></span>
+                    </div>
+
+                    <div class="hist-canvas-container" style="height: 290px;">
+                        <canvas id="historicoFornoChartCanvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- CAIXA DE REGISTROS DIÁRIOS E DETALHAMENTO DO DIA SELECIONADO -->
+                <div class="card-dark hist-readings-card">
+                    <div class="hist-readings-header">
+                        <div>
+                            <h3 class="hist-section-title">
+                                <i class="fa-solid fa-calendar-check text-orange"></i>
+                                Registro Detalhado de Leituras Coletadas
+                            </h3>
+                            <p class="hist-section-sub" id="histTableCounterText">Toque em um dia abaixo para abrir o gráfico e o resumo daquele dia</p>
+                        </div>
+                        <div class="hist-view-switcher">
+                            <button type="button" class="hist-switch-btn active" id="btnHistViewCycles" onclick="alternarModoVisualizacaoHistorico('cycles')">
+                                <i class="fa-solid fa-layer-group"></i> Por Dia / Ciclo
+                            </button>
+                            <button type="button" class="hist-switch-btn" id="btnHistViewTable" onclick="alternarModoVisualizacaoHistorico('table')">
+                                <i class="fa-solid fa-list-ul"></i> Todas as Leituras
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Visão 1A: Caixa com Lista de Registros Diários (Scroll Interno Organizado) -->
+                    <div id="histDailyBoxWrapper" class="hist-daily-box-wrapper">
+                        <div class="hist-daily-box-toolbar">
+                            <span><i class="fa-regular fa-hand-pointer text-orange"></i> Selecione um Registro Diário na caixa abaixo para ver o gráfico e os picos do dia:</span>
+                            <span class="hist-daily-count-pill" id="histDailyCountBadge">0 dias</span>
+                        </div>
+                        <div id="listaQueimasHistorico" class="historico-queimas-container hist-daily-scroll-box">
+                            <div class="loading-box">
+                                <div class="app-spinner"></div>
+                                <p>Consultando histórico de queimas no banco de dados...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visão 1B: Painel Completo do Dia Selecionado (Gráfico do Dia + Picos com Horários + Lista Resumida) -->
+                    <div id="histSingleDayDetailBox" class="hist-single-day-box hidden">
+                        <div class="hist-day-detail-header">
+                            <button type="button" class="analise-btn-back" onclick="fecharDetalheDiaHistorico()">
+                                <i class="fa-solid fa-arrow-left"></i>
+                                <span>Todos os Dias</span>
+                            </button>
+                            <div class="hist-day-detail-titles">
+                                <span class="queima-id-tag" id="histDayDetailTag">REGISTRO DO DIA</span>
+                                <h4 class="hist-day-detail-title" id="histDayDetailTitle">Forno 01 — --/--/----</h4>
+                            </div>
+                            <span class="queima-status-badge" id="histDayDetailStatus">Queima Ativa</span>
+                        </div>
+
+                        <!-- 3 Cards dos Principais Valores do Dia com Horários Exatos -->
+                        <div class="hist-day-highlights-grid">
+                            <div class="hist-day-highlight-card is-max">
+                                <span class="hist-hl-label"><i class="fa-solid fa-arrow-trend-up"></i> Pico Máximo (C1)</span>
+                                <strong class="hist-hl-val text-orange" id="histDayMaxVal">-- °C</strong>
+                                <span class="hist-hl-time" id="histDayMaxTime">às --:--</span>
+                            </div>
+                            <div class="hist-day-highlight-card is-avg">
+                                <span class="hist-hl-label"><i class="fa-solid fa-gauge-high"></i> Média Térmica</span>
+                                <strong class="hist-hl-val text-blue" id="histDayAvgVal">-- °C</strong>
+                                <span class="hist-hl-time" id="histDayAvgTime">às --:--</span>
+                            </div>
+                            <div class="hist-day-highlight-card is-min">
+                                <span class="hist-hl-label"><i class="fa-solid fa-arrow-trend-down"></i> Pico Mínimo (C1)</span>
+                                <strong class="hist-hl-val text-green" id="histDayMinVal">-- °C</strong>
+                                <span class="hist-hl-time" id="histDayMinTime">às --:--</span>
+                            </div>
+                        </div>
+
+                        <!-- Gráfico Exclusivo do Dia Selecionado -->
+                        <div class="hist-day-chart-box">
+                            <div class="hist-day-chart-top">
+                                <span><i class="fa-solid fa-chart-line text-orange"></i> <b>Gráfico do Dia Selecionado</b> (Temperatura × Horário do Dia)</span>
+                                <span id="histDayChartReadout" class="hist-day-chart-readout">Toque na curva para ver horário</span>
+                            </div>
+                            <div class="hist-canvas-container" style="height: 235px;">
+                                <canvas id="historicoDiaChartCanvas"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Lista Resumida da Queima do Dia (Principais Valores e Marcos Horários) -->
+                        <div class="hist-day-summary-section">
+                            <div class="hist-day-summary-header">
+                                <span><i class="fa-solid fa-list-check text-orange"></i> <b>Lista Resumida de Queima do Dia</b> (Principais Valores &amp; Horários)</span>
+                                <span id="histDaySummaryCount" class="hist-daily-count-pill">-- marcos</span>
+                            </div>
+                            <div id="histDaySummaryList" class="hist-day-summary-list">
+                                <!-- Preenchido dinamicamente pelo JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visão 2: Tabela Cronológica Completa de Leituras (Temperatura, Tempo, Status do Módulo) -->
+                    <div id="histRawTableWrapper" class="hist-raw-table-wrapper hidden">
+                        <div class="table-scroll-wrapper">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Data &amp; Horário</th>
+                                        <th>Módulo</th>
+                                        <th>Canal 1 (Sup.)</th>
+                                        <th>Canal 2 (Inf.)</th>
+                                        <th>Delta (&Delta;T)</th>
+                                        <th>Status Módulo</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="histRawTableBody">
+                                    <!-- Preenchido dinamicamente pelo JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="hist-pagination-bar" id="histPaginationBar"></div>
+                    </div>
+                </div>
+
             </div>
 
         </section>
