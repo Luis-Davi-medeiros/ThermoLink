@@ -826,11 +826,9 @@ async function carregarFornosELeituras() {
             }));
         }
 
-        // Hook: motor de alertas em tempo real e sincronização de setpoints
-        if (window.ThermoAlertas) window.ThermoAlertas.verificarLeituras();
+        // Hook: sincronização de setpoints
         if (window.ThermoSetpoints) window.ThermoSetpoints.sincronizarComFornos();
         if (typeof sincronizarPainelSetpointsAnalise === "function") sincronizarPainelSetpointsAnalise(state.selectedModule);
-        checarAlarmesSonoros();
 
         // Renderiza telas
         if (state.selectedModule === null) {
@@ -2772,8 +2770,7 @@ window.ThermoSetpoints = {
 
         if (title) title.textContent = `Setpoints do ${getNomeForno(mod)} (Módulo ${mod})`;
 
-        const cardOriginal = $("cardSetpointsConfig");
-        if (cardOriginal && content) {
+        if (content) {
             content.innerHTML = `
                 <div class="setpoints-card" style="margin-bottom: 0; box-shadow: none; padding: 10px; background: transparent; border: none;">
                     <div class="getsp-display-box" style="margin-bottom: 12px;">
@@ -2814,21 +2811,10 @@ window.ThermoSetpoints = {
                             </div>
                         </div>
 
-                        <div class="setsp-presets-bar">
-                            <button type="button" class="setsp-preset-chip active" onclick="ThermoSetpoints.aplicarPresetModal(650, 900)">650° / 900° (Padrão)</button>
-                            <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPresetModal(700, 950)">700° / 950°</button>
-                            <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPresetModal(800, 1000)">800° / 1000°</button>
-                            <button type="button" class="setsp-preset-chip" onclick="ThermoSetpoints.aplicarPresetModal(900, 1150)">900° / 1150°</button>
-                        </div>
-
                         <button type="button" class="btn-save-setsp" id="modalBtnGravar" onclick="ThermoSetpoints.gravarSetspModal()">
                             <i class="fa-solid fa-bolt"></i>
                             <span id="modalBtnGravarLbl">Gravar no Módulo (SETSP ${mod} 650 900)</span>
                         </button>
-                    </div>
-
-                    <div class="setpoints-terminal" id="modalSetpointsTerminal" style="max-height: 80px;">
-                        <span class="terminal-line cmd-info"># Terminal de comandos SETSP & GETSP</span>
                     </div>
                 </div>
             `;
@@ -3182,10 +3168,10 @@ async function solicitarLeituraSetpoint() {
 // 2. ENVIAR E GRAVAR NOVO SETPOINT NO APARELHO (SETSP)
 async function enviarNovoSetpoint() {
     const sel = $("selModuloSetpoint") || $("selModuloSetpoints");
-    const mod = Number(sel?.value) || state.selectedModule || 1;
+    const mod = Number(sel?.value) || window.ThermoSetpoints?.currentModule || state.selectedModule || 1;
 
-    const inp1 = $("inpNovoSetpoint1") || $("inpSetSp1");
-    const inp2 = $("inpNovoSetpoint2") || $("inpSetSp2");
+    const inp1 = $("inpNovoSetpoint1") || $("inpSetSp1") || $("modalInpSetSp1");
+    const inp2 = $("inpNovoSetpoint2") || $("inpSetSp2") || $("modalInpSetSp2");
 
     const sp1 = parseInt(inp1?.value, 10);
     const sp2 = parseInt(inp2?.value, 10);
