@@ -2933,9 +2933,11 @@ async function carregarStatusWhatsappAdmin(silent = false) {
         // Configurações
         if (data.config) {
             waAdminConfig = data.config;
+            const horarioSalvo = data.config.horario_envio_diario || localStorage.getItem("thermolink_horario_envio_diario") || "06:00";
+            localStorage.setItem("thermolink_horario_envio_diario", horarioSalvo);
             if ($("waAdminCheckAuto")) $("waAdminCheckAuto").checked = Boolean(data.config.envio_automatico_ativo);
-            if ($("waAdminInputHorario")) $("waAdminInputHorario").value = data.config.horario_envio_diario || "18:00";
-            if ($("waAdminHorarioDisplay")) $("waAdminHorarioDisplay").textContent = data.config.horario_envio_diario || "18:00";
+            if ($("waAdminInputHorario")) $("waAdminInputHorario").value = horarioSalvo;
+            if ($("waAdminHorarioDisplay")) $("waAdminHorarioDisplay").textContent = horarioSalvo;
             if ($("waAdminDisparadosHoje")) $("waAdminDisparadosHoje").textContent = data.config.total_enviados_hoje || 0;
             if ($("waAdminInputGeminiKey")) {
                 $("waAdminInputGeminiKey").value = data.config.gemini_api_key || localStorage.getItem("thermolink_gemini_api_key") || "";
@@ -3291,12 +3293,19 @@ function atualizarOpcoesTipoContatoAdmin() {
 
 async function salvarConfigWhatsappAdmin() {
     const envio_automatico_ativo = $("waAdminCheckAuto")?.checked;
-    const horario_envio_diario = $("waAdminInputHorario")?.value;
+    const horario_envio_diario = $("waAdminInputHorario")?.value || "06:00";
     const gemini_api_key = $("waAdminInputGeminiKey")?.value?.trim() || "";
 
+    if (horario_envio_diario) {
+        localStorage.setItem("thermolink_horario_envio_diario", horario_envio_diario);
+        if ($("waAdminHorarioDisplay")) $("waAdminHorarioDisplay").textContent = horario_envio_diario;
+    }
     if (gemini_api_key) {
         localStorage.setItem("thermolink_gemini_api_key", gemini_api_key);
     }
+
+    // Atualiza imediatamente o relatório e PDF de 12h com base no novo horário configurado
+    executarAnaliseIA(false);
 
     const gatewayUrl = getGatewayUrl();
     try {
@@ -3307,11 +3316,11 @@ async function salvarConfigWhatsappAdmin() {
         });
         const data = await res.json();
         if (data.success) {
-            mostrarToastFeedback("Configuração e Chave Gemini salvas com sucesso!", "success");
+            mostrarToastFeedback(`Horário (${horario_envio_diario}) e Configurações salvas com sucesso!`, "success");
             carregarSecaoWhatsappAdmin();
         }
     } catch (e) {
-        mostrarToastFeedback("Falha ao salvar configuração no gateway WhatsApp.", "error");
+        mostrarToastFeedback(`Horário (${horario_envio_diario}) salvo localmente e aplicado ao PDF de 12h!`, "info");
     }
 }
 
@@ -3649,6 +3658,66 @@ async function trocarCeramicaRelatorioIA() {
     await executarAnaliseIA(true);
 }
 
+let aiPdf12hChartInstance = null;
+
+function formatHoraCurtaAdmin(ts) {
+    if (!Number.isFinite(ts) || ts <= 0) return "--:--";
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Calcula a janela exata das últimas 12 horas a partir do Horário Diário de Envio do Relatório
+ * (ex: se Horário Diário = 06:00, a janela de 12h é das 18:00 às 06:00)
+ */
+function obterJanela12HorasPorHorarioEnvio(anchorMs = null) {
+    const horarioInput = $("waAdminInputHorario")?.value
+        || localStorage.getItem("thermolink_horario_envio_diario")
+        || (typeof waAdminConfig !== "undefined" && waAdminConfig?.horario_envio_diario)
+        || "06:00";
+
+    const partes = String(horarioInput).trim().split(":");
+    const hh = Number.isFinite(Number(partes[0])) ? Number(partes[0]) : 6;
+    const mm = Number.isFinite(Number(partes[1])) ? Number(partes[1]) : 0;
+
+    const baseDate = anchorMs ? new Date(anchorMs) : new Date();
+    const fim = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), hh, mm, 59, 999);
+    let inicio = new Date(fim.getTime() - (12 * 3600 * 1000) + 1000);
+
+    // Se estamos calculando em relação ao relógio atual e o início da janela ainda está no futuro, recua 1 dia
+    if (!anchorMs && inicio.getTime() > baseDate.getTime()) {
+        fim.setDate(fim.getDate() - 1);
+        inicio = new Date(fim.getTime() - (12 * 3600 * 1000) + 1000);
+    }
+
+    // Se temos um anchorMs de última leitura e ele ficou depois do 'fim' daquele dia (ex: leitura às 20h e fechamento 06h), avança 1 dia para englobar a leitura
+    if (anchorMs && anchorMs > fim.getTime()) {
+        fim.setDate(fim.getDate() + 1);
+        inicio = new Date(fim.getTime() - (12 * 3600 * 1000) + 1000);
+    }
+
+    const horaInicioStr = `${String(inicio.getHours()).padStart(2, "0")}:${String(inicio.getMinutes()).padStart(2, "0")}`;
+    const horaFimStr = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+    const dataFechamentoStr = fim.toLocaleDateString("pt-BR");
+
+    // Atualiza o texto do select de 12h na interface se existir
+    const selJanela = $("aiSelectJanela");
+    if (selJanela && selJanela.options && selJanela.options[0]) {
+        selJanela.options[0].textContent = `Últimas 12 Horas (Fechamento ${horaFimStr}: ${horaInicioStr} às ${horaFimStr})`;
+    }
+
+    return {
+        horarioConfigurado: horaFimStr,
+        inicioDate: inicio,
+        fimDate: fim,
+        inicioMs: inicio.getTime(),
+        fimMs: fim.getTime(),
+        horaInicioStr,
+        horaFimStr,
+        dataFechamentoStr
+    };
+}
+
 async function executarAnaliseIA(forcar = false) {
     const btnIcon = $("aiBtnIcon");
     const refreshIcon = $("aiRefreshIcon");
@@ -3662,35 +3731,53 @@ async function executarAnaliseIA(forcar = false) {
         const ceramica = clients.find(c => c.id === ceramicaId) || clients[0] || { id: "cli_1", nome: "Cerâmica Cliente", responsavel: "Gestor" };
 
         const janelaHoras = Number($("aiSelectJanela")?.value || 12);
+        let janela12h = obterJanela12HorasPorHorarioEnvio();
 
         if ($("aiCeramicaAtivaBadge")) {
             $("aiCeramicaAtivaBadge").textContent = ceramica.nome;
         }
 
-        // 1. Busca telemetria recente no Supabase para esta cerâmica
+        // 1. Busca telemetria das últimas 12h determinadas a partir do Horário Diário de Envio
         let leituras = [];
         if (typeof sb !== "undefined" && sb) {
             try {
-                const limiteTempo = new Date(Date.now() - (janelaHoras * 3600 * 1000)).toISOString();
-                const { data } = await sb
-                    .from("leituras")
-                    .select("*")
-                    .eq("ceramica_id", ceramica.id)
-                    .gte("created_at", limiteTempo)
-                    .order("created_at", { ascending: false })
-                    .limit(500);
+                const startIso = janelaHoras === 12
+                    ? janela12h.inicioDate.toISOString()
+                    : new Date(Date.now() - (janelaHoras * 3600 * 1000)).toISOString();
+                const endIso = janelaHoras === 12
+                    ? janela12h.fimDate.toISOString()
+                    : new Date().toISOString();
 
-                if (data && data.length > 0) {
-                    leituras = data;
+                const pageSize = 1000;
+                const [p0, p1, p2] = await Promise.all([
+                    sb.from("leituras").select("*").eq("ceramica_id", ceramica.id).gte("created_at", startIso).lte("created_at", endIso).order("created_at", { ascending: false }).range(0, pageSize - 1),
+                    sb.from("leituras").select("*").eq("ceramica_id", ceramica.id).gte("created_at", startIso).lte("created_at", endIso).order("created_at", { ascending: false }).range(pageSize, 2 * pageSize - 1),
+                    sb.from("leituras").select("*").eq("ceramica_id", ceramica.id).gte("created_at", startIso).lte("created_at", endIso).order("created_at", { ascending: false }).range(2 * pageSize, 3 * pageSize - 1)
+                ]);
+
+                const lotes = [...(p0.data || []), ...(p1.data || []), ...(p2.data || [])];
+                if (lotes.length > 0) {
+                    leituras = lotes;
                 } else {
-                    // Fallback para as últimas leituras gerais desta cerâmica se a janela estiver vazia
+                    // Fallback: se não houver leituras na janela de hoje, pega a última janela de 12h registrada da cerâmica
                     const { data: ultimas } = await sb
                         .from("leituras")
                         .select("*")
                         .eq("ceramica_id", ceramica.id)
                         .order("created_at", { ascending: false })
-                        .limit(200);
-                    if (ultimas && ultimas.length > 0) leituras = ultimas;
+                        .limit(1500);
+                    if (ultimas && ultimas.length > 0) {
+                        const ultTs = new Date(ultimas[0].created_at || ultimas[0].data_hora).getTime();
+                        janela12h = obterJanela12HorasPorHorarioEnvio(ultTs);
+                        const filtradasJanela = ultimas.filter(r => {
+                            const t = new Date(r.created_at || r.data_hora).getTime();
+                            return t >= janela12h.inicioMs && t <= janela12h.fimMs;
+                        });
+                        leituras = filtradasJanela.length > 0 ? filtradasJanela : ultimas.filter(r => {
+                            const t = new Date(r.created_at || r.data_hora).getTime();
+                            return t >= (ultTs - 12 * 3600 * 1000);
+                        });
+                    }
                 }
             } catch (errDb) {
                 console.warn("[IA] Consulta Supabase falhou, usando telemetria dos aparelhos:", errDb);
@@ -3698,10 +3785,10 @@ async function executarAnaliseIA(forcar = false) {
         }
 
         // 2. Executa o algoritmo analítico de IA
-        const resultadoIA = processarAlgoritmoIA(ceramica, leituras, janelaHoras);
+        const resultadoIA = processarAlgoritmoIA(ceramica, leituras, janelaHoras, janela12h);
         adminState.aiReportState.analiseAtual = resultadoIA;
 
-        // 3. Renderiza KPIs, Diagnóstico por Forno e Relatório WhatsApp
+        // 3. Renderiza KPIs, Diagnóstico por Forno, Painel PDF 12h e Relatório WhatsApp
         renderizarResultadoIA(resultadoIA);
 
         // 4. Atualiza timestamp
@@ -3723,11 +3810,11 @@ async function executarAnaliseIA(forcar = false) {
     }
 }
 
-function gerarQuickChartUrlClient(ceramicaNome, fornosEmQueima) {
+function gerarQuickChartUrlClient(ceramicaNome, fornosEmQueima, janela12h = null) {
     const labels = [];
-    const agora = new Date();
+    const fimRefMs = janela12h?.fimMs ? Math.min(Date.now(), janela12h.fimMs) : Date.now();
     for (let i = 12; i >= 0; i--) {
-        const d = new Date(agora.getTime() - i * 3600 * 1000);
+        const d = new Date(fimRefMs - i * 3600 * 1000);
         labels.push(d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
     }
     const cores = ['#f97316', '#06b6d4', '#10b981', '#a855f7', '#eab308', '#ec4899', '#3b82f6', '#f43f5e'];
@@ -3791,7 +3878,8 @@ function gerarQuickChartUrlClient(ceramicaNome, fornosEmQueima) {
     return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(cfg))}&w=880&h=440&bkg=%2308101e&devicePixelRatio=2`;
 }
 
-function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
+function processarAlgoritmoIA(ceramica, leituras, janelaHoras, janela12h = null) {
+    if (!janela12h) janela12h = obterJanela12HorasPorHorarioEnvio();
     const devices = (adminState.devices && adminState.devices.length ? adminState.devices : getDevices()).filter(d => (d.ceramicaId || d.ceramica_id) === ceramica.id);
     const numFornosCadastrados = Number(ceramica.fornosCount || ceramica.fornos_count || (devices.length > 0 ? devices.length : 6));
 
@@ -3815,6 +3903,7 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
     let totalAnomaliasGlobal = 0;
     const fornosEmQueima = [];
     const fornosInativos = [];
+    const todosFornosComLeitura = [];
 
     const fKeys = Object.keys(fornosMap).sort((a, b) => Number(a) - Number(b));
 
@@ -3822,31 +3911,76 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
     fKeys.forEach(k => {
         const num = Number(k);
         const lts = fornosMap[k];
-        let c1 = 0, c2 = 0, picoC1 = 0, picoC2 = 0, mediaC1 = 0;
+        let c1 = 0, c2 = 0, picoC1 = 0, picoC2 = 0, minC1 = 0, mediaC1 = 0;
+        let picoC1Ts = 0, minC1Ts = 0, mediaC1Ts = 0, picoC2Ts = 0;
         let isOnline = false;
         let diffMin = 999999;
         let taxaVariacao = 0;
 
         if (lts && lts.length > 0) {
-            // Ordena estritamente em ordem cronológica (18:00 até 06:00)
-            lts.sort((a, b) => new Date(a.created_at || a.data_hora).getTime() - new Date(b.created_at || b.data_hora).getTime());
+            // Ordena estritamente em ordem cronológica (início -> fim das 12h)
+            lts.forEach(r => {
+                if (!r._ts) r._ts = new Date(r.created_at || r.data_hora).getTime();
+            });
+            lts.sort((a, b) => a._ts - b._ts);
 
             const ult = lts[lts.length - 1];
-            c1 = Number(ult.canal_1 ?? 0);
-            c2 = Number(ult.canal_2 ?? 0);
-            picoC1 = Math.max(...lts.map(x => Number(x.canal_1 || 0)));
-            picoC2 = Math.max(...lts.map(x => Number(x.canal_2 || 0)));
-            const minC1 = Math.min(...lts.map(x => Number(x.canal_1 || 0)));
+            c1 = Math.round(Number(ult.canal_1 ?? 0));
+            c2 = Math.round(Number(ult.canal_2 ?? 0));
+
+            let maxValC1 = -Infinity;
+            let minValC1 = Infinity;
+            let maxValC2 = -Infinity;
+            let somaValC1 = 0;
+            let countValC1 = 0;
+
+            for (let i = 0; i < lts.length; i++) {
+                const item = lts[i];
+                const ts = item._ts;
+                const v1 = Math.round(Number(item.canal_1 ?? 0));
+                const v2 = Math.round(Number(item.canal_2 ?? 0));
+                if (v1 > maxValC1) {
+                    maxValC1 = v1;
+                    picoC1Ts = ts;
+                }
+                if (v1 < minValC1) {
+                    minValC1 = v1;
+                    minC1Ts = ts;
+                }
+                if (v2 > maxValC2) {
+                    maxValC2 = v2;
+                    picoC2Ts = ts;
+                }
+                somaValC1 += v1;
+                countValC1++;
+            }
+
+            picoC1 = maxValC1 === -Infinity ? 0 : maxValC1;
+            minC1 = minValC1 === Infinity ? 0 : minValC1;
+            picoC2 = maxValC2 === -Infinity ? 0 : maxValC2;
             const deltaT = picoC1 - minC1;
-            mediaC1 = Math.round(lts.reduce((acc, x) => acc + Number(x.canal_1 || 0), 0) / lts.length);
-            const ultData = new Date(ult.created_at || ult.data_hora);
+            mediaC1 = countValC1 > 0 ? Math.round(somaValC1 / countValC1) : 0;
+
+            // Encontra o horário exato em que a temperatura das 12h esteve mais próxima da Média Térmica
+            let menorDiffMedia = Infinity;
+            mediaC1Ts = lts[0]._ts;
+            for (let i = 0; i < lts.length; i++) {
+                const v1 = Math.round(Number(lts[i].canal_1 ?? 0));
+                const dMedia = Math.abs(v1 - mediaC1);
+                if (dMedia < menorDiffMedia) {
+                    menorDiffMedia = dMedia;
+                    mediaC1Ts = lts[i]._ts;
+                }
+            }
+
+            const ultData = new Date(ult._ts);
             diffMin = Math.round((Date.now() - ultData.getTime()) / 60000);
             isOnline = diffMin <= 10;
 
             if (lts.length >= 2) {
                 const anterior = lts[Math.max(0, lts.length - 6)];
                 const deltaV = c1 - Number(anterior.canal_1 || c1);
-                const dtHours = Math.max(0.1, (new Date(ult.created_at || ult.data_hora).getTime() - new Date(anterior.created_at || anterior.data_hora).getTime()) / 3600000);
+                const dtHours = Math.max(0.1, (ult._ts - anterior._ts) / 3600000);
                 taxaVariacao = Math.round(deltaV / dtHours);
             }
 
@@ -3927,14 +4061,27 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
             somaGradiente += delta;
             totalAnomaliasGlobal += anomalias.length;
 
+            // Leituras em ordem decrescente (mais recente primeiro) para a tabela de Lista Resumida das 12h
+            const leituras12hDesc = lts.slice().reverse();
+
             const fornoItem = {
                 num: String(num).padStart(2, '0'),
+                moduloNum: num,
                 c1,
                 c2,
                 delta,
                 picoC1,
+                picoC1Ts,
+                horaPicoMax: formatHoraCurtaAdmin(picoC1Ts),
+                minC1,
+                minC1Ts,
+                horaPicoMin: formatHoraCurtaAdmin(minC1Ts),
                 picoC2,
+                picoC2Ts,
+                horaPicoC2: formatHoraCurtaAdmin(picoC2Ts),
                 mediaC1,
+                mediaC1Ts,
+                horaMedia: formatHoraCurtaAdmin(mediaC1Ts),
                 taxaVariacao,
                 tendenciaTxt,
                 isOnline,
@@ -3945,9 +4092,14 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
                 previsao,
                 score,
                 badgeScore,
-                pontosGrafico
+                pontosGrafico,
+                leiturasAsc: lts,
+                leiturasDesc: leituras12hDesc,
+                minTs: lts[0]._ts,
+                maxTs: ult._ts
             };
 
+            todosFornosComLeitura.push(fornoItem);
             if (isQueimando) {
                 fornosEmQueima.push(fornoItem);
             } else {
@@ -3972,22 +4124,22 @@ function processarAlgoritmoIA(ceramica, leituras, janelaHoras) {
         }
     }
 
-
-
     const qtdQueima = fornosEmQueima.length || 1;
     const scoreGeral = Math.round(fornosEmQueima.reduce((acc, f) => acc + (f.score || 85), 0) / qtdQueima);
     const gradienteMedio = Math.round(fornosEmQueima.reduce((acc, f) => acc + (f.delta || 30), 0) / qtdQueima);
 
-    const chartUrl = gerarQuickChartUrlClient(ceramica.nome, fornosEmQueima);
+    const chartUrl = gerarQuickChartUrlClient(ceramica.nome, fornosEmQueima, janela12h);
 
     return {
         ceramica,
         janelaHoras,
+        janela12h,
         scoreGeral,
         gradienteMedio,
         totalAnomalias: totalAnomaliasGlobal,
         fornosAtivos: fornosEmQueima,
         fornosInativos,
+        todosFornosComLeitura,
         totalFornosCadastrados: totalFornos,
         chartUrl,
         dataHora: new Date()
@@ -4150,8 +4302,688 @@ function renderizarResultadoIA(resultado) {
         }
     }
 
-    // 4. Monta o texto oficial para WhatsApp
+    // 4. Renderiza o Painel do PDF das Últimas 12 Horas (baseado no Horário Diário de Envio)
+    renderizarPainelPDF12HorasIA(resultado);
+
+    // 5. Monta o texto oficial para WhatsApp
     gerarTextoRelatorioIA(false);
+}
+
+/**
+ * Renderiza o painel "Registro Detalhado de Leituras Coletadas (PDF Últimas 12 Horas)"
+ * dentro do card de Relatório Automático Montado pela IA
+ */
+function renderizarPainelPDF12HorasIA(resultado) {
+    if (!resultado) return;
+    const janela12h = resultado.janela12h || obterJanela12HorasPorHorarioEnvio();
+    const fornosLista = (resultado.fornosAtivos && resultado.fornosAtivos.length > 0)
+        ? resultado.fornosAtivos
+        : (resultado.todosFornosComLeitura || []);
+
+    if ($("aiPdf12hWindowBadge")) {
+        $("aiPdf12hWindowBadge").innerHTML = `<i class="fa-regular fa-clock"></i> Fechamento ${janela12h.horaFimStr} (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
+    }
+
+    const pillsBox = $("aiPdf12hFornoPills");
+    if (!fornosLista || fornosLista.length === 0) {
+        if (pillsBox) pillsBox.innerHTML = "";
+        if ($("aiPdf12hCounterText")) {
+            $("aiPdf12hCounterText").textContent = `Nenhuma leitura registrada nas últimas 12 horas (${janela12h.horaInicioStr} às ${janela12h.horaFimStr}).`;
+        }
+        if ($("aiPdf12hTag")) $("aiPdf12hTag").textContent = "REGISTRO 12 HORAS • SEM LEITURAS";
+        if ($("aiPdf12hTitle")) $("aiPdf12hTitle").textContent = `${resultado.ceramica?.nome || "Cerâmica"} — ${janela12h.dataFechamentoStr} (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
+        if ($("aiPdf12hMaxVal")) $("aiPdf12hMaxVal").textContent = "-- °C";
+        if ($("aiPdf12hMaxTime")) $("aiPdf12hMaxTime").textContent = "às --:--";
+        if ($("aiPdf12hAvgVal")) $("aiPdf12hAvgVal").textContent = "-- °C";
+        if ($("aiPdf12hAvgTime")) $("aiPdf12hAvgTime").textContent = "às --:--";
+        if ($("aiPdf12hMinVal")) $("aiPdf12hMinVal").textContent = "-- °C";
+        if ($("aiPdf12hMinTime")) $("aiPdf12hMinTime").textContent = "às --:--";
+        if ($("aiPdf12hSummaryCount")) $("aiPdf12hSummaryCount").textContent = "0 leituras nas 12h";
+        if ($("aiPdf12hTableBody")) {
+            $("aiPdf12hTableBody").innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:#94a3b8;">Nenhuma leitura encontrada nesta janela de 12 horas.</td></tr>`;
+        }
+        if ($("aiPdf12hPaginationBar")) $("aiPdf12hPaginationBar").innerHTML = "";
+        return;
+    }
+
+    // Seleciona o forno ativo para visualização do PDF de 12h
+    let activeMod = adminState.aiReportState?.activeFornoPdf12h;
+    if (!activeMod || !fornosLista.some(f => Number(f.num) === Number(activeMod))) {
+        activeMod = Number(fornosLista[0].num);
+        adminState.aiReportState.activeFornoPdf12h = activeMod;
+    }
+
+    if (pillsBox) {
+        pillsBox.innerHTML = fornosLista.map(f => {
+            const isSel = Number(f.num) === Number(activeMod);
+            return `
+                <button type="button" class="filter-pill ${isSel ? "active" : ""}" onclick="selecionarFornoPDF12h(${Number(f.num)})">
+                    <i class="fa-solid fa-fire-flame-curved"></i> Forno ${f.num}
+                </button>
+            `;
+        }).join("");
+    }
+
+    selecionarFornoPDF12h(activeMod, false);
+}
+
+function selecionarFornoPDF12h(moduloNum, resetarPagina = true) {
+    const resultado = adminState.aiReportState?.analiseAtual;
+    if (!resultado) return;
+
+    adminState.aiReportState.activeFornoPdf12h = Number(moduloNum);
+    if (resetarPagina) {
+        adminState.aiReportState.paginaTabelaPdf12h = 1;
+    }
+
+    const janela12h = resultado.janela12h || obterJanela12HorasPorHorarioEnvio();
+    const fornosLista = (resultado.fornosAtivos && resultado.fornosAtivos.length > 0)
+        ? resultado.fornosAtivos
+        : (resultado.todosFornosComLeitura || []);
+
+    const fornoObj = fornosLista.find(f => Number(f.num) === Number(moduloNum)) || fornosLista[0];
+    if (!fornoObj) return;
+
+    // Atualiza estado visual dos pills de forno
+    const pillsBox = $("aiPdf12hFornoPills");
+    if (pillsBox) {
+        pillsBox.querySelectorAll(".filter-pill").forEach(btn => {
+            btn.classList.toggle("active", btn.textContent.includes(`Forno ${fornoObj.num}`));
+        });
+    }
+
+    const totalLeituras = fornoObj.leiturasDesc ? fornoObj.leiturasDesc.length : 0;
+    const dRef = fornoObj.maxTs ? new Date(fornoObj.maxTs).toLocaleDateString("pt-BR") : janela12h.dataFechamentoStr;
+    const statusCiclo = fornoObj.picoC1 >= 500
+        ? "Queima Ativa / Alta Temp."
+        : (fornoObj.picoC1 >= 150 ? "Aquecimento / Resfriamento" : "Monitoramento Contínuo");
+
+    if ($("aiPdf12hCounterText")) {
+        $("aiPdf12hCounterText").textContent = `${totalLeituras.toLocaleString("pt-BR")} leituras coletadas do Forno ${fornoObj.num} nas últimas 12 horas (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
+    }
+    if ($("aiPdf12hTag")) {
+        $("aiPdf12hTag").textContent = `REGISTRO 12 HORAS • MÓDULO ${fornoObj.num}`;
+    }
+    if ($("aiPdf12hTitle")) {
+        $("aiPdf12hTitle").textContent = `Forno ${fornoObj.num} — ${dRef} (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
+    }
+    if ($("aiPdf12hStatusBadge")) {
+        $("aiPdf12hStatusBadge").innerHTML = `<i class="fa-solid fa-circle-check"></i> ${escapeHtml(statusCiclo)}`;
+    }
+
+    // 3 Cards dos Principais Valores das 12h com Horários Exatos
+    if ($("aiPdf12hMaxVal")) $("aiPdf12hMaxVal").textContent = `${fornoObj.picoC1} °C`;
+    if ($("aiPdf12hMaxTime")) $("aiPdf12hMaxTime").textContent = `às ${fornoObj.horaPicoMax || "--:--"}`;
+
+    if ($("aiPdf12hAvgVal")) $("aiPdf12hAvgVal").textContent = `${fornoObj.mediaC1} °C`;
+    if ($("aiPdf12hAvgTime")) $("aiPdf12hAvgTime").textContent = `às ${fornoObj.horaMedia || "--:--"}`;
+
+    if ($("aiPdf12hMinVal")) $("aiPdf12hMinVal").textContent = `${fornoObj.minC1} °C`;
+    if ($("aiPdf12hMinTime")) $("aiPdf12hMinTime").textContent = `às ${fornoObj.horaPicoMin || "--:--"}`;
+
+    if ($("aiPdf12hSummaryCount")) {
+        $("aiPdf12hSummaryCount").textContent = `${totalLeituras.toLocaleString("pt-BR")} leituras nas 12h (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
+    }
+
+    // Renderiza o gráfico das 12h deste forno
+    renderizarGraficoPDF12h(fornoObj, janela12h, dRef);
+
+    // Renderiza a tabela de 4 colunas (Data & Horário | Módulo | Canal 1 | Canal 2)
+    renderizarTabelaPDF12h(fornoObj, dRef, janela12h);
+}
+
+function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
+    const canvas = $("aiPdf12hChartCanvas");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (aiPdf12hChartInstance) {
+        aiPdf12hChartInstance.destroy();
+        aiPdf12hChartInstance = null;
+    }
+
+    const ordenadas = fornoObj.leiturasAsc || [];
+    if (ordenadas.length === 0) return;
+
+    const maxPoints = 300;
+    const step = Math.max(1, Math.ceil(ordenadas.length / maxPoints));
+    const amostradas = [];
+    for (let i = 0; i < ordenadas.length; i += step) {
+        amostradas.push(ordenadas[i]);
+    }
+    if (amostradas[amostradas.length - 1] !== ordenadas[ordenadas.length - 1]) {
+        amostradas.push(ordenadas[ordenadas.length - 1]);
+    }
+
+    const ptsC1 = [];
+    const ptsC2 = [];
+    for (let i = 0; i < amostradas.length; i++) {
+        const r = amostradas[i];
+        const ts = r._ts || new Date(r.created_at || r.data_hora).getTime();
+        ptsC1.push({ x: ts, y: Math.round(Number(r.canal_1 ?? 0)) });
+        ptsC2.push({ x: ts, y: Math.round(Number(r.canal_2 ?? 0)) });
+    }
+
+    const readoutEl = $("aiPdf12hChartReadout");
+    if (readoutEl) {
+        readoutEl.innerHTML = `<i class="fa-regular fa-clock"></i> ${escapeHtml(dataRefStr)} às ${fornoObj.horaPicoMax} &nbsp;•&nbsp; C1: <b style="color:#fb923c">${fornoObj.picoC1} °C</b> &nbsp;|&nbsp; C2: <b style="color:#38bdf8">${fornoObj.picoC2} °C</b>`;
+    }
+
+    const ctx = canvas.getContext("2d");
+    const gradC1 = ctx.createLinearGradient(0, 0, 0, 220);
+    gradC1.addColorStop(0, "rgba(249, 115, 22, 0.35)");
+    gradC1.addColorStop(1, "rgba(249, 115, 22, 0.0)");
+
+    const gradC2 = ctx.createLinearGradient(0, 0, 0, 220);
+    gradC2.addColorStop(0, "rgba(56, 189, 248, 0.24)");
+    gradC2.addColorStop(1, "rgba(56, 189, 248, 0.0)");
+
+    aiPdf12hChartInstance = new Chart(ctx, {
+        type: "line",
+        data: {
+            datasets: [
+                {
+                    label: `Forno ${fornoObj.num} — Canal 1 (Sup. °C)`,
+                    data: ptsC1,
+                    borderColor: "#f97316",
+                    backgroundColor: gradC1,
+                    borderWidth: 2.5,
+                    pointRadius: amostradas.length <= 45 ? 3 : 0,
+                    pointHoverRadius: 5,
+                    tension: 0.25,
+                    fill: true
+                },
+                {
+                    label: `Forno ${fornoObj.num} — Canal 2 (Inf. °C)`,
+                    data: ptsC2,
+                    borderColor: "#38bdf8",
+                    backgroundColor: gradC2,
+                    borderWidth: 2,
+                    pointRadius: amostradas.length <= 45 ? 2.5 : 0,
+                    pointHoverRadius: 5,
+                    tension: 0.25,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 180 },
+            interaction: { mode: "index", intersect: false },
+            onHover: (evt, activeEls) => {
+                if (!readoutEl || !activeEls || activeEls.length === 0) return;
+                const idx = activeEls[0].index;
+                const p1 = ptsC1[idx];
+                const p2 = ptsC2[idx];
+                if (!p1) return;
+                const d = new Date(p1.x);
+                const dStr = d.toLocaleDateString("pt-BR");
+                const hStr = formatHoraCurtaAdmin(p1.x);
+                readoutEl.innerHTML = `<i class="fa-regular fa-clock"></i> ${dStr} às ${hStr} &nbsp;•&nbsp; C1: <b style="color:#fb923c">${p1.y} °C</b> &nbsp;|&nbsp; C2: <b style="color:#38bdf8">${p2 ? p2.y : "--"} °C</b>`;
+            },
+            plugins: {
+                legend: {
+                    labels: { color: "#cbd5e1", font: { size: 11, weight: "600" } }
+                },
+                tooltip: {
+                    backgroundColor: "rgba(15, 23, 42, 0.96)",
+                    titleColor: "#ffffff",
+                    bodyColor: "#e2e8f0",
+                    borderColor: "rgba(249, 115, 22, 0.45)",
+                    borderWidth: 1,
+                    callbacks: {
+                        title: (items) => {
+                            if (!items || !items.length) return "";
+                            const ts = Number(items[0].parsed.x);
+                            const dt = new Date(ts);
+                            return `${dt.toLocaleDateString("pt-BR")} às ${formatHoraCurtaAdmin(ts)}`;
+                        },
+                        label: (item) => `${item.dataset.label}: ${item.parsed.y} °C`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: "linear",
+                    min: fornoObj.minTs,
+                    max: fornoObj.maxTs > fornoObj.minTs ? fornoObj.maxTs : fornoObj.minTs + 60000,
+                    title: {
+                        display: true,
+                        text: `Janela de 12 Horas (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`,
+                        color: "#94a3b8",
+                        font: { size: 10, weight: "700" }
+                    },
+                    ticks: {
+                        color: "#94a3b8",
+                        maxTicksLimit: 10,
+                        font: { size: 10 },
+                        callback: (val) => formatHoraCurtaAdmin(Number(val))
+                    },
+                    grid: { color: "rgba(255, 255, 255, 0.05)" }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: "Temperatura (°C)",
+                        color: "#94a3b8",
+                        font: { size: 10, weight: "700" }
+                    },
+                    ticks: {
+                        color: "#94a3b8",
+                        font: { size: 10 },
+                        callback: (v) => `${v}°C`
+                    },
+                    grid: { color: "rgba(255, 255, 255, 0.06)" }
+                }
+            }
+        }
+    });
+}
+
+function renderizarTabelaPDF12h(fornoObj = null, dataRefStr = "", janela12h = null) {
+    const tbody = $("aiPdf12hTableBody");
+    const paginationBar = $("aiPdf12hPaginationBar");
+    if (!tbody) return;
+
+    const resultado = adminState.aiReportState?.analiseAtual;
+    if (!fornoObj && resultado) {
+        const fornosLista = (resultado.fornosAtivos && resultado.fornosAtivos.length > 0)
+            ? resultado.fornosAtivos
+            : (resultado.todosFornosComLeitura || []);
+        const activeMod = adminState.aiReportState?.activeFornoPdf12h;
+        fornoObj = fornosLista.find(f => Number(f.num) === Number(activeMod)) || fornosLista[0];
+        janela12h = resultado.janela12h || obterJanela12HorasPorHorarioEnvio();
+        dataRefStr = fornoObj?.maxTs ? new Date(fornoObj.maxTs).toLocaleDateString("pt-BR") : janela12h.dataFechamentoStr;
+    }
+
+    const leituras = (fornoObj && fornoObj.leiturasDesc) ? fornoObj.leiturasDesc : [];
+    const pageSize = 50;
+    const totalPages = Math.max(1, Math.ceil(leituras.length / pageSize));
+    let paginaAtualNum = adminState.aiReportState?.paginaTabelaPdf12h || 1;
+    if (paginaAtualNum > totalPages) paginaAtualNum = totalPages;
+    adminState.aiReportState.paginaTabelaPdf12h = paginaAtualNum;
+
+    const startIdx = (paginaAtualNum - 1) * pageSize;
+    const paginaRows = leituras.slice(startIdx, startIdx + pageSize);
+
+    if (paginaRows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:#94a3b8;">Nenhuma leitura registrada nesta janela de 12 horas.</td></tr>`;
+        if (paginationBar) paginationBar.innerHTML = "";
+        return;
+    }
+
+    tbody.innerHTML = paginaRows.map(r => {
+        const dt = new Date(r._ts || r.created_at || r.data_hora);
+        const dtStr = !isNaN(dt.getTime())
+            ? `${dt.toLocaleDateString("pt-BR")} ${dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+            : "--";
+        const mod = Number(r.modulo_alutal || r.forno_id || fornoObj?.moduloNum || 1);
+        const c1 = Math.round(Number(r.canal_1 ?? 0));
+        const c2 = Math.round(Number(r.canal_2 ?? 0));
+
+        return `
+            <tr>
+                <td style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">${escapeHtml(dtStr)}</td>
+                <td><span style="color: #38bdf8; font-weight: 700;">Mód. ${String(mod).padStart(2, "0")}</span></td>
+                <td style="color: #fb923c; font-weight: 800;">${c1} °C</td>
+                <td style="color: #38bdf8; font-weight: 800;">${c2} °C</td>
+            </tr>
+        `;
+    }).join("");
+
+    if (paginationBar) {
+        paginationBar.innerHTML = `
+            <span>Mostrando ${startIdx + 1}–${Math.min(startIdx + pageSize, leituras.length)} de ${leituras.length.toLocaleString("pt-BR")} leituras em ${escapeHtml(dataRefStr)} (${janela12h ? `${janela12h.horaInicioStr} às ${janela12h.horaFimStr}` : "12h"})</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <button type="button" class="filter-pill" ${paginaAtualNum <= 1 ? "disabled style='opacity:0.4;cursor:not-allowed;'" : ""} onclick="mudarPaginaTabelaPDF12h(-1)">
+                    <i class="fa-solid fa-chevron-left"></i> Anterior
+                </button>
+                <span style="padding: 4px 8px; color: #ffffff; font-weight: 700;">Pág. ${paginaAtualNum} / ${totalPages}</span>
+                <button type="button" class="filter-pill" ${paginaAtualNum >= totalPages ? "disabled style='opacity:0.4;cursor:not-allowed;'" : ""} onclick="mudarPaginaTabelaPDF12h(1)">
+                    Próxima <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        `;
+    }
+}
+
+function mudarPaginaTabelaPDF12h(delta) {
+    if (!adminState.aiReportState) return;
+    adminState.aiReportState.paginaTabelaPdf12h = Math.max(1, (adminState.aiReportState.paginaTabelaPdf12h || 1) + delta);
+    renderizarTabelaPDF12h();
+}
+
+/**
+ * Gera o documento PDF compacto das Últimas 12 Horas no mesmo formato visual:
+ * - Registro Detalhado de Leituras Coletadas (Últimas 12h a partir do Horário de Envio)
+ * - Pico Máximo (C1) + horário, Média Térmica + horário, Pico Mínimo (C1) + horário
+ * - Gráfico do Dia Selecionado (Temperatura x Horário das 12h)
+ * - Lista Resumida de Leituras do Dia (Data & Horário | Módulo | Canal 1 (Sup.) | Canal 2 (Inf.))
+ */
+function gerarDocumentoPDF12Horas() {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        alert("Biblioteca PDF (jsPDF) ainda está carregando. Tente novamente em instantes.");
+        return null;
+    }
+
+    const resultado = adminState.aiReportState?.analiseAtual;
+    if (!resultado) return null;
+
+    const janela12h = resultado.janela12h || obterJanela12HorasPorHorarioEnvio();
+    const fornosLista = (resultado.fornosAtivos && resultado.fornosAtivos.length > 0)
+        ? resultado.fornosAtivos
+        : (resultado.todosFornosComLeitura || []);
+
+    if (fornosLista.length === 0) return null;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = 210;
+    const pageH = 297;
+
+    fornosLista.forEach((fornoObj, idxForno) => {
+        if (idxForno > 0) doc.addPage();
+
+        const leiturasDesc = fornoObj.leiturasDesc || [];
+        const leiturasAsc = fornoObj.leiturasAsc || [];
+        const dRef = fornoObj.maxTs ? new Date(fornoObj.maxTs).toLocaleDateString("pt-BR") : janela12h.dataFechamentoStr;
+        const statusCiclo = fornoObj.picoC1 >= 500
+            ? "Queima Ativa / Alta Temp."
+            : (fornoObj.picoC1 >= 150 ? "Aquecimento / Resfriamento" : "Monitoramento Contínuo");
+
+        // Fundo escuro elegante da página
+        doc.setFillColor(7, 18, 32);
+        doc.rect(0, 0, pageW, pageH, "F");
+
+        // Cabeçalho Superior: Registro Detalhado de Leituras Coletadas
+        doc.setFillColor(13, 27, 46);
+        doc.setDrawColor(249, 115, 22);
+        doc.setLineWidth(0.35);
+        doc.roundedRect(10, 10, 190, 20, 3, 3, "FD");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text("Registro Detalhado de Leituras Coletadas (Ultimas 12 Horas)", 15, 18);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+            `${leiturasDesc.length.toLocaleString("pt-BR")} leituras coletadas do Forno ${fornoObj.num} no periodo (${janela12h.horaInicioStr} as ${janela12h.horaFimStr} • Fechamento: ${janela12h.horaFimStr})`,
+            15,
+            24.5
+        );
+
+        // Barra de Identificação do Registro Diário / 12h
+        doc.setFillColor(15, 23, 42);
+        doc.setDrawColor(40, 60, 85);
+        doc.roundedRect(10, 33, 190, 16, 2.5, 2.5, "FD");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(249, 115, 22);
+        doc.text(`REGISTRO 12 HORAS #${idxForno + 1} • MODULO ${fornoObj.num} • ${resultado.ceramica?.nome || "CERAMICA"}`, 15, 39);
+
+        doc.setFontSize(11);
+        doc.setTextColor(255, 255, 255);
+        doc.text(`Forno ${fornoObj.num} — ${dRef} (${janela12h.horaInicioStr} as ${janela12h.horaFimStr})`, 15, 45.5);
+
+        // Badge Status à direita
+        doc.setFillColor(16, 65, 55);
+        doc.setDrawColor(16, 185, 129);
+        doc.roundedRect(142, 36.5, 53, 9, 4, 4, "FD");
+        doc.setFontSize(8);
+        doc.setTextColor(52, 211, 153);
+        doc.text(statusCiclo, 168.5, 42.2, { align: "center" });
+
+        // 3 Cards de Destaques das 12 Horas com Horários Exatos (Pico Máximo C1, Média Térmica, Pico Mínimo C1)
+        const cardY = 52;
+        const cardW = 60.6;
+        const cardH = 22;
+
+        // Card 1: Pico Máximo (C1)
+        doc.setFillColor(28, 24, 28);
+        doc.setDrawColor(249, 115, 22);
+        doc.roundedRect(10, cardY, cardW, cardH, 2.5, 2.5, "FD");
+        doc.setFontSize(7.5);
+        doc.setTextColor(253, 186, 116);
+        doc.text("PICO MAXIMO (C1)", 14, cardY + 6);
+        doc.setFontSize(14);
+        doc.setTextColor(251, 146, 60);
+        doc.text(`${fornoObj.picoC1} °C`, 14, cardY + 14);
+        doc.setFontSize(8);
+        doc.setTextColor(254, 215, 170);
+        doc.text(`as ${fornoObj.horaPicoMax || "--:--"}`, 14, cardY + 19.5);
+
+        // Card 2: Média Térmica
+        doc.setFillColor(14, 30, 48);
+        doc.setDrawColor(56, 189, 248);
+        doc.roundedRect(10 + cardW + 4, cardY, cardW, cardH, 2.5, 2.5, "FD");
+        doc.setFontSize(7.5);
+        doc.setTextColor(125, 211, 252);
+        doc.text("MEDIA TERMICA", 14 + cardW + 4, cardY + 6);
+        doc.setFontSize(14);
+        doc.setTextColor(56, 189, 248);
+        doc.text(`${fornoObj.mediaC1} °C`, 14 + cardW + 4, cardY + 14);
+        doc.setFontSize(8);
+        doc.setTextColor(186, 230, 253);
+        doc.text(`as ${fornoObj.horaMedia || "--:--"}`, 14 + cardW + 4, cardY + 19.5);
+
+        // Card 3: Pico Mínimo (C1)
+        doc.setFillColor(12, 35, 35);
+        doc.setDrawColor(16, 185, 129);
+        doc.roundedRect(10 + (cardW + 4) * 2, cardY, cardW, cardH, 2.5, 2.5, "FD");
+        doc.setFontSize(7.5);
+        doc.setTextColor(110, 231, 183);
+        doc.text("PICO MINIMO (C1)", 14 + (cardW + 4) * 2, cardY + 6);
+        doc.setFontSize(14);
+        doc.setTextColor(52, 211, 153);
+        doc.text(`${fornoObj.minC1} °C`, 14 + (cardW + 4) * 2, cardY + 14);
+        doc.setFontSize(8);
+        doc.setTextColor(167, 243, 208);
+        doc.text(`as ${fornoObj.horaPicoMin || "--:--"}`, 14 + (cardW + 4) * 2, cardY + 19.5);
+
+        // Caixa do Gráfico do Dia Selecionado (Últimas 12 Horas)
+        const chartBoxY = 77;
+        const chartBoxH = 58;
+        doc.setFillColor(11, 22, 38);
+        doc.setDrawColor(35, 55, 80);
+        doc.roundedRect(10, chartBoxY, 190, chartBoxH, 2.5, 2.5, "FD");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text(`Grafico do Dia Selecionado (Temperatura x Horario • ${janela12h.horaInicioStr} as ${janela12h.horaFimStr})`, 14, chartBoxY + 6.5);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(251, 146, 60);
+        doc.text(
+            `${dRef} as ${fornoObj.horaPicoMax}  •  C1: ${fornoObj.picoC1} °C  |  C2: ${fornoObj.picoC2} °C`,
+            196,
+            chartBoxY + 6.5,
+            { align: "right" }
+        );
+
+        // Desenha vetorialmente a curva de 12 horas C1 (Laranja) e C2 (Azul) no PDF
+        const plotX = 22;
+        const plotY = chartBoxY + 11;
+        const plotW = 172;
+        const plotH = 39;
+
+        doc.setDrawColor(30, 45, 68);
+        doc.setLineWidth(0.2);
+        const maxTempScale = Math.max(200, Math.ceil((Math.max(fornoObj.picoC1, fornoObj.picoC2, 100) + 50) / 100) * 100);
+        for (let gStep = 0; gStep <= 4; gStep++) {
+            const gy = plotY + plotH - (gStep / 4) * plotH;
+            doc.line(plotX, gy, plotX + plotW, gy);
+            const tVal = Math.round((gStep / 4) * maxTempScale);
+            doc.setFontSize(6.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text(`${tVal}°C`, plotX - 2, gy + 1, { align: "right" });
+        }
+
+        if (leiturasAsc.length > 0) {
+            const minT = fornoObj.minTs;
+            const maxT = Math.max(minT + 60000, fornoObj.maxTs);
+            const sampleStep = Math.max(1, Math.ceil(leiturasAsc.length / 160));
+            const pts = [];
+            for (let i = 0; i < leiturasAsc.length; i += sampleStep) {
+                pts.push(leiturasAsc[i]);
+            }
+            if (pts[pts.length - 1] !== leiturasAsc[leiturasAsc.length - 1]) {
+                pts.push(leiturasAsc[leiturasAsc.length - 1]);
+            }
+
+            // Linha Canal 2 (Inferior - Azul)
+            doc.setDrawColor(56, 189, 248);
+            doc.setLineWidth(0.55);
+            for (let i = 1; i < pts.length; i++) {
+                const x1 = plotX + ((pts[i - 1]._ts - minT) / (maxT - minT)) * plotW;
+                const y1 = plotY + plotH - (Math.min(maxTempScale, Math.max(0, Number(pts[i - 1].canal_2 ?? 0))) / maxTempScale) * plotH;
+                const x2 = plotX + ((pts[i]._ts - minT) / (maxT - minT)) * plotW;
+                const y2 = plotY + plotH - (Math.min(maxTempScale, Math.max(0, Number(pts[i].canal_2 ?? 0))) / maxTempScale) * plotH;
+                doc.line(x1, y1, x2, y2);
+            }
+
+            // Linha Canal 1 (Superior - Laranja)
+            doc.setDrawColor(249, 115, 22);
+            doc.setLineWidth(0.75);
+            for (let i = 1; i < pts.length; i++) {
+                const x1 = plotX + ((pts[i - 1]._ts - minT) / (maxT - minT)) * plotW;
+                const y1 = plotY + plotH - (Math.min(maxTempScale, Math.max(0, Number(pts[i - 1].canal_1 ?? 0))) / maxTempScale) * plotH;
+                const x2 = plotX + ((pts[i]._ts - minT) / (maxT - minT)) * plotW;
+                const y2 = plotY + plotH - (Math.min(maxTempScale, Math.max(0, Number(pts[i].canal_1 ?? 0))) / maxTempScale) * plotH;
+                doc.line(x1, y1, x2, y2);
+            }
+
+            // Rótulos de horário no eixo X
+            doc.setFontSize(6.5);
+            doc.setTextColor(148, 163, 184);
+            for (let tStep = 0; tStep <= 6; tStep++) {
+                const tx = plotX + (tStep / 6) * plotW;
+                const tMs = minT + (tStep / 6) * (maxT - minT);
+                doc.text(formatHoraCurtaAdmin(tMs), tx, plotY + plotH + 4.5, { align: "center" });
+            }
+        }
+
+        // Seção: Lista Resumida de Leituras do Dia (Últimas 12h) — 4 Colunas
+        let curY = 138;
+        doc.setFillColor(13, 27, 46);
+        doc.setDrawColor(35, 55, 80);
+        doc.roundedRect(10, curY, 190, 9, 2, 2, "FD");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text("Lista Resumida de Leituras do Dia (Ultimas 12 Horas)", 14, curY + 6);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(253, 186, 116);
+        doc.text(
+            `${leiturasDesc.length.toLocaleString("pt-BR")} leituras no periodo (${janela12h.horaInicioStr} as ${janela12h.horaFimStr})`,
+            196,
+            curY + 6,
+            { align: "right" }
+        );
+
+        curY += 11;
+
+        // Função auxiliar para desenhar o cabeçalho da tabela de 4 colunas
+        const drawTableHeader = (yPos) => {
+            doc.setFillColor(20, 34, 56);
+            doc.rect(10, yPos, 190, 7, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Data & Horario", 14, yPos + 4.8);
+            doc.text("Modulo", 78, yPos + 4.8);
+            doc.text("Canal 1 (Sup.)", 122, yPos + 4.8);
+            doc.text("Canal 2 (Inf.)", 166, yPos + 4.8);
+            return yPos + 7;
+        };
+
+        curY = drawTableHeader(curY);
+
+        // Para ser um "pequeno PDF das últimas 12 horas", exibe as 50 leituras principais/mais recentes da janela de 12h (igual à Página 1 de 50 linhas mostrada no exemplo)
+        const maxRowsPdf = Math.min(leiturasDesc.length, 50);
+        const rowH = 5.2;
+
+        for (let rIdx = 0; rIdx < maxRowsPdf; rIdx++) {
+            if (curY + rowH > pageH - 12) {
+                doc.addPage();
+                doc.setFillColor(7, 18, 32);
+                doc.rect(0, 0, pageW, pageH, "F");
+                curY = 12;
+                curY = drawTableHeader(curY);
+            }
+
+            const r = leiturasDesc[rIdx];
+            const dt = new Date(r._ts || r.created_at || r.data_hora);
+            const dtStr = !isNaN(dt.getTime())
+                ? `${dt.toLocaleDateString("pt-BR")} ${dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                : "--";
+            const mod = Number(r.modulo_alutal || r.forno_id || fornoObj.moduloNum || 1);
+            const c1 = Math.round(Number(r.canal_1 ?? 0));
+            const c2 = Math.round(Number(r.canal_2 ?? 0));
+
+            if (rIdx % 2 === 0) {
+                doc.setFillColor(11, 23, 40);
+            } else {
+                doc.setFillColor(15, 29, 49);
+            }
+            doc.rect(10, curY, 190, rowH, "F");
+
+            doc.setFont("courier", "normal");
+            doc.setFontSize(7.5);
+            doc.setTextColor(226, 232, 240);
+            doc.text(dtStr, 14, curY + 3.7);
+
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(56, 189, 248);
+            doc.text(`Mod. ${String(mod).padStart(2, "0")}`, 78, curY + 3.7);
+
+            doc.setTextColor(251, 146, 60);
+            doc.text(`${c1} °C`, 122, curY + 3.7);
+
+            doc.setTextColor(56, 189, 248);
+            doc.text(`${c2} °C`, 166, curY + 3.7);
+
+            curY += rowH;
+        }
+
+        // Rodapé do PDF
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+            `Mostrando 1–${maxRowsPdf} de ${leiturasDesc.length.toLocaleString("pt-BR")} leituras em ${dRef} (Janela 12h: ${janela12h.horaInicioStr} as ${janela12h.horaFimStr}) • ThermoLink Industrial`,
+            105,
+            pageH - 5,
+            { align: "center" }
+        );
+    });
+
+    const cerNomeLimpo = String(resultado.ceramica?.nome || "Ceramica").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const fornoRef = fornosLista[0]?.num || "01";
+    const fileName = `Relatorio_12h_${cerNomeLimpo}_Forno_${fornoRef}.pdf`;
+    const dataUri = doc.output("datauristring");
+    const base64 = dataUri.includes(",") ? dataUri.split(",")[1] : "";
+
+    return { doc, fileName, base64 };
+}
+
+function gerarEBaixarPDFRelatorio12h() {
+    const pdfObj = gerarDocumentoPDF12Horas();
+    if (!pdfObj) {
+        mostrarToastFeedback("Não há leituras carregadas nas últimas 12h para gerar o PDF.", "warn");
+        return;
+    }
+    pdfObj.doc.save(pdfObj.fileName);
+    mostrarToastFeedback(`PDF das últimas 12 horas (${pdfObj.fileName}) gerado com sucesso!`, "success");
 }
 
 async function obterResumoGeminiClient(ceramicaNome, fornosAtivos) {
@@ -4230,11 +5062,12 @@ async function gerarTextoRelatorioIA(resetarManual = false) {
     const res = adminState.aiReportState?.analiseAtual;
     if (!res) return;
 
+    const janela12h = res.janela12h || obterJanela12HorasPorHorarioEnvio();
     const agora = new Date();
-    const dataFormatada = agora.toLocaleDateString("pt-BR");
-    const horaFormatada = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const dataFormatada = janela12h.dataFechamentoStr || agora.toLocaleDateString("pt-BR");
+    const horaFormatada = janela12h.horaFimStr || agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const { fornosAtivos, ceramica, chartUrl } = res;
-    const fornosList = fornosAtivos || [];
+    const fornosList = (fornosAtivos && fornosAtivos.length > 0) ? fornosAtivos : (res.todosFornosComLeitura || []);
 
     let t = `*━━━━━━━━━━━━━━━━━━━━━━━━━━*\n`;
     t += `🔥 *THERMOLINK • RESUMO 12 HORAS* 🔥\n`;
@@ -4242,19 +5075,22 @@ async function gerarTextoRelatorioIA(resetarManual = false) {
 
     t += `🏭 *Cerâmica:* ${ceramica.nome}\n`;
     t += `👤 *Aos Cuidados:* ${ceramica.responsavel || "Gestor de Queima"}\n`;
-    t += `📅 *Fechamento:* ${dataFormatada} às ${horaFormatada}\n`;
-    t += `⏱️ *Período:* Últimas 12 Horas (Telemetria Real)\n\n`;
+    t += `📅 *Fechamento Diário:* ${dataFormatada} às ${horaFormatada}\n`;
+    t += `⏱️ *Período (Últimas 12h):* ${janela12h.horaInicioStr} às ${janela12h.horaFimStr}\n\n`;
 
     if (fornosList.length === 0) {
         t += `ℹ️ *Nenhum forno registrou queima ativa nesta janela de 12 horas.*\n`;
         t += `Todas as unidades monitoradas permanecem em temperatura ambiente ou pátio.\n\n`;
     } else {
-        t += `🔥 *FORNOS EM OPERAÇÃO:* (${fornosList.length} ativo${fornosList.length > 1 ? 's' : ''})\n\n`;
+        t += `🔥 *FORNOS MONITORADOS NAS 12H:* (${fornosList.length} forno${fornosList.length > 1 ? 's' : ''})\n\n`;
         fornosList.forEach(f => {
             const faseNome = f.fase?.nome || f.fase || 'Queima Ativa';
-            t += `*FORNO ${f.num}* — ${faseNome}\n`;
-            t += `• *Temp. Atual:* C1 (Topo): *${f.c1}°C* | C2 (Base): *${f.c2}°C*\n`;
-            t += `• *Pico (12h):* *${f.picoC1}°C* (Média: ${f.mediaC1}°C)\n`;
+            const qtdLts = f.leiturasDesc ? f.leiturasDesc.length : 0;
+            t += `*FORNO ${f.num}* — ${faseNome} (${qtdLts.toLocaleString("pt-BR")} leituras)\n`;
+            t += `• *Pico Máximo (C1):* *${f.picoC1}°C* (às ${f.horaPicoMax || "--:--"})\n`;
+            t += `• *Média Térmica:* *${f.mediaC1}°C* (às ${f.horaMedia || "--:--"})\n`;
+            t += `• *Pico Mínimo (C1):* *${f.minC1 ?? 0}°C* (às ${f.horaPicoMin || "--:--"})\n`;
+            t += `• *Temp. Atual:* C1 (Sup.): *${f.c1}°C* | C2 (Inf.): *${f.c2}°C*\n`;
             t += `• *Comportamento:* ${f.tendenciaTxt}\n\n`;
         });
     }
@@ -4271,6 +5107,7 @@ async function gerarTextoRelatorioIA(resetarManual = false) {
     t += `${resumoGemini}\n`;
     t += `*──────────────────────────*\n\n`;
 
+    t += `📄 *PDF detalhado das últimas 12h (${janela12h.horaInicioStr} às ${janela12h.horaFimStr}) com gráfico e lista de leituras anexado.*\n`;
     if (chartUrl) {
         t += `📈 *Gráfico térmico real das últimas 12h anexado acima.*\n`;
     }
@@ -4287,7 +5124,7 @@ async function gerarTextoRelatorioIA(resetarManual = false) {
     }
 
     if (resetarManual) {
-        mostrarToastFeedback("Texto e análise da IA redefinidos para os dados das 12h.", "info");
+        mostrarToastFeedback("Texto e PDF de 12h atualizados com sucesso.", "info");
     }
 }
 
@@ -4327,17 +5164,24 @@ async function dispararRelatorioIACeramica() {
         return;
     }
 
-    if (!confirm(`Deseja disparar este Relatório das 12 Horas com Análise de IA e Gráfico Térmico para os ${contatos.length} contato(s) de ${res.ceramica.nome}?`)) {
+    if (!confirm(`Deseja disparar este Relatório das 12 Horas com Análise de IA, Gráfico e PDF das Últimas 12h para os ${contatos.length} contato(s) de ${res.ceramica.nome}?`)) {
         return;
     }
 
-    mostrarToastFeedback(`Disparando relatório com IA de ${res.ceramica.nome}...`, "info");
+    const pdfObj = gerarDocumentoPDF12Horas();
+
+    mostrarToastFeedback(`Disparando relatório + PDF 12h de ${res.ceramica.nome}...`, "info");
     try {
         let enviados = 0;
         for (const c of contatos) {
             if (!c.telefone) continue;
             try {
-                await enviarMensagemWhatsappGateway(c.telefone, texto, chartUrl);
+                await enviarMensagemWhatsappGateway(
+                    c.telefone,
+                    texto,
+                    chartUrl,
+                    pdfObj ? { base64: pdfObj.base64, fileName: pdfObj.fileName } : null
+                );
                 enviados++;
             } catch (errOne) {
                 console.warn(`[Relatório IA] Falha ao enviar para ${c.nome}:`, errOne);
@@ -4345,7 +5189,7 @@ async function dispararRelatorioIACeramica() {
         }
 
         if (enviados > 0) {
-            mostrarToastFeedback(`Relatório entregue para ${enviados} contato(s) no WhatsApp!`, "success");
+            mostrarToastFeedback(`Relatório e PDF 12h entregues para ${enviados} contato(s) no WhatsApp!`, "success");
             fecharModalAdmin("modalPreviewWhatsappIA", null);
         } else {
             alert("Não foi possível entregar o relatório. Verifique se o WhatsApp está conectado.");
@@ -4359,7 +5203,7 @@ async function dispararRelatorioIAWhatsappAdmin() {
     await dispararRelatorioIACeramica();
 }
 
-async function enviarMensagemWhatsappGateway(telefone, texto, chartUrl = null) {
+async function enviarMensagemWhatsappGateway(telefone, texto, chartUrl = null, pdfAttachment = null) {
     const gatewayUrl = getGatewayUrl();
     let cleanPhone = String(telefone || "").replace(/\D/g, "");
     if (cleanPhone.startsWith("0")) cleanPhone = cleanPhone.substring(1);
@@ -4371,7 +5215,9 @@ async function enviarMensagemWhatsappGateway(telefone, texto, chartUrl = null) {
     const payload = {
         phone: cleanPhone,
         text: texto,
-        chartUrl: chartUrl || null
+        chartUrl: chartUrl || null,
+        pdfBase64: pdfAttachment?.base64 || null,
+        pdfFileName: pdfAttachment?.fileName || null
     };
 
     // 1. Tenta POST /api/send-message (endpoint nativo ativo no Render em produção)
@@ -4409,14 +5255,28 @@ async function enviarMensagemWhatsappGateway(telefone, texto, chartUrl = null) {
 }
 
 function abrirModalPreviewWhatsappIA() {
+    const res = adminState.aiReportState?.analiseAtual;
     const texto = $("aiRelatorioTextoArea")?.value || adminState.aiReportState?.textoFormatado;
     const chartUrl = adminState.aiReportState?.chartUrl;
+    const janela12h = res?.janela12h || obterJanela12HorasPorHorarioEnvio();
+    const fornosLista = (res?.fornosAtivos && res.fornosAtivos.length > 0)
+        ? res.fornosAtivos
+        : (res?.todosFornosComLeitura || []);
+    const fornoRef = fornosLista[0]?.num || "01";
+    const cerNomeLimpo = String(res?.ceramica?.nome || "Ceramica").replace(/[^a-zA-Z0-9_-]/g, "_");
+
+    if ($("waMockupPdfFileName")) {
+        $("waMockupPdfFileName").textContent = `Relatorio_12h_${cerNomeLimpo}_Forno_${fornoRef}.pdf`;
+    }
+    if ($("waMockupPdfMeta")) {
+        $("waMockupPdfMeta").textContent = `PDF • Últimas 12 Horas (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
+    }
 
     if ($("waMockupMessageText")) {
         $("waMockupMessageText").textContent = texto || "Carregando relatório...";
     }
     if ($("waMockupHora")) {
-        $("waMockupHora").textContent = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        $("waMockupHora").textContent = janela12h.horaFimStr || new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     }
 
     if ($("waMockupImgBox") && $("waMockupChartImg")) {

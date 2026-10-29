@@ -3077,6 +3077,9 @@ function inspecionarDiaHistorico(dataStr, indiceCiclo) {
     const grupos = state.historicoGruposPorDia;
     if (!grupos || !grupos.has(dataStr)) return;
 
+    state.historicoDiaAtivoStr = dataStr;
+    state.historicoPaginaDia = 1;
+
     const g = grupos.get(dataStr);
     const mod = g.mod || Number(state.historicoFornoSelecionado || 1);
     const ovenName = g.ovenName || `Forno ${String(mod).padStart(2, "0")}`;
@@ -3097,16 +3100,23 @@ function inspecionarDiaHistorico(dataStr, indiceCiclo) {
     const horaPicoMax = formatarHoraCurtaTs(g.picoC1Ts);
     const horaMedia = formatarHoraCurtaTs(g.mediaC1Ts);
     const horaPicoMin = formatarHoraCurtaTs(g.minC1Ts);
-    const horaPicoC2 = formatarHoraCurtaTs(g.picoC2Ts);
 
-    if ($("histDayDetailBadge")) {
-        $("histDayDetailBadge").textContent = `REGISTRO DIÁRIO #${indiceCiclo || g.indiceCiclo || 1} • MÓDULO ${String(mod).padStart(2, "0")}`;
-    }
+    const tagText = `REGISTRO DIÁRIO #${indiceCiclo || g.indiceCiclo || 1} • MÓDULO ${String(mod).padStart(2, "0")}`;
+    if ($("histDayDetailBadge")) $("histDayDetailBadge").textContent = tagText;
+    if ($("histDayDetailTag")) $("histDayDetailTag").textContent = tagText;
+
     if ($("histDayDetailTitle")) {
         $("histDayDetailTitle").textContent = `${ovenName} — ${dataStr}`;
     }
     if ($("histDayDetailSub")) {
         $("histDayDetailSub").textContent = `${g.count.toLocaleString("pt-BR")} leituras no dia • Janela monitorada: ${horaInicio} às ${horaFim} (${duracaoMonitorada})`;
+    }
+    if ($("histDayDetailStatus")) {
+        const statusCiclo = g.picoC1 >= 500 ? "Queima Ativa / Alta Temp." : (g.picoC1 >= 150 ? "Aquecimento / Resfriamento" : "Monitoramento Contínuo");
+        $("histDayDetailStatus").innerHTML = `<i class="fa-solid fa-circle-check"></i> ${escapeHtml(statusCiclo)}`;
+    }
+    if ($("histDaySummaryCount")) {
+        $("histDaySummaryCount").textContent = `${g.count.toLocaleString("pt-BR")} leituras no dia (${horaInicio} às ${horaFim})`;
     }
 
     // Preenche os 3 Cards de Destaques do Dia (Pico Máximo, Média Térmica, Pico Mínimo) com Horários Exatos
@@ -3122,102 +3132,82 @@ function inspecionarDiaHistorico(dataStr, indiceCiclo) {
     // Renderiza o Gráfico exclusivo daquele dia
     renderizarGraficoDiaEspecifico(g, dataStr, ovenName);
 
-    // Popula a Lista Resumida dos Principais Valores do Dia com seus respectivos horários
-    const summaryList = $("histDaySummaryList");
-    if (summaryList) {
-        // Agrupa também um ponto de referência por hora do dia (ordenada das 00h às 23h)
-        const leiturasAsc = g.rows.slice().sort((a, b) => a._ts - b._ts);
-        const marcosPorHora = new Map();
-        for (let i = 0; i < leiturasAsc.length; i++) {
-            const r = leiturasAsc[i];
-            const d = new Date(r._ts);
-            const hKey = d.getHours();
-            const c1 = numVal(r.canal_1) ?? 0;
-            const c2 = numVal(r.canal_2) ?? 0;
-            const atual = marcosPorHora.get(hKey);
-            // Guarda a leitura de maior temperatura dentro daquela hora para representar o marco horário
-            if (!atual || c1 >= atual.c1) {
-                marcosPorHora.set(hKey, {
-                    ts: r._ts,
-                    horaStr: formatarHoraCurtaTs(r._ts),
-                    c1,
-                    c2
-                });
-            }
-        }
-
-        const principaisMarcosHtml = [
-            `
-            <div class="hist-day-summary-row" style="border-color: rgba(249, 115, 22, 0.35); background: rgba(249, 115, 22, 0.08);">
-                <div class="hist-day-summary-left">
-                    <span class="hist-day-summary-tag max"><i class="fa-solid fa-fire-flame-curved"></i> Pico Máximo (C1)</span>
-                    <span class="hist-day-summary-desc">Maior temperatura registrada no Canal 1 neste dia</span>
-                </div>
-                <div class="hist-day-summary-right">
-                    <strong class="hist-day-summary-temp" style="color: #fb923c;">${g.picoC1} °C</strong>
-                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaPicoMax}</span>
-                </div>
-            </div>
-            `,
-            `
-            <div class="hist-day-summary-row" style="border-color: rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.08);">
-                <div class="hist-day-summary-left">
-                    <span class="hist-day-summary-tag avg"><i class="fa-solid fa-scale-balanced"></i> Média Térmica (C1)</span>
-                    <span class="hist-day-summary-desc">Temperatura média do dia e horário de referência na curva</span>
-                </div>
-                <div class="hist-day-summary-right">
-                    <strong class="hist-day-summary-temp" style="color: #38bdf8;">${g.mediaC1} °C</strong>
-                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaMedia}</span>
-                </div>
-            </div>
-            `,
-            `
-            <div class="hist-day-summary-row" style="border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08);">
-                <div class="hist-day-summary-left">
-                    <span class="hist-day-summary-tag min"><i class="fa-solid fa-temperature-arrow-down"></i> Pico Mínimo (C1)</span>
-                    <span class="hist-day-summary-desc">Menor temperatura registrada no Canal 1 neste dia</span>
-                </div>
-                <div class="hist-day-summary-right">
-                    <strong class="hist-day-summary-temp" style="color: #34d399;">${g.minC1} °C</strong>
-                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaPicoMin}</span>
-                </div>
-            </div>
-            `,
-            `
-            <div class="hist-day-summary-row">
-                <div class="hist-day-summary-left">
-                    <span class="hist-day-summary-tag avg" style="background: rgba(168, 85, 247, 0.16); color: #c084fc; border-color: rgba(168, 85, 247, 0.35);"><i class="fa-solid fa-layer-group"></i> Pico Canal 2 (Inf.)</span>
-                    <span class="hist-day-summary-desc">Maior temperatura registrada no Canal 2 (Inferior) no dia</span>
-                </div>
-                <div class="hist-day-summary-right">
-                    <strong class="hist-day-summary-temp" style="color: #c084fc;">${g.picoC2} °C</strong>
-                    <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${horaPicoC2}</span>
-                </div>
-            </div>
-            `
-        ];
-
-        // Adiciona os marcos horários enxutos do dia (1 linha por hora registrada)
-        marcosPorHora.forEach((m, horaNum) => {
-            const hLabel = `${String(horaNum).padStart(2, "0")}h`;
-            principaisMarcosHtml.push(`
-                <div class="hist-day-summary-row">
-                    <div class="hist-day-summary-left">
-                        <span class="hist-day-summary-tag step"><i class="fa-regular fa-clock"></i> Marco ${hLabel}</span>
-                        <span class="hist-day-summary-desc">C1 (Sup.): <b style="color:#fb923c;">${m.c1}°C</b> &nbsp;|&nbsp; C2 (Inf.): <b style="color:#38bdf8;">${m.c2}°C</b></span>
-                    </div>
-                    <div class="hist-day-summary-right">
-                        <strong class="hist-day-summary-temp">${m.c1} °C</strong>
-                        <span class="hist-day-summary-time"><i class="fa-regular fa-clock"></i> às ${m.horaStr}</span>
-                    </div>
-                </div>
-            `);
-        });
-
-        summaryList.innerHTML = principaisMarcosHtml.join("");
-    }
+    // Popula a Lista Resumida de Leituras do Dia no formato Tabela (Data & Horário | Módulo | Canal 1 | Canal 2)
+    renderizarTabelaResumoDiaHistorico();
 
     detailBox?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderizarTabelaResumoDiaHistorico() {
+    const tbody = $("histDaySummaryList");
+    const paginationBar = $("histDayPaginationBar");
+    if (!tbody) return;
+
+    const dataStr = state.historicoDiaAtivoStr;
+    const grupos = state.historicoGruposPorDia;
+    const g = (grupos && dataStr) ? grupos.get(dataStr) : null;
+    const leiturasDia = g && g.rows ? g.rows : [];
+    const modPadrao = g?.mod || Number(state.historicoFornoSelecionado || 1);
+
+    const pageSize = 50;
+    const totalPages = Math.max(1, Math.ceil(leiturasDia.length / pageSize));
+    if (!state.historicoPaginaDia || state.historicoPaginaDia > totalPages) {
+        state.historicoPaginaDia = 1;
+    }
+
+    const startIdx = (state.historicoPaginaDia - 1) * pageSize;
+    const paginaAtual = leiturasDia.slice(startIdx, startIdx + pageSize);
+
+    if (paginaAtual.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" style="text-align: center; padding: 20px; color: #94a3b8;">
+                    Nenhuma leitura encontrada neste dia.
+                </td>
+            </tr>
+        `;
+        if (paginationBar) paginationBar.innerHTML = "";
+        return;
+    }
+
+    tbody.innerHTML = paginaAtual.map(r => {
+        const dt = new Date(r._ts || r.created_at || r.data_hora);
+        const dataHoraStr = !isNaN(dt.getTime())
+            ? `${dt.toLocaleDateString("pt-BR")} ${dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+            : "--";
+        const mod = Number(r.modulo_alutal || r.forno_id || modPadrao);
+        const c1 = numVal(r.canal_1);
+        const c2 = numVal(r.canal_2);
+
+        return `
+            <tr>
+                <td style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${escapeHtml(dataHoraStr)}</td>
+                <td><span class="badge-mod" style="color:#38bdf8; font-weight:700;">Mód. ${String(mod).padStart(2, "0")}</span></td>
+                <td class="text-orange" style="font-weight: 800;">${c1 !== null ? `${c1} °C` : "--"}</td>
+                <td class="text-blue" style="font-weight: 800;">${c2 !== null ? `${c2} °C` : "--"}</td>
+            </tr>
+        `;
+    }).join("");
+
+    if (paginationBar) {
+        paginationBar.innerHTML = `
+            <span>Mostrando ${startIdx + 1}–${Math.min(startIdx + pageSize, leiturasDia.length)} de ${leiturasDia.length.toLocaleString("pt-BR")} leituras em ${escapeHtml(dataStr || "")}</span>
+            <div style="display: flex; gap: 6px;">
+                <button type="button" class="hist-page-btn" ${state.historicoPaginaDia <= 1 ? "disabled" : ""} onclick="mudarPaginaDiaHistorico(-1)">
+                    <i class="fa-solid fa-chevron-left"></i> Anterior
+                </button>
+                <span style="padding: 5px 8px; color: #ffffff; font-weight: 700;">Pág. ${state.historicoPaginaDia} / ${totalPages}</span>
+                <button type="button" class="hist-page-btn" ${state.historicoPaginaDia >= totalPages ? "disabled" : ""} onclick="mudarPaginaDiaHistorico(1)">
+                    Próxima <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        `;
+    }
+}
+
+function mudarPaginaDiaHistorico(delta) {
+    state.historicoPaginaDia = Math.max(1, (state.historicoPaginaDia || 1) + delta);
+    renderizarTabelaResumoDiaHistorico();
 }
 
 function fecharDetalheDiaHistorico() {
@@ -3407,7 +3397,7 @@ function renderizarTabelaLeiturasHistorico() {
     if (paginaAtual.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" style="text-align: center; padding: 24px; color: #94a3b8;">
+                <td colspan="4" style="text-align: center; padding: 24px; color: #94a3b8;">
                     Nenhuma leitura encontrada para o período selecionado.
                 </td>
             </tr>
@@ -3424,7 +3414,6 @@ function renderizarTabelaLeiturasHistorico() {
         const mod = Number(r.modulo_alutal || r.forno_id || state.historicoFornoSelecionado || 1);
         const c1 = numVal(r.canal_1);
         const c2 = numVal(r.canal_2);
-        const delta = (c1 !== null && c2 !== null) ? Math.abs(c1 - c2) : null;
 
         return `
             <tr>
@@ -3432,8 +3421,6 @@ function renderizarTabelaLeiturasHistorico() {
                 <td><span class="badge-mod" style="color:#38bdf8; font-weight:700;">Mód. ${String(mod).padStart(2, "0")}</span></td>
                 <td class="text-orange" style="font-weight: 800;">${c1 !== null ? `${c1} °C` : "--"}</td>
                 <td class="text-blue" style="font-weight: 800;">${c2 !== null ? `${c2} °C` : "--"}</td>
-                <td style="color: #a78bfa; font-weight: 700;">${delta !== null ? `${delta} °C` : "--"}</td>
-                <td><span style="color: #34d399; font-size: 11px; font-weight: 700;"><i class="fa-solid fa-check-circle"></i> OK</span></td>
             </tr>
         `;
     }).join("");
@@ -4854,6 +4841,7 @@ window.aplicarPresetRapido = aplicarPresetRapido;
 window.sincronizarPainelSetpointsAnalise = sincronizarPainelSetpointsAnalise;
 window.inspecionarDiaHistorico = inspecionarDiaHistorico;
 window.fecharDetalheDiaHistorico = fecharDetalheDiaHistorico;
+window.mudarPaginaDiaHistorico = mudarPaginaDiaHistorico;
 
 // Inicialização automática após carregamento da página
 if (typeof document !== "undefined") {

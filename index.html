@@ -576,19 +576,32 @@
                             </div>
                         </div>
 
-                        <!-- Lista Resumida da Queima do Dia (Principais Valores e Marcos Horários) -->
+                        <!-- Lista Resumida da Queima do Dia (Formato Tabela: Data & Horário | Módulo | Canal 1 | Canal 2) -->
                         <div class="hist-day-summary-section">
                             <div class="hist-day-summary-header">
-                                <span><i class="fa-solid fa-list-check text-orange"></i> <b>Lista Resumida de Queima do Dia</b> (Principais Valores &amp; Horários)</span>
-                                <span id="histDaySummaryCount" class="hist-daily-count-pill">-- marcos</span>
+                                <span><i class="fa-solid fa-list-check text-orange"></i> <b>Lista Resumida de Leituras do Dia</b></span>
+                                <span id="histDaySummaryCount" class="hist-daily-count-pill">-- leituras no dia</span>
                             </div>
-                            <div id="histDaySummaryList" class="hist-day-summary-list">
-                                <!-- Preenchido dinamicamente pelo JS -->
+                            <div class="table-scroll-wrapper" style="max-height: 360px; overflow-y: auto;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Data &amp; Horário</th>
+                                            <th>Módulo</th>
+                                            <th>Canal 1 (Sup.)</th>
+                                            <th>Canal 2 (Inf.)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="histDaySummaryList">
+                                        <!-- Preenchido dinamicamente pelo JS -->
+                                    </tbody>
+                                </table>
                             </div>
+                            <div class="hist-pagination-bar" id="histDayPaginationBar"></div>
                         </div>
                     </div>
 
-                    <!-- Visão 2: Tabela Cronológica Completa de Leituras (Temperatura, Tempo, Status do Módulo) -->
+                    <!-- Visão 2: Tabela Cronológica Completa de Leituras (Data & Horário | Módulo | Canal 1 | Canal 2) -->
                     <div id="histRawTableWrapper" class="hist-raw-table-wrapper hidden">
                         <div class="table-scroll-wrapper">
                             <table class="data-table">
@@ -598,8 +611,6 @@
                                         <th>Módulo</th>
                                         <th>Canal 1 (Sup.)</th>
                                         <th>Canal 2 (Inf.)</th>
-                                        <th>Delta (&Delta;T)</th>
-                                        <th>Status Módulo</th>
                                     </tr>
                                 </thead>
                                 <tbody id="histRawTableBody">
