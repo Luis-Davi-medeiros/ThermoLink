@@ -22,9 +22,10 @@ const DEFAULT_CLIENTS = [
         valorMensal: 299,
         fornosCount: 6,
         status: "Ativo",
-        username: "rolim",
+        username: "irmãosrolim",
         senha: "forno2026",
-        ultimoAcesso: "Hoje, 17:30"
+        ultimoAcesso: null,
+        totalAcessos: 28
     },
     {
         id: "cli_1789336975029",
@@ -37,7 +38,8 @@ const DEFAULT_CLIENTS = [
         status: "Ativo",
         username: "aparecida",
         senha: "forno2026",
-        ultimoAcesso: "Hoje, 16:15"
+        ultimoAcesso: null,
+        totalAcessos: 20
     },
     {
         id: "cli_1789502544311",
@@ -50,7 +52,8 @@ const DEFAULT_CLIENTS = [
         status: "Ativo",
         username: "lima",
         senha: "forno2026",
-        ultimoAcesso: "Hoje, 14:20"
+        ultimoAcesso: null,
+        totalAcessos: 15
     },
     {
         id: "cli_1790975541876",
@@ -63,7 +66,8 @@ const DEFAULT_CLIENTS = [
         status: "Ativo",
         username: "telhaforte",
         senha: "forno2026",
-        ultimoAcesso: "Hoje, 10:45"
+        ultimoAcesso: null,
+        totalAcessos: 53
     },
     {
         id: "cli_1791295582580",
@@ -76,7 +80,22 @@ const DEFAULT_CLIENTS = [
         status: "Ativo",
         username: "luis",
         senha: "forno2026",
-        ultimoAcesso: "Ontem, 20:00"
+        ultimoAcesso: null,
+        totalAcessos: 39
+    },
+    {
+        id: "cli_1792702884039",
+        nome: "Cerâmica PAZ",
+        responsavel: "Liro",
+        cidade: "Russas - CE",
+        plano: "Profissional",
+        valorMensal: 299,
+        fornosCount: 4,
+        status: "Ativo",
+        username: "liro",
+        senha: "forno2026",
+        ultimoAcesso: null,
+        totalAcessos: 21
     }
 ];
 
@@ -202,7 +221,20 @@ function getClients() {
         localStorage.setItem("thermolink_clients_admin", JSON.stringify(DEFAULT_CLIENTS));
         return DEFAULT_CLIENTS;
     }
-    try { return JSON.parse(saved); } catch { return DEFAULT_CLIENTS; }
+    try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+            parsed.forEach(c => {
+                if (c.ultimoAcesso && isNaN(new Date(c.ultimoAcesso).getTime())) {
+                    c.ultimoAcesso = null;
+                }
+            });
+            return parsed;
+        }
+        return DEFAULT_CLIENTS;
+    } catch {
+        return DEFAULT_CLIENTS;
+    }
 }
 
 function saveClients(clients) {
@@ -291,7 +323,8 @@ async function carregarDadosSupabase() {
                 motivoBloqueio: c.motivo_bloqueio || null,
                 username: c.username,
                 senha: c.senha,
-                ultimoAcesso: c.ultimo_acesso ? new Date(c.ultimo_acesso).toLocaleDateString("pt-BR") : "Nunca"
+                ultimoAcesso: c.ultimo_acesso || null,
+                totalAcessos: Number(c.total_acessos) || 0
             }));
             saveClients(adminState.clients);
         } else {
@@ -485,7 +518,8 @@ function trocarSecaoAdmin(secao) {
     } else if (secao === "atividade") {
         pararPollingWhatsappAdmin();
         $("secAtividade")?.classList.remove("hidden");
-        renderSecaoAtividade();
+        carregarAcessosUsuariosSupabase(true);
+        iniciarRealtimeAcessosSupabase();
     } else if (secao === "whatsapp") {
         $("secWhatsapp")?.classList.remove("hidden");
         carregarSecaoWhatsappAdmin();
@@ -1586,6 +1620,9 @@ function renderNocTelemetria() {
 // 8. MONITORAMENTO DE ATIVIDADE DOS USUÁRIOS (SUPABASE + TELEMETRIA)
 // ==========================================================================
 
+let uaSupabaseChannel = null;
+let uaPollingInterval = null;
+
 async function carregarAcessosUsuariosSupabase(forceRefresh = false) {
     const icon = $("refreshAccessesIcon");
     if (icon && forceRefresh) icon.classList.add("fa-spin");
@@ -1595,12 +1632,14 @@ async function carregarAcessosUsuariosSupabase(forceRefresh = false) {
             .from("acessos_usuarios")
             .select("*")
             .order("ultimo_acesso", { ascending: false })
-            .limit(500);
+            .limit(1000);
 
-        if (!error && dbLogs && dbLogs.length > 0) {
+        if (!error && Array.isArray(dbLogs) && dbLogs.length > 0) {
             adminState.activityLogs = dbLogs;
             localStorage.setItem("thermolink_cached_acessos", JSON.stringify(dbLogs));
+            console.log(`[Admin Atividade] ${dbLogs.length} acessos sincronizados do Supabase com sucesso.`);
         } else {
+            if (error) console.warn("[Admin Atividade] Aviso na consulta do Supabase:", error.message);
             const cached = localStorage.getItem("thermolink_cached_acessos");
             const localAudit = localStorage.getItem("thermolink_audit_logs");
             if (cached) {
@@ -1612,7 +1651,7 @@ async function carregarAcessosUsuariosSupabase(forceRefresh = false) {
             }
         }
     } catch (err) {
-        console.warn("[Admin Atividade] Erro ao buscar acessos do Supabase:", err);
+        console.warn("[Admin Atividade] Erro ao carregar acessos do Supabase:", err);
         const cached = localStorage.getItem("thermolink_cached_acessos");
         if (cached) adminState.activityLogs = JSON.parse(cached);
         else adminState.activityLogs = gerarAcessosIniciaisDemo();
@@ -1629,6 +1668,30 @@ async function carregarAcessosUsuariosSupabase(forceRefresh = false) {
     }
 }
 
+function iniciarRealtimeAcessosSupabase() {
+    if (uaSupabaseChannel) return;
+    try {
+        uaSupabaseChannel = sb
+            .channel("realtime_acessos_usuarios_admin")
+            .on("postgres_changes", { event: "*", schema: "public", table: "acessos_usuarios" }, payload => {
+                console.log("[Supabase Realtime] Atualização de acesso:", payload);
+                carregarAcessosUsuariosSupabase(false);
+            })
+            .subscribe();
+    } catch (e) {
+        console.warn("[Realtime Atividade] Aviso ao conectar realtime:", e);
+    }
+
+    // Polling de garantia a cada 15 segundos se estiver na aba de atividade
+    if (!uaPollingInterval) {
+        uaPollingInterval = setInterval(() => {
+            if (adminState.activeSection === "atividade") {
+                carregarAcessosUsuariosSupabase(false);
+            }
+        }, 15000);
+    }
+}
+
 function gerarAcessosIniciaisDemo() {
     const agora = Date.now();
     return [
@@ -1636,100 +1699,103 @@ function gerarAcessosIniciaisDemo() {
             id: 1,
             session_token: "sess_demo_1",
             usuario: "luis",
-            nome: "Nossa Senhora Aparecida",
-            ceramica_id: "cli_1788920539236",
+            nome: "Luis",
+            ceramica_id: "cli_1791295582580",
             role: "client",
             login_em: new Date(agora - 14 * 60 * 1000).toISOString(),
             ultimo_acesso: new Date(agora - 1 * 60 * 1000).toISOString(),
-            quantidade_acessos: 28,
+            quantidade_acessos: 39,
             dispositivo: "Smartphone (Android)",
-            navegador: "Google Chrome 128",
-            sistema_operacional: "Android 14",
-            ip_acesso: "177.136.241.85",
+            navegador: "Google Chrome 156",
+            sistema_operacional: "Android 16",
+            ip_acesso: "138.255.66.68",
             created_at: new Date(agora - 14 * 60 * 1000).toISOString()
         },
         {
             id: 2,
             session_token: "sess_demo_2",
-            usuario: "ceramica",
-            nome: "Cerâmica São José",
-            ceramica_id: "cli_1",
+            usuario: "telhaforte",
+            nome: "Cerâmica Telha Forte",
+            ceramica_id: "cli_1790975541876",
             role: "client",
-            login_em: new Date(agora - 2 * 60 * 60 * 1000).toISOString(),
-            ultimo_acesso: new Date(agora - 35 * 60 * 1000).toISOString(),
-            quantidade_acessos: 64,
-            dispositivo: "Computador / Desktop",
-            navegador: "Google Chrome 129",
-            sistema_operacional: "Windows 11",
-            ip_acesso: "189.40.112.204",
-            created_at: new Date(agora - 2 * 60 * 60 * 1000).toISOString()
+            login_em: new Date(agora - 45 * 60 * 1000).toISOString(),
+            ultimo_acesso: new Date(agora - 8 * 60 * 1000).toISOString(),
+            quantidade_acessos: 53,
+            dispositivo: "Smartphone (Android)",
+            navegador: "Google Chrome 156",
+            sistema_operacional: "Android 16",
+            ip_acesso: "45.175.5.105",
+            created_at: new Date(agora - 45 * 60 * 1000).toISOString()
         },
         {
             id: 3,
             session_token: "sess_demo_3",
-            usuario: "santarita",
-            nome: "Cerâmica Santa Rita",
-            ceramica_id: "cli_2",
+            usuario: "aparecida",
+            nome: "Nossa Senhora Aparecida",
+            ceramica_id: "cli_1789336975029",
             role: "client",
-            login_em: new Date(agora - 26 * 60 * 60 * 1000).toISOString(),
-            ultimo_acesso: new Date(agora - 24 * 60 * 60 * 1000).toISOString(),
-            quantidade_acessos: 15,
-            dispositivo: "Tablet (iPad)",
-            navegador: "Safari 17",
-            sistema_operacional: "iOS / iPadOS",
-            ip_acesso: "201.86.77.19",
-            created_at: new Date(agora - 26 * 60 * 60 * 1000).toISOString()
+            login_em: new Date(agora - 2 * 60 * 60 * 1000).toISOString(),
+            ultimo_acesso: new Date(agora - 12 * 60 * 1000).toISOString(),
+            quantidade_acessos: 20,
+            dispositivo: "Smartphone (Android)",
+            navegador: "Google Chrome 156",
+            sistema_operacional: "Android 16",
+            ip_acesso: "45.179.251.60",
+            created_at: new Date(agora - 2 * 60 * 60 * 1000).toISOString()
         },
         {
             id: 4,
             session_token: "sess_demo_4",
-            usuario: "paulista",
-            nome: "Cerâmica Paulista",
-            ceramica_id: "cli_3",
+            usuario: "irmãosrolim",
+            nome: "Irmãos Rolim",
+            ceramica_id: "cli_1791467023902",
             role: "client",
-            login_em: new Date(agora - 48 * 60 * 60 * 1000).toISOString(),
-            ultimo_acesso: new Date(agora - 47 * 60 * 60 * 1000).toISOString(),
-            quantidade_acessos: 11,
+            login_em: new Date(agora - 18 * 60 * 60 * 1000).toISOString(),
+            ultimo_acesso: new Date(agora - 18 * 60 * 60 * 1000).toISOString(),
+            quantidade_acessos: 28,
             dispositivo: "Smartphone (Android)",
-            navegador: "Samsung Internet 25",
-            sistema_operacional: "Android 13",
-            ip_acesso: "179.182.90.110",
-            created_at: new Date(agora - 48 * 60 * 60 * 1000).toISOString()
+            navegador: "Google Chrome 154",
+            sistema_operacional: "Android 16",
+            ip_acesso: "191.247.30.236",
+            created_at: new Date(agora - 18 * 60 * 60 * 1000).toISOString()
         },
         {
             id: 5,
             session_token: "sess_demo_5",
-            usuario: "admin",
-            nome: "Administrador ThermoLink",
-            ceramica_id: null,
-            role: "admin",
-            login_em: new Date(agora - 10 * 60 * 1000).toISOString(),
-            ultimo_acesso: new Date(agora).toISOString(),
-            quantidade_acessos: 132,
+            usuario: "liro",
+            nome: "Cerâmica PAZ",
+            ceramica_id: "cli_1792702884039",
+            role: "client",
+            login_em: new Date(agora - 6 * 60 * 60 * 1000).toISOString(),
+            ultimo_acesso: new Date(agora - 5 * 60 * 60 * 1000).toISOString(),
+            quantidade_acessos: 21,
             dispositivo: "Computador / Desktop",
-            navegador: "Microsoft Edge 128",
+            navegador: "Google Chrome 156",
             sistema_operacional: "Windows 11",
-            ip_acesso: "187.64.200.15",
-            created_at: new Date(agora - 10 * 60 * 1000).toISOString()
+            ip_acesso: "45.179.224.23",
+            created_at: new Date(agora - 6 * 60 * 60 * 1000).toISOString()
         }
     ];
 }
 
 function calcularStatusConexao(ultimoAcessoIso) {
-    if (!ultimoAcessoIso) return { status: "Offline", label: "Offline", class: "status-offline" };
+    if (!ultimoAcessoIso) return { status: "Offline", label: "Offline (Sem acesso)", class: "status-offline" };
     const date = new Date(ultimoAcessoIso);
     if (isNaN(date.getTime())) return { status: "Offline", label: "Offline", class: "status-offline" };
 
-    const diffMin = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
-    if (diffMin <= 5) {
-        return { status: "Online", label: "Online Agora", class: "status-online", diffMin };
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.round(diffMs / 60000);
+
+    // Online se transmitiu nos últimos 15 minutos (permite leve margem para clock drift de servidor)
+    if (diffMin <= 15 && diffMin >= -15) {
+        return { status: "Online", label: "Online Agora", class: "status-online", diffMin: Math.max(0, diffMin) };
     }
     const diffHoras = Math.floor(diffMin / 60);
-    if (diffHoras < 24) {
-        const txt = diffHoras === 0 ? `há ${diffMin} min` : `há ${diffHoras}h`;
+    if (diffHoras < 24 && diffHoras >= 0) {
+        const txt = diffHoras === 0 ? `há ${diffMin} min` : `há ${diffHoras}h ${diffMin % 60}m`;
         return { status: "Recente", label: `Recente (${txt})`, class: "status-recent", diffMin, diffHoras };
     }
-    const dias = Math.floor(diffHoras / 24);
+    const dias = Math.max(1, Math.floor(diffHoras / 24));
     return { status: "Offline", label: `Offline (há ${dias}d)`, class: "status-offline", diffMin, dias };
 }
 
@@ -1740,10 +1806,11 @@ function atualizarBadgeSidebarOnline() {
     const onlineUsers = new Set();
     const agora = Date.now();
     logs.forEach(l => {
-        if (l.ultimo_acesso) {
-            const t = new Date(l.ultimo_acesso).getTime();
-            if (agora - t <= 5 * 60 * 1000) {
-                onlineUsers.add(l.usuario?.toLowerCase());
+        const timeVal = l.ultimo_acesso || l.login_em || l.created_at;
+        if (timeVal) {
+            const t = new Date(timeVal).getTime();
+            if (!isNaN(t) && Math.abs(agora - t) <= 15 * 60 * 1000) {
+                onlineUsers.add((l.usuario || "").toLowerCase());
             }
         }
     });
@@ -1754,39 +1821,43 @@ function atualizarBadgeSidebarOnline() {
 }
 
 function filtrarLogsPorPeriodo(logs) {
-    const filter = adminState.activityFilter;
+    const filter = adminState.activityFilter || { period: "7d" };
     const agora = new Date();
 
     if (filter.period === "today") {
         const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
         return logs.filter(l => {
-            const t = new Date(l.login_em || l.created_at || l.ultimo_acesso).getTime();
-            return t >= inicioHoje;
+            const t = new Date(l.ultimo_acesso || l.login_em || l.created_at).getTime();
+            return !isNaN(t) && t >= inicioHoje;
         });
     }
 
     if (filter.period === "7d") {
         const seteDiasAtras = Date.now() - 7 * 24 * 60 * 60 * 1000;
         return logs.filter(l => {
-            const t = new Date(l.login_em || l.created_at || l.ultimo_acesso).getTime();
-            return t >= seteDiasAtras;
+            const t = new Date(l.ultimo_acesso || l.login_em || l.created_at).getTime();
+            return !isNaN(t) && t >= seteDiasAtras;
         });
     }
 
     if (filter.period === "30d") {
         const trintaDiasAtras = Date.now() - 30 * 24 * 60 * 60 * 1000;
         return logs.filter(l => {
-            const t = new Date(l.login_em || l.created_at || l.ultimo_acesso).getTime();
-            return t >= trintaDiasAtras;
+            const t = new Date(l.ultimo_acesso || l.login_em || l.created_at).getTime();
+            return !isNaN(t) && t >= trintaDiasAtras;
         });
+    }
+
+    if (filter.period === "all") {
+        return logs;
     }
 
     if (filter.period === "custom") {
         const inicio = filter.startDate ? new Date(filter.startDate + "T00:00:00").getTime() : 0;
         const fim = filter.endDate ? new Date(filter.endDate + "T23:59:59").getTime() : Infinity;
         return logs.filter(l => {
-            const t = new Date(l.login_em || l.created_at || l.ultimo_acesso).getTime();
-            return t >= inicio && t <= fim;
+            const t = new Date(l.ultimo_acesso || l.login_em || l.created_at).getTime();
+            return !isNaN(t) && t >= inicio && t <= fim;
         });
     }
 
@@ -1800,28 +1871,34 @@ function renderSecaoAtividade() {
     // 1. Agrupamento por Usuário
     const userMap = new Map();
     const clients = getClients();
+
+    // Registra todas as cerâmicas cadastradas
     clients.forEach(c => {
         if (c.username) {
-            userMap.set(c.username.toLowerCase(), {
+            const uKey = c.username.toLowerCase().trim();
+            userMap.set(uKey, {
                 usuario: c.username,
                 nome: c.nome,
                 ceramica_id: c.id,
-                responsavel: c.responsavel,
+                responsavel: c.responsavel || "--",
                 role: "client",
                 login_em: null,
-                ultimo_acesso: c.ultimoAcesso && c.ultimoAcesso !== "Nunca" ? c.ultimoAcesso : null,
-                quantidade_acessos: c.totalAcessos || 0,
-                dispositivo: "Dispositivo Móvel",
-                navegador: "Navegador Web",
-                sistema_operacional: "Android / iOS",
+                ultimo_acesso: (c.ultimoAcesso && !isNaN(new Date(c.ultimoAcesso).getTime())) ? c.ultimoAcesso : null,
+                quantidade_acessos: Number(c.totalAcessos || c.total_acessos) || 0,
+                dispositivo: "--",
+                navegador: "--",
+                sistema_operacional: "--",
                 ip_acesso: "--",
                 sessions: []
             });
         }
     });
 
+    // Mapeia e atualiza com todos os logs reais do Supabase
     rawLogs.forEach(l => {
-        const u = (l.usuario || "desconhecido").toLowerCase();
+        if (!l || !l.usuario) return;
+        const u = l.usuario.toLowerCase().trim();
+
         if (!userMap.has(u)) {
             userMap.set(u, {
                 usuario: l.usuario,
@@ -1829,28 +1906,44 @@ function renderSecaoAtividade() {
                 ceramica_id: l.ceramica_id || null,
                 responsavel: "--",
                 role: l.role || "client",
-                login_em: l.login_em,
-                ultimo_acesso: l.ultimo_acesso,
-                quantidade_acessos: l.quantidade_acessos || 1,
-                dispositivo: l.dispositivo || "Dispositivo",
-                navegador: l.navegador || "Browser",
+                login_em: l.login_em || null,
+                ultimo_acesso: l.ultimo_acesso || l.login_em || l.created_at || null,
+                quantidade_acessos: Number(l.quantidade_acessos) || 1,
+                dispositivo: l.dispositivo || "--",
+                navegador: l.navegador || "--",
                 sistema_operacional: l.sistema_operacional || "--",
-                ip_acesso: l.ip_acesso || "--",
+                ip_acesso: (l.ip_acesso && l.ip_acesso !== "Não identificado") ? l.ip_acesso : "--",
                 sessions: []
             });
         }
+
         const userObj = userMap.get(u);
         userObj.sessions.push(l);
-        if (!userObj.ultimo_acesso || new Date(l.ultimo_acesso) > new Date(userObj.ultimo_acesso)) {
-            userObj.ultimo_acesso = l.ultimo_acesso;
-            userObj.login_em = l.login_em;
-            userObj.dispositivo = l.dispositivo || userObj.dispositivo;
-            userObj.navegador = l.navegador || userObj.navegador;
-            userObj.sistema_operacional = l.sistema_operacional || userObj.sistema_operacional;
-            userObj.ip_acesso = l.ip_acesso || userObj.ip_acesso;
+
+        // Se o log tiver nome completo de cerâmica e o cadastro estiver como login, adota o nome
+        if (l.nome && l.nome !== l.usuario && (!userObj.nome || userObj.nome === userObj.usuario)) {
+            userObj.nome = l.nome;
         }
-        if (l.quantidade_acessos && l.quantidade_acessos > userObj.quantidade_acessos) {
-            userObj.quantidade_acessos = l.quantidade_acessos;
+
+        // Safe timestamp comparison
+        const tExist = userObj.ultimo_acesso && !isNaN(new Date(userObj.ultimo_acesso).getTime()) ? new Date(userObj.ultimo_acesso).getTime() : 0;
+        const tLog = l.ultimo_acesso && !isNaN(new Date(l.ultimo_acesso).getTime()) ? new Date(l.ultimo_acesso).getTime() : (l.login_em && !isNaN(new Date(l.login_em).getTime()) ? new Date(l.login_em).getTime() : 0);
+
+        if (!userObj.ultimo_acesso || isNaN(tExist) || tLog >= tExist) {
+            userObj.ultimo_acesso = l.ultimo_acesso || l.login_em || l.created_at;
+            userObj.login_em = l.login_em || userObj.login_em;
+            if (l.dispositivo && l.dispositivo !== "Dispositivo") userObj.dispositivo = l.dispositivo;
+            if (l.navegador && l.navegador !== "Browser") userObj.navegador = l.navegador;
+            if (l.sistema_operacional && l.sistema_operacional !== "--") userObj.sistema_operacional = l.sistema_operacional;
+            if (l.ip_acesso && l.ip_acesso !== "Não identificado" && l.ip_acesso !== "--") userObj.ip_acesso = l.ip_acesso;
+        }
+
+        // Quantidade de acessos: adota o maior valor reportado ou o total de sessões contadas
+        const qtdLog = Number(l.quantidade_acessos) || 0;
+        if (qtdLog > userObj.quantidade_acessos) {
+            userObj.quantidade_acessos = qtdLog;
+        } else if (userObj.sessions.length > userObj.quantidade_acessos) {
+            userObj.quantidade_acessos = userObj.sessions.length;
         }
     });
 
@@ -1860,21 +1953,24 @@ function renderSecaoAtividade() {
         const st = calcularStatusConexao(u.ultimo_acesso);
         if (st.status === "Online") onlineCount++;
     });
-    $("kpiUsersOnline").textContent = onlineCount;
+    if ($("kpiUsersOnline")) $("kpiUsersOnline").textContent = onlineCount;
 
+    // Total de Acessos Registrados
     const totalAcessosPeriodo = filteredLogs.length > 0 ? filteredLogs.length : rawLogs.length;
-    $("kpiTotalAccesses").textContent = totalAcessosPeriodo;
-    const periodLabelMap = { today: "Período: Hoje", "7d": "Período: 7 dias", "30d": "Período: 30 dias", custom: "Personalizado" };
-    $("kpiPeriodAccessSub").textContent = periodLabelMap[adminState.activityFilter.period] || "Período selecionado";
+    if ($("kpiTotalAccesses")) $("kpiTotalAccesses").textContent = totalAcessosPeriodo;
+    const periodLabelMap = { today: "Período: Hoje", "7d": "Período: 7 dias", "30d": "Período: 30 dias", all: "Período: Todo o histórico", custom: "Personalizado" };
+    if ($("kpiPeriodAccessSub")) $("kpiPeriodAccessSub").textContent = periodLabelMap[adminState.activityFilter.period] || "Período selecionado";
 
-    const activeUsersInPeriod = new Set(filteredLogs.map(l => l.usuario?.toLowerCase())).size;
-    $("kpiActiveUsersCount").textContent = activeUsersInPeriod || onlineCount;
-    $("kpiActivePercentSub").textContent = `${activeUsersInPeriod} de ${userMap.size} cerâmicas`;
+    // Usuários Ativos
+    const activeUsersInPeriod = new Set(filteredLogs.map(l => (l.usuario || "").toLowerCase())).size;
+    if ($("kpiActiveUsersCount")) $("kpiActiveUsersCount").textContent = activeUsersInPeriod || onlineCount || userMap.size;
+    if ($("kpiActivePercentSub")) $("kpiActivePercentSub").textContent = `${activeUsersInPeriod || onlineCount} de ${userMap.size} cerâmicas`;
 
+    // Horários de Maior Atividade
     const hourCounts = new Array(24).fill(0);
     const logsForHours = filteredLogs.length > 0 ? filteredLogs : rawLogs;
     logsForHours.forEach(l => {
-        const d = new Date(l.login_em || l.created_at || l.ultimo_acesso);
+        const d = new Date(l.ultimo_acesso || l.login_em || l.created_at);
         if (!isNaN(d.getTime())) {
             hourCounts[d.getHours()]++;
         }
@@ -1887,15 +1983,29 @@ function renderSecaoAtividade() {
             maxHour = h;
         }
     });
-    const peakHourText = maxHourCount > 0 ? `${String(maxHour).padStart(2, "0")}:00h` : "10:00h";
-    $("kpiPeakHour").textContent = peakHourText;
+    const peakHourText = maxHourCount > 0 ? `${String(maxHour).padStart(2, "0")}:00h` : "14:00h";
+    if ($("kpiPeakHour")) $("kpiPeakHour").textContent = peakHourText;
 
     // 3. Renderiza Gráficos
     renderGraficoAcessosPorDia(logsForHours);
     renderGraficoHorariosAtividade(hourCounts);
 
-    // 4. Renderiza Tabela de Usuários
-    renderTabelaAtividadeUsuarios(Array.from(userMap.values()), filteredLogs);
+    // 4. Renderiza Tabela de Usuários / Feed de Acessos
+    const viewMode = adminState.activityViewMode || "usuarios";
+    if (viewMode === "feed") {
+        renderTabelaFeedAcessos(filteredLogs);
+    } else {
+        renderTabelaAtividadeUsuarios(Array.from(userMap.values()), filteredLogs);
+    }
+}
+
+function trocarModoVisualizacaoAtividade(mode, btnEl) {
+    adminState.activityViewMode = mode;
+    const btnUsuarios = $("btnUaViewUsuarios");
+    const btnFeed = $("btnUaViewFeed");
+    if (btnUsuarios) btnUsuarios.className = `filter-pill ${mode === 'usuarios' ? 'active' : ''}`;
+    if (btnFeed) btnFeed.className = `filter-pill ${mode === 'feed' ? 'active' : ''}`;
+    renderSecaoAtividade();
 }
 
 function renderGraficoAcessosPorDia(logs) {
@@ -1907,10 +2017,10 @@ function renderGraficoAcessosPorDia(logs) {
         adminState.dailyAccessChart = null;
     }
 
-    const filter = adminState.activityFilter;
+    const filter = adminState.activityFilter || { period: "7d" };
     const badgePeriod = $("badgeChartDailyPeriod");
     if (badgePeriod) {
-        badgePeriod.textContent = filter.period === "today" ? "Hoje (Horas)" : filter.period === "30d" ? "Últimos 30 dias" : filter.period === "custom" ? "Personalizado" : "Últimos 7 dias";
+        badgePeriod.textContent = filter.period === "today" ? "Hoje (Horas)" : filter.period === "30d" ? "Últimos 30 dias" : filter.period === "all" ? "Histórico Completo" : filter.period === "custom" ? "Personalizado" : "Últimos 7 dias";
     }
 
     let labels = [];
@@ -1920,15 +2030,18 @@ function renderGraficoAcessosPorDia(logs) {
         labels = ["00h", "03h", "06h", "09h", "12h", "15h", "18h", "21h", "Agora"];
         const hourlyBuckets = new Array(labels.length).fill(0);
         logs.forEach(l => {
-            const d = new Date(l.login_em || l.created_at || l.ultimo_acesso);
+            const d = new Date(l.ultimo_acesso || l.login_em || l.created_at);
             if (!isNaN(d.getTime())) {
                 const idx = Math.min(labels.length - 1, Math.floor(d.getHours() / 3));
                 hourlyBuckets[idx]++;
             }
         });
-        dataPoints = hourlyBuckets.some(v => v > 0) ? hourlyBuckets : [1, 0, 2, 8, 14, 11, 7, 3, 2];
+        dataPoints = hourlyBuckets;
+        if (!dataPoints.some(v => v > 0)) {
+            dataPoints = [1, 0, 2, 8, 14, 11, 7, 3, 2];
+        }
     } else {
-        const numDays = filter.period === "30d" ? 14 : 7;
+        const numDays = filter.period === "30d" ? 14 : (filter.period === "all" ? 14 : 7);
         const diasSemana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
         const dayMap = new Map();
 
@@ -1941,7 +2054,7 @@ function renderGraficoAcessosPorDia(logs) {
         }
 
         logs.forEach(l => {
-            const d = new Date(l.login_em || l.created_at || l.ultimo_acesso);
+            const d = new Date(l.ultimo_acesso || l.login_em || l.created_at);
             if (!isNaN(d.getTime())) {
                 const key = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
                 if (dayMap.has(key)) {
@@ -2089,6 +2202,22 @@ function renderGraficoHorariosAtividade(hourCounts) {
 }
 
 function renderTabelaAtividadeUsuarios(usersList, periodLogs) {
+    const thead = $("userActivityTableHead");
+    if (thead) {
+        thead.innerHTML = `
+            <tr>
+                <th>Usuário / Cerâmica</th>
+                <th>Status de Conexão</th>
+                <th>Último Acesso</th>
+                <th>Data de Login</th>
+                <th>Qtd. Acessos</th>
+                <th>Dispositivo & Navegador</th>
+                <th>IP de Acesso</th>
+                <th style="text-align: right;">Auditoria</th>
+            </tr>
+        `;
+    }
+
     const tbody = $("userActivityTableBody");
     if (!tbody) return;
 
@@ -2172,11 +2301,11 @@ function renderTabelaAtividadeUsuarios(usersList, periodLogs) {
         }
 
         const dtUltimo = formatarDataHoraAcesso(u.ultimo_acesso);
-        const dtLogin = formatarDataHoraAcesso(u.login_em);
+        const dtLogin = formatarDataHoraAcesso(u.login_em || u.ultimo_acesso);
 
         let devIcon = "fa-mobile-screen";
         if (/Tablet|iPad/i.test(u.dispositivo)) devIcon = "fa-tablet-screen-button";
-        else if (/Computador|Desktop|Notebook/i.test(u.dispositivo)) devIcon = "fa-laptop";
+        else if (/Computador|Desktop|Notebook|Windows|Macintosh|Linux/i.test(u.dispositivo || u.sistema_operacional)) devIcon = "fa-laptop";
 
         let navIcon = "fa-globe";
         if (/Chrome/i.test(u.navegador)) navIcon = "fa-chrome";
@@ -2187,7 +2316,7 @@ function renderTabelaAtividadeUsuarios(usersList, periodLogs) {
         const pctAcessos = Math.min(100, Math.round(((u.quantidade_acessos || 0) / maxAcessos) * 100));
 
         const ipDisplay = u.ip_acesso && u.ip_acesso !== "Não identificado" && u.ip_acesso !== "--"
-            ? `<span class="ip-pill-mono">${escapeHtml(u.ip_acesso)}</span>`
+            ? `<span class="ip-pill-mono"><i class="fa-solid fa-network-wired" style="font-size: 10px; opacity: 0.7; margin-right: 4px;"></i>${escapeHtml(u.ip_acesso)}</span>`
             : `<span class="ip-pill-muted">Não rastreado</span>`;
 
         const uParam = encodeURIComponent(u.usuario);
@@ -2223,7 +2352,7 @@ function renderTabelaAtividadeUsuarios(usersList, periodLogs) {
                 </td>
                 <td>
                     <div class="access-count-cell">
-                        <b>${u.quantidade_acessos || 0}</b>
+                        <b>${u.quantidade_acessos || 0} acessos</b>
                         <div class="access-meter-bar">
                             <div class="access-meter-fill" style="width: ${pctAcessos}%;"></div>
                         </div>
@@ -2231,18 +2360,137 @@ function renderTabelaAtividadeUsuarios(usersList, periodLogs) {
                 </td>
                 <td>
                     <div class="device-cell">
-                        <span class="device-name"><i class="fa-solid ${devIcon}"></i> ${escapeHtml(u.dispositivo)}</span>
-                        <span class="device-sub"><i class="fa-brands ${navIcon}"></i> ${escapeHtml(u.navegador)}</span>
+                        <span class="device-name"><i class="fa-solid ${devIcon}"></i> ${escapeHtml(u.dispositivo || "Dispositivo")}</span>
+                        <span class="device-sub"><i class="fa-brands ${navIcon}"></i> ${escapeHtml(u.navegador || "Browser")}</span>
                     </div>
                 </td>
                 <td>${ipDisplay}</td>
                 <td>
                     <div class="actions-cell">
-                        <button class="btn-tbl-action btn-hist-sessions" onclick="abrirHistoricoUsuario('${uParam}')" title="Ver histórico completo de sessões">
+                        <button class="btn-tbl-action btn-hist-sessions" onclick="abrirHistoricoUsuario('${uParam}')" title="Ver todas as sessões registradas desta cerâmica">
                             <i class="fa-solid fa-clock-rotate-left"></i>
-                            <span>Histórico de Sessões</span>
+                            <span>Histórico (${u.sessions.length || u.quantidade_acessos || 0})</span>
                         </button>
                     </div>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function renderTabelaFeedAcessos(logs) {
+    const thead = $("userActivityTableHead");
+    if (thead) {
+        thead.innerHTML = `
+            <tr>
+                <th>Usuário / Cerâmica</th>
+                <th>Status Conexão</th>
+                <th>Data & Horário do Acesso</th>
+                <th>Dispositivo</th>
+                <th>Navegador & Sistema</th>
+                <th>IP de Acesso</th>
+                <th style="text-align: right;">Sessão</th>
+            </tr>
+        `;
+    }
+
+    const tbody = $("userActivityTableBody");
+    if (!tbody) return;
+
+    let items = [...logs];
+
+    const q = (adminState.activityFilter.search || "").toLowerCase().trim();
+    if (q) {
+        items = items.filter(l => 
+            (l.nome && l.nome.toLowerCase().includes(q)) ||
+            (l.usuario && l.usuario.toLowerCase().includes(q)) ||
+            (l.ip_acesso && l.ip_acesso.toLowerCase().includes(q)) ||
+            (l.dispositivo && l.dispositivo.toLowerCase().includes(q)) ||
+            (l.navegador && l.navegador.toLowerCase().includes(q))
+        );
+    }
+
+    // Ordenação padrão por ultimo_acesso desc
+    const sortBy = adminState.activityFilter.sortBy || "lastAccessDesc";
+    items.sort((a, b) => {
+        const ta = new Date(a.ultimo_acesso || a.login_em || a.created_at).getTime() || 0;
+        const tb = new Date(b.ultimo_acesso || b.login_em || b.created_at).getTime() || 0;
+        if (sortBy === "lastAccessAsc") return ta - tb;
+        if (sortBy === "nameAsc") return (a.nome || a.usuario || "").localeCompare(b.nome || b.usuario || "");
+        return tb - ta;
+    });
+
+    if (!items.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align: center; padding: 40px; color: #64748b;">
+                    <i class="fa-solid fa-list-check" style="font-size: 28px; margin-bottom: 8px; display: block; color: #475569;"></i>
+                    Nenhum acesso registrado no período selecionado.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = items.map(l => {
+        const timeVal = l.ultimo_acesso || l.login_em || l.created_at;
+        const dt = formatarDataHoraAcesso(timeVal);
+        const st = calcularStatusConexao(timeVal);
+
+        let devIcon = "fa-mobile-screen";
+        if (/Tablet|iPad/i.test(l.dispositivo)) devIcon = "fa-tablet-screen-button";
+        else if (/Computador|Desktop|Notebook|Windows|Macintosh|Linux/i.test(l.dispositivo || l.sistema_operacional)) devIcon = "fa-laptop";
+
+        let navIcon = "fa-globe";
+        if (/Chrome/i.test(l.navegador)) navIcon = "fa-chrome";
+        else if (/Safari/i.test(l.navegador)) navIcon = "fa-safari";
+        else if (/Edge/i.test(l.navegador)) navIcon = "fa-edge";
+        else if (/Firefox/i.test(l.navegador)) navIcon = "fa-firefox-browser";
+
+        const ipDisplay = l.ip_acesso && l.ip_acesso !== "Não identificado" && l.ip_acesso !== "--"
+            ? `<span class="ip-pill-mono"><i class="fa-solid fa-network-wired" style="font-size: 10px; opacity: 0.7; margin-right: 4px;"></i>${escapeHtml(l.ip_acesso)}</span>`
+            : `<span class="ip-pill-muted">Não rastreado</span>`;
+
+        const sessTokenShort = l.session_token ? l.session_token.substring(0, 15) + "..." : `#${l.id || "--"}`;
+
+        return `
+            <tr>
+                <td>
+                    <div class="user-cell-meta">
+                        <div class="user-avatar-badge">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                        <div>
+                            <b>${escapeHtml(l.nome || l.usuario)}</b>
+                            <div class="user-cell-sub">
+                                <span><i class="fa-regular fa-user"></i> ${escapeHtml(l.usuario)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <span class="${st.class === 'status-online' ? 'badge-status-online' : (st.class === 'status-recent' ? 'badge-status-recent' : 'badge-status-offline')}">
+                        <span>${st.label}</span>
+                    </span>
+                </td>
+                <td>
+                    <div class="date-time-cell">
+                        <b>${dt.data}</b>
+                        <span>${dt.hora}</span>
+                    </div>
+                </td>
+                <td>
+                    <span class="device-name"><i class="fa-solid ${devIcon}"></i> ${escapeHtml(l.dispositivo || "Smartphone")}</span>
+                </td>
+                <td>
+                    <div class="device-cell">
+                        <span class="device-sub"><i class="fa-brands ${navIcon}"></i> ${escapeHtml(l.navegador || "Browser")}</span>
+                        ${l.sistema_operacional ? `<span style="font-size: 11px; color: #64748b;">${escapeHtml(l.sistema_operacional)}</span>` : ""}
+                    </div>
+                </td>
+                <td>${ipDisplay}</td>
+                <td style="text-align: right;">
+                    <span class="tag-pill" style="font-family: monospace; font-size: 11px;">${escapeHtml(sessTokenShort)}</span>
                 </td>
             </tr>
         `;
@@ -2260,9 +2508,12 @@ function formatarDataHoraAcesso(val) {
 }
 
 function filtrarPeriodoAtividade(period, btnEl) {
+    adminState.activityFilter = adminState.activityFilter || {};
     adminState.activityFilter.period = period;
 
-    document.querySelectorAll(".activity-toolbar .filter-pill").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".activity-toolbar .filter-pill").forEach(p => {
+        if (p.id && p.id.startsWith("btnPeriod")) p.classList.remove("active");
+    });
     if (btnEl) btnEl.classList.add("active");
 
     const boxCustom = $("boxCustomDates");
@@ -2281,17 +2532,20 @@ function aplicarFiltroDataPersonalizada() {
         alert("Por favor selecione pelo menos a data inicial.");
         return;
     }
+    adminState.activityFilter = adminState.activityFilter || {};
     adminState.activityFilter.startDate = start;
     adminState.activityFilter.endDate = end || start;
     renderSecaoAtividade();
 }
 
 function alterarOrdenacaoAtividade(sortVal) {
+    adminState.activityFilter = adminState.activityFilter || {};
     adminState.activityFilter.sortBy = sortVal;
     renderSecaoAtividade();
 }
 
 function filtrarTabelaAtividade(val) {
+    adminState.activityFilter = adminState.activityFilter || {};
     adminState.activityFilter.search = val;
     renderSecaoAtividade();
 }
@@ -2304,8 +2558,12 @@ function abrirHistoricoUsuario(userParam) {
     const client = getClients().find(c => c.username && c.username.toLowerCase() === username);
     const displayName = client ? client.nome : (userSessions[0]?.nome || username);
 
-    $("modalHistTitle").innerHTML = `<i class="fa-solid fa-clock-rotate-left text-orange"></i> Histórico de Sessões — ${escapeHtml(displayName)}`;
-    $("modalHistSubtitle").textContent = `Usuário: ${escapeHtml(username)} • ${userSessions.length} registros de conexão auditados`;
+    if ($("modalHistTitle")) {
+        $("modalHistTitle").innerHTML = `<i class="fa-solid fa-clock-rotate-left text-orange"></i> Histórico de Sessões — ${escapeHtml(displayName)}`;
+    }
+    if ($("modalHistSubtitle")) {
+        $("modalHistSubtitle").textContent = `Usuário: ${escapeHtml(username)} • ${userSessions.length} sessões rastreadas no Supabase`;
+    }
 
     const summaryBox = $("modalHistUserSummary");
     if (summaryBox) {
@@ -2326,7 +2584,7 @@ function abrirHistoricoUsuario(userParam) {
             </div>
             <div class="hist-summary-card">
                 <span>Dispositivo Principal</span>
-                <b>${escapeHtml(lastSession?.dispositivo || "PWA / Web")}</b>
+                <b>${escapeHtml(lastSession?.dispositivo || "Smartphone / Web")}</b>
             </div>
         `;
     }
@@ -2337,7 +2595,7 @@ function abrirHistoricoUsuario(userParam) {
             tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:25px; color:#64748b;">Nenhum registro detalhado encontrado para este usuário ainda.</td></tr>`;
         } else {
             tbody.innerHTML = userSessions.map(s => {
-                const loginDt = formatarDataHoraAcesso(s.login_em);
+                const loginDt = formatarDataHoraAcesso(s.login_em || s.created_at || s.ultimo_acesso);
                 const ultDt = formatarDataHoraAcesso(s.ultimo_acesso);
                 return `
                     <tr>
@@ -3153,15 +3411,7 @@ function renderCardsCeramicasWhatsappAdmin() {
                         <button class="btn-primary-admin" onclick="abrirModalNovoContatoWhatsapp('${cer.id}', 'tecnico')" style="padding: 7px 12px; font-size: 12px; background: linear-gradient(135deg, #0284c7, #0369a1);" title="Vincular técnico responsável por esta cerâmica">
                             <i class="fa-solid fa-wrench"></i> + Técnico
                         </button>
-                        <button class="btn-plan-edit" onclick="enviarStatusTecnicoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="padding: 7px 10px; font-size: 11px;" title="Enviar diagnóstico com quantidade de aparelhos funcionando para o técnico">
-                            <i class="fa-solid fa-tower-broadcast text-blue"></i> Status Aparelhos
-                        </button>
-                        <button class="btn-plan-edit" onclick="testarAlertaDesconexaoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="padding: 7px 10px; font-size: 11px;" title="Simular aviso de equipamento desligado (>30 min) para o técnico">
-                            <i class="fa-solid fa-triangle-exclamation text-orange"></i> Simular Queda
-                        </button>
-                        <button class="btn-plan-edit" onclick="testarAlertaReconexaoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="padding: 7px 10px; font-size: 11px;" title="Simular aviso de equipamento que ligou / reconectou para o técnico">
-                            <i class="fa-solid fa-circle-check text-green"></i> Simular Ligou
-                        </button>
+
                     </div>
                 </div>
 
@@ -3203,8 +3453,11 @@ function renderCardsCeramicasWhatsappAdmin() {
                                         ? `<button class="btn-send-wa-row" onclick="enviarStatusTecnicoCeramica('${cer.id}', '${escapeHtml(cer.nome)}')" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);" title="Enviar status dos aparelhos funcionando para o técnico agora">
                                             <i class="fa-solid fa-tower-broadcast"></i> Status
                                            </button>`
-                                        : `<button class="btn-send-wa-row" onclick="dispararRelatorioIndividualAdmin('${c.id}')" title="Disparar relatório de 12h de queima para este contato agora">
-                                            <i class="fa-solid fa-paper-plane"></i> Relatório
+                                        : `<button class="btn-send-wa-row" onclick="dispararRelatorioIndividualAdmin('${c.id}')" title="Disparar Ficha de Queima e Caldas para este contato agora">
+                                            <i class="fa-solid fa-paper-plane"></i> Ficha Caldas
+                                           </button>
+                                           <button class="btn-send-wa-row" onclick="abrirWhatsAppWebComFichaCaldas('${c.id}')" style="background: rgba(37, 211, 102, 0.16); border: 1px solid rgba(37, 211, 102, 0.4); color: #25d366; margin-left: 4px;" title="Abrir WhatsApp Web diretamente para este contato">
+                                            <i class="fa-brands fa-whatsapp"></i> WhatsApp
                                            </button>`;
 
                                     return `
@@ -3527,21 +3780,46 @@ async function toggleAlertaTecnicoContatoAdmin(id) {
 async function dispararRelatorioIndividualAdmin(id) {
     const c = waAdminContatos.find(x => x.id === id);
     if (!c) return;
-    if (!confirm(`Deseja enviar agora o relatório de ${c.ceramica_nome} para ${c.nome} (+${c.telefone}) no WhatsApp?`)) return;
+    if (!confirm(`Deseja enviar agora a Ficha de Queima & Caldas de ${c.ceramica_nome} para ${c.nome} (+${c.telefone}) no WhatsApp?`)) return;
 
-    mostrarToastFeedback(`Disparando relatório para ${c.nome}...`, "info");
-    const gatewayUrl = getGatewayUrl();
+    mostrarToastFeedback(`Preparando Ficha de Queima para ${c.nome}...`, "info");
+
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+    const cer = clients.find(cl => cl.id === c.ceramica_id) || { id: c.ceramica_id, nome: c.ceramica_nome };
+
+    // Busca telemetria real do Supabase
+    let leituras = [];
+    if (typeof sb !== "undefined" && sb) {
+        try {
+            const { data } = await sb.from("leituras").select("*").eq("ceramica_id", c.ceramica_id).order("created_at", { ascending: false }).limit(600);
+            if (data && data.length > 0) leituras = data;
+        } catch (e) {}
+    }
+
+    let textoRelatorio = "";
+    if (window.CaldasEngine && leituras.length > 0) {
+        leituras.sort((a,b) => new Date(a.created_at || a.data_hora).getTime() - new Date(b.created_at || b.data_hora).getTime());
+        const analise = window.CaldasEngine.detectarCaldas(leituras, { canal: "canal_1" });
+        textoRelatorio = window.CaldasEngine.gerarTextoWhatsapp(analise, {
+            ceramicaNome: cer.nome,
+            fornoNome: "Forno 01",
+            responsavel: `${c.nome} (${c.cargo || 'Gestor'})`
+        });
+    } else {
+        const j12 = obterJanela12HorasPorHorarioEnvio();
+        textoRelatorio = `*MEDEIROS AUTOMAÇÃO • THERMOLINK*\nRELATÓRIO DE QUEIMA DE FORNO\n\nCerâmica: ${cer.nome}\nAos Cuidados: ${c.nome}\nPeríodo: ${j12.horaInicioStr} às ${j12.horaFimStr}`;
+    }
+
+    // Tenta envio via Gateway
     try {
-        const res = await fetch(`${gatewayUrl}/api/disparar-contato/${id}`, { method: "POST" });
-        const data = await res.json();
-        if (data.success) {
-            mostrarToastFeedback(`Relatório entregue no WhatsApp de ${c.nome}!`, "success");
-            carregarSecaoWhatsappAdmin();
-        } else {
-            alert(data.error || "Falha ao enviar relatório. Verifique se o WhatsApp está conectado.");
-        }
+        await enviarMensagemWhatsappGateway(c.telefone, textoRelatorio);
+        mostrarToastFeedback(`Ficha de Queima entregue via WhatsApp para ${c.nome}!`, "success");
     } catch (e) {
-        alert("Erro de comunicação com o Gateway WhatsApp. Verifique se o servidor está rodando.");
+        // Se gateway offline, abre o WhatsApp Web diretamente
+        let cleanPhone = String(c.telefone).replace(/\D/g, "");
+        if (!cleanPhone.startsWith("55")) cleanPhone = "55" + cleanPhone;
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(textoRelatorio)}`, "_blank");
+        alert(`O WhatsApp foi aberto com a Ficha de Queima pronta para ${c.nome} (+${cleanPhone}).\n\nConfirme o envio no aplicativo.`);
     }
 }
 
@@ -3552,28 +3830,52 @@ async function dispararRelatorioCeramicaAdmin(ceramicaId) {
 
     const contatos = waAdminContatos.filter(c => c.ceramica_id === ceramicaId && c.receber_relatorio);
     if (contatos.length === 0) {
-        alert(`Nenhum contato com recebimento ativo cadastrado para ${nome}.`);
+        alert(`Nenhum contato com recebimento ativo cadastrado para ${nome}.\n\nClique em "+ Responsável" para cadastrar.`);
         return;
     }
 
-    if (!confirm(`Deseja disparar o relatório de ${nome} para os ${contatos.length} contato(s) ativos dela agora?`)) return;
+    if (!confirm(`Deseja disparar a Ficha de Queima & Caldas de ${nome} para os ${contatos.length} contato(s) ativos dela agora?`)) return;
 
-    mostrarToastFeedback(`Disparando relatório de ${nome}...`, "info");
-    const gatewayUrl = getGatewayUrl();
-    try {
-        const res = await fetch(`${gatewayUrl}/api/disparar-ceramica/${ceramicaId}`, { method: "POST" });
-        const data = await res.json();
-        if (data.success) {
-            mostrarToastFeedback(`Relatórios de ${nome} enviados com sucesso!`, "success");
-            carregarSecaoWhatsappAdmin();
-        } else {
-            alert(data.error || "Erro no disparo.");
-        }
-    } catch (e) {
-        alert("Erro de comunicação com o Gateway.");
+    mostrarToastFeedback(`Processando queima e caldas de ${nome}...`, "info");
+
+    let leituras = [];
+    if (typeof sb !== "undefined" && sb) {
+        try {
+            const { data } = await sb.from("leituras").select("*").eq("ceramica_id", ceramicaId).order("created_at", { ascending: false }).limit(600);
+            if (data && data.length > 0) leituras = data;
+        } catch (e) {}
+    }
+
+    let textoRelatorio = "";
+    if (window.CaldasEngine && leituras.length > 0) {
+        leituras.sort((a,b) => new Date(a.created_at || a.data_hora).getTime() - new Date(b.created_at || b.data_hora).getTime());
+        const analise = window.CaldasEngine.detectarCaldas(leituras, { canal: "canal_1" });
+        textoRelatorio = window.CaldasEngine.gerarTextoWhatsapp(analise, {
+            ceramicaNome: nome,
+            fornoNome: "Forno 01",
+            responsavel: "Gestores e Equipe da Cerâmica"
+        });
+    }
+
+    let enviados = 0;
+    for (const c of contatos) {
+        if (!c.telefone) continue;
+        try {
+            await enviarMensagemWhatsappGateway(c.telefone, textoRelatorio);
+            enviados++;
+        } catch (err) {}
+    }
+
+    if (enviados > 0) {
+        mostrarToastFeedback(`Fichas de Queima entregues para ${enviados} contato(s) de ${nome}!`, "success");
+    } else {
+        const primeiro = contatos[0];
+        let cleanPhone = String(primeiro.telefone).replace(/\D/g, "");
+        if (!cleanPhone.startsWith("55")) cleanPhone = "55" + cleanPhone;
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(textoRelatorio)}`, "_blank");
+        alert(`O Gateway não respondeu. O WhatsApp foi aberto para o contato principal ${primeiro.nome} (+${cleanPhone}).\n\nConfirme o envio no aplicativo.`);
     }
 }
-
 async function dispararRelatoriosTodosAdmin() {
     if (!confirm("Deseja iniciar o disparo do resumo diário para TODOS os contatos ativos de todas as cerâmicas agora?")) return;
 
@@ -3656,6 +3958,9 @@ async function trocarCeramicaRelatorioIA() {
         adminState.aiReportState.activeCeramicaId = sel.value;
     }
     await executarAnaliseIA(true);
+    if (sel) {
+        atualizarContatosDestinoRelatorioCaldas(sel.value);
+    }
 }
 
 let aiPdf12hChartInstance = null;
@@ -4365,6 +4670,7 @@ function renderizarPainelPDF12HorasIA(resultado) {
     }
 
     selecionarFornoPDF12h(activeMod, false);
+    atualizarContatosDestinoRelatorioCaldas(resultado.ceramica?.id);
 }
 
 function selecionarFornoPDF12h(moduloNum, resetarPagina = true) {
@@ -4394,45 +4700,67 @@ function selecionarFornoPDF12h(moduloNum, resetarPagina = true) {
 
     const totalLeituras = fornoObj.leiturasDesc ? fornoObj.leiturasDesc.length : 0;
     const dRef = fornoObj.maxTs ? new Date(fornoObj.maxTs).toLocaleDateString("pt-BR") : janela12h.dataFechamentoStr;
-    const statusCiclo = fornoObj.picoC1 >= 500
-        ? "Queima Ativa / Alta Temp."
-        : (fornoObj.picoC1 >= 150 ? "Aquecimento / Resfriamento" : "Monitoramento Contínuo");
 
     if ($("aiPdf12hCounterText")) {
-        $("aiPdf12hCounterText").textContent = `${totalLeituras.toLocaleString("pt-BR")} leituras coletadas do Forno ${fornoObj.num} nas últimas 12 horas (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
-    }
-    if ($("aiPdf12hTag")) {
-        $("aiPdf12hTag").textContent = `REGISTRO 12 HORAS • MÓDULO ${fornoObj.num}`;
-    }
-    if ($("aiPdf12hTitle")) {
-        $("aiPdf12hTitle").textContent = `Forno ${fornoObj.num} — ${dRef} (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
-    }
-    if ($("aiPdf12hStatusBadge")) {
-        $("aiPdf12hStatusBadge").innerHTML = `<i class="fa-solid fa-circle-check"></i> ${escapeHtml(statusCiclo)}`;
+        $("aiPdf12hCounterText").textContent = `${totalLeituras.toLocaleString("pt-BR")} leituras coletadas do Forno ${fornoObj.num} no período analisado`;
     }
 
-    // 3 Cards dos Principais Valores das 12h com Horários Exatos
-    if ($("aiPdf12hMaxVal")) $("aiPdf12hMaxVal").textContent = `${fornoObj.picoC1} °C`;
-    if ($("aiPdf12hMaxTime")) $("aiPdf12hMaxTime").textContent = `às ${fornoObj.horaPicoMax || "--:--"}`;
+    // =========================================================================
+    // EXECUÇÃO DO MOTOR MATEMÁTICO DE DETECÇÃO AUTOMÁTICA DE CALDAS (CaldasEngine)
+    // =========================================================================
+    const canalAtivo = $("caldaSelectCanal")?.value || "canal_1";
+    let analiseCaldas = null;
 
-    if ($("aiPdf12hAvgVal")) $("aiPdf12hAvgVal").textContent = `${fornoObj.mediaC1} °C`;
-    if ($("aiPdf12hAvgTime")) $("aiPdf12hAvgTime").textContent = `às ${fornoObj.horaMedia || "--:--"}`;
-
-    if ($("aiPdf12hMinVal")) $("aiPdf12hMinVal").textContent = `${fornoObj.minC1} °C`;
-    if ($("aiPdf12hMinTime")) $("aiPdf12hMinTime").textContent = `às ${fornoObj.horaPicoMin || "--:--"}`;
-
-    if ($("aiPdf12hSummaryCount")) {
-        $("aiPdf12hSummaryCount").textContent = `${totalLeituras.toLocaleString("pt-BR")} leituras nas 12h (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`;
+    if (window.CaldasEngine && fornoObj.leiturasAsc && fornoObj.leiturasAsc.length > 0) {
+        analiseCaldas = window.CaldasEngine.detectarCaldas(fornoObj.leiturasAsc, {
+            canal: canalAtivo,
+            janelaSuavizacao: 5,
+            minDeltaT: 7.0,
+            minSeparacaoMinutos: 20
+        });
     }
 
-    // Renderiza o gráfico das 12h deste forno
-    renderizarGraficoPDF12h(fornoObj, janela12h, dRef);
+    fornoObj.analiseCaldas = analiseCaldas;
+    if (adminState.aiReportState) {
+        adminState.aiReportState.analiseCaldasAtual = analiseCaldas;
+    }
 
-    // Renderiza a tabela de 4 colunas (Data & Horário | Módulo | Canal 1 | Canal 2)
+    // Atualiza os 4 Cards de Métricas Operacionais
+    if (analiseCaldas && analiseCaldas.sucesso && analiseCaldas.resumo) {
+        const r = analiseCaldas.resumo;
+        if ($("caldaStatTotal")) $("caldaStatTotal").textContent = r.totalCaldas;
+        if ($("caldaStatConfiancaBadge")) {
+            const nivelGeral = analiseCaldas.caldas.some(c => c.confianca === "Baixa confiança") ? "Média Confiança" : "Alta Confiança";
+            $("caldaStatConfiancaBadge").textContent = nivelGeral;
+        }
+        if ($("caldaStatIntervaloMedio")) $("caldaStatIntervaloMedio").textContent = r.intervaloMedioTexto || "—";
+        if ($("caldaStatPicoMax")) $("caldaStatPicoMax").textContent = r.tempMaximaGlobal ? `${r.tempMaximaGlobal} °C` : "-- °C";
+        if ($("caldaStatPicoHora")) $("caldaStatPicoHora").textContent = r.tempMaximaGlobalHora ? `às ${r.tempMaximaGlobalHora}` : "às --:--";
+        if ($("caldaStatDuracao")) $("caldaStatDuracao").textContent = r.duracaoTotalTexto || "--";
+        if ($("caldaStatLeiturasCount")) $("caldaStatLeiturasCount").textContent = `${r.totalLeiturasProcessadas} leituras coletadas`;
+    } else {
+        if ($("caldaStatTotal")) $("caldaStatTotal").textContent = "0";
+        if ($("caldaStatIntervaloMedio")) $("caldaStatIntervaloMedio").textContent = "—";
+        if ($("caldaStatPicoMax")) $("caldaStatPicoMax").textContent = `${fornoObj.picoC1 || "--"} °C`;
+        if ($("caldaStatPicoHora")) $("caldaStatPicoHora").textContent = `às ${fornoObj.horaPicoMax || "--:--"}`;
+        if ($("caldaStatDuracao")) $("caldaStatDuracao").textContent = "12 h";
+        if ($("caldaStatLeiturasCount")) $("caldaStatLeiturasCount").textContent = `${totalLeituras} leituras`;
+    }
+
+    // Renderiza a Tabela de Caldas Identificadas
+    renderizarTabelaCaldasAdmin(analiseCaldas);
+
+    // Renderiza a Prévia Formatada para WhatsApp
+    renderizarPreviaWhatsappCaldas(analiseCaldas, fornoObj, resultado.ceramica);
+
+    // Renderiza o gráfico das 12h deste forno com os marcadores de caldas e picos
+    renderizarGraficoPDF12h(fornoObj, janela12h, dRef, analiseCaldas);
+
+    // Renderiza a tabela de auditoria de 4 colunas (Data & Horário | Módulo | Canal 1 | Canal 2)
     renderizarTabelaPDF12h(fornoObj, dRef, janela12h);
 }
 
-function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
+function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr, analiseCaldas = null) {
     const canvas = $("aiPdf12hChartCanvas");
     if (!canvas || typeof Chart === "undefined") return;
 
@@ -4444,7 +4772,7 @@ function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
     const ordenadas = fornoObj.leiturasAsc || [];
     if (ordenadas.length === 0) return;
 
-    const maxPoints = 300;
+    const maxPoints = 350;
     const step = Math.max(1, Math.ceil(ordenadas.length / maxPoints));
     const amostradas = [];
     for (let i = 0; i < ordenadas.length; i += step) {
@@ -4463,63 +4791,124 @@ function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
         ptsC2.push({ x: ts, y: Math.round(Number(r.canal_2 ?? 0)) });
     }
 
+    // PONTOS MARCADORES DE CALDAS (VALES) E PICOS (MÁXIMOS)
+    const ptsCaldas = [];
+    const ptsPicos = [];
+
+    if (analiseCaldas && analiseCaldas.caldas && analiseCaldas.caldas.length > 0) {
+        analiseCaldas.caldas.forEach(c => {
+            ptsCaldas.push({
+                x: c.timestampCalda,
+                y: c.tempMinimo,
+                caldaObj: c
+            });
+            if (c.timestampPico && c.tempMaxima) {
+                ptsPicos.push({
+                    x: c.timestampPico,
+                    y: c.tempMaxima,
+                    caldaObj: c
+                });
+            }
+        });
+    }
+
     const readoutEl = $("aiPdf12hChartReadout");
     if (readoutEl) {
-        readoutEl.innerHTML = `<i class="fa-regular fa-clock"></i> ${escapeHtml(dataRefStr)} às ${fornoObj.horaPicoMax} &nbsp;•&nbsp; C1: <b style="color:#fb923c">${fornoObj.picoC1} °C</b> &nbsp;|&nbsp; C2: <b style="color:#38bdf8">${fornoObj.picoC2} °C</b>`;
+        const totalC = analiseCaldas?.caldas?.length || 0;
+        readoutEl.innerHTML = `<i class="fa-regular fa-clock"></i> Forno ${fornoObj.num} &nbsp;•&nbsp; <b>${totalC} caldas detectadas</b> &nbsp;|&nbsp; Pico: <b style="color:#ef4444">${fornoObj.picoC1} °C</b>`;
     }
 
     const ctx = canvas.getContext("2d");
     const gradC1 = ctx.createLinearGradient(0, 0, 0, 220);
-    gradC1.addColorStop(0, "rgba(249, 115, 22, 0.35)");
+    gradC1.addColorStop(0, "rgba(249, 115, 22, 0.28)");
     gradC1.addColorStop(1, "rgba(249, 115, 22, 0.0)");
 
     const gradC2 = ctx.createLinearGradient(0, 0, 0, 220);
-    gradC2.addColorStop(0, "rgba(56, 189, 248, 0.24)");
+    gradC2.addColorStop(0, "rgba(56, 189, 248, 0.18)");
     gradC2.addColorStop(1, "rgba(56, 189, 248, 0.0)");
+
+    const datasets = [
+        {
+            label: `Canal 1 (Superior °C)`,
+            data: ptsC1,
+            borderColor: "#f97316",
+            backgroundColor: gradC1,
+            borderWidth: 2.2,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            tension: 0.25,
+            fill: true,
+            order: 3
+        },
+        {
+            label: `Canal 2 (Inferior °C)`,
+            data: ptsC2,
+            borderColor: "#38bdf8",
+            backgroundColor: gradC2,
+            borderWidth: 1.8,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.25,
+            fill: true,
+            order: 4
+        }
+    ];
+
+    // Adiciona dataset de Caldas (Mínimos Locais com Destaque Especial)
+    if (ptsCaldas.length > 0) {
+        datasets.push({
+            label: `🔥 Caldas de Lenha (Mínimos)`,
+            data: ptsCaldas,
+            borderColor: "#ffffff",
+            backgroundColor: "#f97316",
+            borderWidth: 2.5,
+            pointRadius: 7,
+            pointHoverRadius: 10,
+            pointStyle: "circle",
+            showLine: false,
+            order: 1
+        });
+    }
+
+    // Adiciona dataset de Picos (Máximos Locais)
+    if (ptsPicos.length > 0) {
+        datasets.push({
+            label: `🔺 Picos Térmicos (Máximos)`,
+            data: ptsPicos,
+            borderColor: "#ffffff",
+            backgroundColor: "#ef4444",
+            borderWidth: 2,
+            pointRadius: 6.5,
+            pointHoverRadius: 9,
+            pointStyle: "triangle",
+            showLine: false,
+            order: 2
+        });
+    }
 
     aiPdf12hChartInstance = new Chart(ctx, {
         type: "line",
-        data: {
-            datasets: [
-                {
-                    label: `Forno ${fornoObj.num} — Canal 1 (Sup. °C)`,
-                    data: ptsC1,
-                    borderColor: "#f97316",
-                    backgroundColor: gradC1,
-                    borderWidth: 2.5,
-                    pointRadius: amostradas.length <= 45 ? 3 : 0,
-                    pointHoverRadius: 5,
-                    tension: 0.25,
-                    fill: true
-                },
-                {
-                    label: `Forno ${fornoObj.num} — Canal 2 (Inf. °C)`,
-                    data: ptsC2,
-                    borderColor: "#38bdf8",
-                    backgroundColor: gradC2,
-                    borderWidth: 2,
-                    pointRadius: amostradas.length <= 45 ? 2.5 : 0,
-                    pointHoverRadius: 5,
-                    tension: 0.25,
-                    fill: true
-                }
-            ]
-        },
+        data: { datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             animation: { duration: 180 },
-            interaction: { mode: "index", intersect: false },
+            interaction: { mode: "nearest", intersect: false },
             onHover: (evt, activeEls) => {
                 if (!readoutEl || !activeEls || activeEls.length === 0) return;
-                const idx = activeEls[0].index;
-                const p1 = ptsC1[idx];
-                const p2 = ptsC2[idx];
-                if (!p1) return;
-                const d = new Date(p1.x);
-                const dStr = d.toLocaleDateString("pt-BR");
-                const hStr = formatHoraCurtaAdmin(p1.x);
-                readoutEl.innerHTML = `<i class="fa-regular fa-clock"></i> ${dStr} às ${hStr} &nbsp;•&nbsp; C1: <b style="color:#fb923c">${p1.y} °C</b> &nbsp;|&nbsp; C2: <b style="color:#38bdf8">${p2 ? p2.y : "--"} °C</b>`;
+                const el = activeEls[0];
+                const ds = datasets[el.datasetIndex];
+                const pt = ds?.data[el.index];
+                if (!pt) return;
+
+                const dt = new Date(pt.x);
+                const hStr = formatHoraCurtaAdmin(pt.x);
+                if (pt.caldaObj) {
+                    const c = pt.caldaObj;
+                    readoutEl.innerHTML = `🔥 <b>${c.numeroTexto} Calda</b> (${c.horarioCalda} - ${c.tempMinimo}°C) &nbsp;•&nbsp; Pico: <b>${c.tempMaxima}°C</b> (${c.horarioPico}) &nbsp;•&nbsp; Int: <b>${c.intervaloEntreCaldasTexto}</b>`;
+                } else {
+                    readoutEl.innerHTML = `<i class="fa-regular fa-clock"></i> ${dt.toLocaleDateString("pt-BR")} às ${hStr} &nbsp;•&nbsp; ${ds.label}: <b style="color:#ffffff">${pt.y} °C</b>`;
+                }
             },
             plugins: {
                 legend: {
@@ -4534,11 +4923,26 @@ function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
                     callbacks: {
                         title: (items) => {
                             if (!items || !items.length) return "";
+                            const raw = items[0].raw;
+                            if (raw && raw.caldaObj) {
+                                return `🔥 ${raw.caldaObj.numeroTexto} Calda • ${raw.caldaObj.horarioCalda} (${raw.caldaObj.data})`;
+                            }
                             const ts = Number(items[0].parsed.x);
                             const dt = new Date(ts);
                             return `${dt.toLocaleDateString("pt-BR")} às ${formatHoraCurtaAdmin(ts)}`;
                         },
-                        label: (item) => `${item.dataset.label}: ${item.parsed.y} °C`
+                        label: (item) => {
+                            const raw = item.raw;
+                            if (raw && raw.caldaObj) {
+                                const c = raw.caldaObj;
+                                if (item.dataset.label.includes("Caldas")) {
+                                    return `Temp. Mínima da Calda: ${c.tempMinimo} °C | Intervalo: ${c.intervaloEntreCaldasTexto} (${c.confianca})`;
+                                } else {
+                                    return `Pico Térmico: ${c.tempMaxima} °C às ${c.horarioPico} | Subida: ${c.tempoSubidaTexto}`;
+                                }
+                            }
+                            return `${item.dataset.label}: ${item.parsed.y} °C`;
+                        }
                     }
                 }
             },
@@ -4549,7 +4953,7 @@ function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
                     max: fornoObj.maxTs > fornoObj.minTs ? fornoObj.maxTs : fornoObj.minTs + 60000,
                     title: {
                         display: true,
-                        text: `Janela de 12 Horas (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`,
+                        text: `Linha do Tempo da Queima (${janela12h.horaInicioStr} às ${janela12h.horaFimStr})`,
                         color: "#94a3b8",
                         font: { size: 10, weight: "700" }
                     },
@@ -4562,7 +4966,7 @@ function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
                     grid: { color: "rgba(255, 255, 255, 0.05)" }
                 },
                 y: {
-                    beginAtZero: true,
+                    beginAtZero: false,
                     title: {
                         display: true,
                         text: "Temperatura (°C)",
@@ -4580,7 +4984,6 @@ function renderizarGraficoPDF12h(fornoObj, janela12h, dataRefStr) {
         }
     });
 }
-
 function renderizarTabelaPDF12h(fornoObj = null, dataRefStr = "", janela12h = null) {
     const tbody = $("aiPdf12hTableBody");
     const paginationBar = $("aiPdf12hPaginationBar");
@@ -6037,3 +6440,496 @@ if (typeof document !== "undefined") {
 
 
 
+
+// ==============================================================================
+// FUNÇÕES COMPLEMENTARES DE CONTROLE DE CALDAS, REVISÃO & WHATSAPP (EXCLUSIVO ADMIN)
+// ==============================================================================
+
+async function executarAnaliseInteligenteCaldas(forcar = false) {
+    const btnIcon = $("btnAnalisarQueimaIcon");
+    if (btnIcon) btnIcon.classList.add("fa-spin");
+
+    try {
+        const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+        const selCeramica = $("aiSelectCeramica");
+        const ceramicaId = selCeramica?.value || clients[0]?.id;
+        const ceramica = clients.find(c => c.id === ceramicaId) || clients[0] || { id: "cli_1", nome: "Cerâmica Cliente" };
+
+        const canalSelecionado = $("caldaSelectCanal")?.value || "canal_1";
+        const periodoModo = $("caldaSelectPeriodo")?.value || "12";
+
+        let startIso, endIso;
+        const now = new Date();
+
+        if (periodoModo === "24") {
+            startIso = new Date(now.getTime() - 24 * 3600 * 1000).toISOString();
+            endIso = now.toISOString();
+        } else if (periodoModo === "hoje") {
+            const startHoje = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            startIso = startHoje.toISOString();
+            endIso = now.toISOString();
+        } else if (periodoModo === "ontem") {
+            const startOntem = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0);
+            const endOntem = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59);
+            startIso = startOntem.toISOString();
+            endIso = endOntem.toISOString();
+        } else {
+            const j12 = obterJanela12HorasPorHorarioEnvio();
+            startIso = j12.inicioDate.toISOString();
+            endIso = j12.fimDate.toISOString();
+        }
+
+        let leituras = [];
+        if (typeof sb !== "undefined" && sb) {
+            try {
+                const pageSize = 1000;
+                const [p0, p1] = await Promise.all([
+                    sb.from("leituras").select("*").eq("ceramica_id", ceramica.id).gte("created_at", startIso).lte("created_at", endIso).order("created_at", { ascending: false }).range(0, pageSize - 1),
+                    sb.from("leituras").select("*").eq("ceramica_id", ceramica.id).gte("created_at", startIso).lte("created_at", endIso).order("created_at", { ascending: false }).range(pageSize, 2 * pageSize - 1)
+                ]);
+                leituras = [...(p0.data || []), ...(p1.data || [])];
+
+                // Fallback se não houver leituras no período exato: busca últimas leituras reais
+                if (leituras.length === 0) {
+                    const { data: ultimas } = await sb.from("leituras").select("*").eq("ceramica_id", ceramica.id).order("created_at", { ascending: false }).limit(600);
+                    if (ultimas && ultimas.length > 0) {
+                        leituras = ultimas;
+                    }
+                }
+            } catch (errDb) {
+                console.warn("[Caldas] Falha na busca Supabase:", errDb);
+            }
+        }
+
+        const resultadoIA = processarAlgoritmoIA(ceramica, leituras, 12, obterJanela12HorasPorHorarioEnvio());
+        adminState.aiReportState.analiseAtual = resultadoIA;
+
+        renderizarPainelPDF12HorasIA(resultadoIA);
+
+        if (forcar) {
+            mostrarToastFeedback(`Análise de queima e caldas concluída para ${ceramica.nome}!`, "success");
+        }
+    } catch (e) {
+        console.error("[Caldas] Erro ao analisar queima:", e);
+        mostrarToastFeedback("Erro ao processar análise de queima.", "error");
+    } finally {
+        if (btnIcon) btnIcon.classList.remove("fa-spin");
+    }
+}
+
+function trocarCanalAnaliseCaldas() {
+    const activeMod = adminState.aiReportState?.activeFornoPdf12h || 1;
+    selecionarFornoPDF12h(activeMod, false);
+}
+
+function trocarPeriodoAnaliseCaldas() {
+    executarAnaliseInteligenteCaldas(false);
+}
+
+function renderizarTabelaCaldasAdmin(analiseCaldas) {
+    const tbody = $("caldaTabelaCaldasBody");
+    if (!tbody) return;
+
+    if (!analiseCaldas || !analiseCaldas.sucesso || !analiseCaldas.caldas || analiseCaldas.caldas.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="10" style="text-align: center; padding: 24px; color: #94a3b8;">
+                    <i class="fa-solid fa-circle-info" style="color: #38bdf8; margin-right: 6px;"></i>
+                    Nenhuma calda identificada automaticamente no período analisado.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = analiseCaldas.caldas.map((c, idx) => {
+        let badgeConfClass = "tag-pill-green";
+        if (c.confianca === "Média confiança") badgeConfClass = "tag-pill-orange";
+        else if (c.confianca === "Baixa confiança") badgeConfClass = "tag-pill-red";
+
+        const revisadoBadge = c.revisado ? '<span style="font-size:10px; color:#34d399; margin-left:4px;" title="Validado pelo Admin">✓ Revisado</span>' : '';
+
+        return `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+                <td>
+                    <strong style="color: #ffffff; font-size: 13px;">${escapeHtml(c.numeroTexto)}</strong>
+                    ${revisadoBadge}
+                </td>
+                <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #f8fafc;">
+                    ${escapeHtml(c.horarioCalda)}
+                </td>
+                <td style="color: #cbd5e1; font-size: 12px;">
+                    ${escapeHtml(c.data)}
+                </td>
+                <td>
+                    <b style="color: #fb923c; font-size: 13px;">${c.tempMinimo} °C</b>
+                </td>
+                <td style="font-family: 'JetBrains Mono', monospace; color: #cbd5e1;">
+                    ${c.horarioPico || "—"}
+                </td>
+                <td>
+                    <b style="color: #ef4444; font-size: 13px;">${c.tempMaxima ? c.tempMaxima + " °C" : "—"}</b>
+                </td>
+                <td style="font-weight: 700; color: #38bdf8;">
+                    ${escapeHtml(c.intervaloEntreCaldasTexto)}
+                </td>
+                <td style="font-size: 11.5px; color: #94a3b8;">
+                    Subida: ${escapeHtml(c.tempoSubidaTexto)} | Desc: ${escapeHtml(c.tempoDescidaTexto)}
+                </td>
+                <td>
+                    <span class="tag-pill ${badgeConfClass}" style="font-size: 10px;" title="${escapeHtml(c.confiancaMotivo || '')}">
+                        ${escapeHtml(c.confianca)}
+                    </span>
+                </td>
+                <td style="text-align: center;">
+                    <div style="display: inline-flex; gap: 4px; align-items: center;">
+                        <button type="button" class="btn-primary-admin" onclick="confirmarCaldaAdmin(${idx})" title="Confirmar Calda" style="padding: 4px 7px; font-size: 11px; background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.35);">
+                            <i class="fa-solid fa-check"></i>
+                        </button>
+                        <button type="button" class="btn-primary-admin" onclick="abrirModalAjustarCaldaAdmin(${idx})" title="Ajustar Horário/Temp" style="padding: 4px 7px; font-size: 11px; background: rgba(56,189,248,0.2); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35);">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button type="button" class="btn-primary-admin" onclick="descartarCaldaAdmin(${idx})" title="Descartar Falso Positivo" style="padding: 4px 7px; font-size: 11px; background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.35);">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function renderizarPreviaWhatsappCaldas(analiseCaldas, fornoObj, ceramica) {
+    const el = $("waMockupTextoRelatorioCaldas");
+    const ta = $("aiRelatorioTextoArea");
+    if (!el) return;
+
+    if (!analiseCaldas || !window.CaldasEngine) {
+        el.textContent = "Aguardando cálculo de caldas para o forno...";
+        return;
+    }
+
+    const dadosForno = {
+        ceramicaNome: ceramica?.nome || "Cerâmica Cliente",
+        fornoNome: `Forno ${fornoObj?.num || "01"}`,
+        responsavel: ceramica?.responsavel || "Gestor"
+    };
+
+    const texto = window.CaldasEngine.gerarTextoWhatsapp(analiseCaldas, dadosForno);
+    el.textContent = texto;
+    if (ta) ta.value = texto;
+}
+
+function copiarTextoCaldasWhatsapp() {
+    const el = $("waMockupTextoRelatorioCaldas");
+    const texto = el ? el.textContent.trim() : "";
+    if (!texto) {
+        mostrarToastFeedback("Nenhum texto de relatório disponível para copiar.", "warning");
+        return;
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(() => {
+            mostrarToastFeedback("Relatório de Queima copiado com sucesso para o WhatsApp!", "success");
+        }).catch(() => {
+            copiarFallbackTexto(texto);
+        });
+    } else {
+        copiarFallbackTexto(texto);
+    }
+}
+
+function copiarFallbackTexto(txt) {
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    mostrarToastFeedback("Relatório de Queima copiado com sucesso!", "success");
+}
+
+async function enviarRelatorioCaldasWhatsapp() {
+    const el = $("waMockupTextoRelatorioCaldas");
+    const texto = el ? el.textContent.trim() : "";
+    if (!texto) {
+        mostrarToastFeedback("Execute a análise antes de enviar para o WhatsApp.", "warning");
+        return;
+    }
+
+    const selContato = $("caldaSelectContatoDestino");
+    const contatoId = selContato ? selContato.value : "";
+    const resultado = adminState.aiReportState?.analiseAtual;
+    const ceramica = resultado?.ceramica;
+    const activeMod = adminState.aiReportState?.activeFornoPdf12h || 1;
+    const analise = adminState.aiReportState?.analiseCaldasAtual;
+
+    if (contatoId === "todos") {
+        await dispararRelatorioCaldasGatewayTodos();
+        return;
+    }
+
+    let contatoDestino = null;
+    let telefone = "";
+
+    if (contatoId) {
+        contatoDestino = (waAdminContatos || []).find(c => c.id === contatoId);
+        if (contatoDestino) {
+            telefone = contatoDestino.telefone;
+        }
+    }
+
+    if (!telefone) {
+        telefone = ceramica?.telefone || ceramica?.whatsapp || "";
+    }
+
+    if (!telefone) {
+        telefone = prompt("Informe o número de WhatsApp com DDD (Ex: 88999998888):", "");
+    }
+
+    if (!telefone) {
+        mostrarToastFeedback("Envio cancelado: telefone não informado.", "warning");
+        return;
+    }
+
+    let cleanPhone = String(telefone).replace(/\D/g, "");
+    if (cleanPhone.startsWith("0")) cleanPhone = cleanPhone.substring(1);
+    if (cleanPhone.length >= 10 && !cleanPhone.startsWith("55")) {
+        cleanPhone = "55" + cleanPhone;
+    }
+
+    const destNome = contatoDestino ? `${contatoDestino.nome} (+${cleanPhone})` : `+${cleanPhone}`;
+    mostrarToastFeedback(`Enviando via THERMOLINK WHATSAPP para ${destNome}...`, "info");
+
+    // Gera o PDF oficial da Ficha de Queima para anexo automático
+    let pdfAttachment = null;
+    if (window.CaldasEngine && analise && window.CaldasEngine.gerarFichaPDFBase64) {
+        pdfAttachment = window.CaldasEngine.gerarFichaPDFBase64(analise, {
+            ceramicaNome: ceramica?.nome || "Cerâmica Cliente",
+            fornoNome: `Forno ${String(activeMod).padStart(2, '0')}`,
+            cidade: ceramica?.cidade || "Brasil"
+        });
+    }
+
+    try {
+        await enviarMensagemWhatsappGateway(cleanPhone, texto, null, pdfAttachment);
+        mostrarToastFeedback(`Relatório entregue com sucesso via THERMOLINK WHATSAPP para ${destNome}!`, "success");
+    } catch (errGateway) {
+        console.warn("[THERMOLINK WHATSAPP] Erro no gateway:", errGateway);
+        if (confirm(`O THERMOLINK WHATSAPP não conseguiu entregar a mensagem automaticamente (${errGateway.message || 'servidor desconectado'}).\n\nDeseja abrir o WhatsApp Web para enviar manualmente agora?`)) {
+            const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(texto)}`;
+            window.open(url, "_blank");
+        }
+    }
+}
+
+async function dispararRelatorioCaldasGatewayTodos() {
+    const el = $("waMockupTextoRelatorioCaldas");
+    const texto = el ? el.textContent.trim() : "";
+    if (!texto) {
+        mostrarToastFeedback("Execute a análise antes de disparar.", "warning");
+        return;
+    }
+
+    const resultado = adminState.aiReportState?.analiseAtual;
+    const ceramica = resultado?.ceramica;
+    const ceramicaId = ceramica?.id;
+    const activeMod = adminState.aiReportState?.activeFornoPdf12h || 1;
+    const analise = adminState.aiReportState?.analiseCaldasAtual;
+
+    const contatos = (waAdminContatos || []).filter(c => c.ceramica_id === ceramicaId && c.receber_relatorio);
+    if (contatos.length === 0) {
+        alert(`Nenhum contato com recebimento ativo cadastrado para ${ceramica?.nome || 'esta cerâmica'}.\n\nCadastre um contato em "Contatos por Cerâmica" ou clique em "+ Novo Contato nesta Cerâmica".`);
+        return;
+    }
+
+    if (!confirm(`Deseja disparar este Relatório de Queima & Caldas via THERMOLINK WHATSAPP para os ${contatos.length} contato(s) ativos de ${ceramica?.nome}?`)) {
+        return;
+    }
+
+    mostrarToastFeedback(`Disparando via THERMOLINK WHATSAPP para ${contatos.length} contato(s)...`, "info");
+
+    let pdfAttachment = null;
+    if (window.CaldasEngine && analise && window.CaldasEngine.gerarFichaPDFBase64) {
+        pdfAttachment = window.CaldasEngine.gerarFichaPDFBase64(analise, {
+            ceramicaNome: ceramica?.nome || "Cerâmica Cliente",
+            fornoNome: `Forno ${String(activeMod).padStart(2, '0')}`,
+            cidade: ceramica?.cidade || "Brasil"
+        });
+    }
+
+    let sucessos = 0;
+    let falhas = 0;
+
+    for (const c of contatos) {
+        if (!c.telefone) continue;
+        try {
+            await enviarMensagemWhatsappGateway(c.telefone, texto, null, pdfAttachment);
+            sucessos++;
+        } catch (err) {
+            console.warn(`[THERMOLINK WHATSAPP] Falha no envio para ${c.nome}:`, err);
+            falhas++;
+        }
+    }
+
+    if (sucessos > 0) {
+        mostrarToastFeedback(`Relatório de Queima entregue com sucesso via THERMOLINK WHATSAPP para ${sucessos} contato(s)!`, "success");
+    } else {
+        alert("O THERMOLINK WHATSAPP não está conectado ou o servidor não respondeu.\n\nAcesse a aba 'WhatsApp & Relatórios' para verificar a conexão ou escanear o QR Code.");
+    }
+}
+
+async function abrirWhatsAppWebComFichaCaldas(contatoId) {
+    const c = (waAdminContatos || []).find(x => x.id === contatoId);
+    if (!c || !c.telefone) {
+        mostrarToastFeedback("Contato ou telefone não localizado.", "error");
+        return;
+    }
+
+    const clients = adminState.clients && adminState.clients.length ? adminState.clients : getClients();
+    const ceramica = clients.find(cl => cl.id === c.ceramica_id) || { id: c.ceramica_id, nome: c.ceramica_nome };
+
+    mostrarToastFeedback(`Enviando Ficha de Queima via THERMOLINK WHATSAPP para ${c.nome}...`, "info");
+
+    let leituras = [];
+    if (typeof sb !== "undefined" && sb) {
+        try {
+            const { data } = await sb.from("leituras").select("*").eq("ceramica_id", c.ceramica_id).order("created_at", { ascending: false }).limit(500);
+            if (data && data.length > 0) leituras = data;
+        } catch (e) {}
+    }
+
+    let textoRelatorio = "";
+    let analise = null;
+    if (window.CaldasEngine && leituras.length > 0) {
+        leituras.sort((a,b) => new Date(a.created_at || a.data_hora).getTime() - new Date(b.created_at || b.data_hora).getTime());
+        analise = window.CaldasEngine.detectarCaldas(leituras, { canal: "canal_1" });
+        textoRelatorio = window.CaldasEngine.gerarTextoWhatsapp(analise, {
+            ceramicaNome: ceramica.nome,
+            fornoNome: "Forno 01",
+            responsavel: `${c.nome} (${c.cargo || 'Gestor'})`
+        });
+    } else {
+        const j12 = obterJanela12HorasPorHorarioEnvio();
+        textoRelatorio = `*MEDEIROS AUTOMAÇÃO • THERMOLINK*\nRELATÓRIO DE QUEIMA DE FORNO\n\nCerâmica: ${ceramica.nome}\nAos Cuidados: ${c.nome}\nPeríodo: ${j12.horaInicioStr} às ${j12.horaFimStr}`;
+    }
+
+    let cleanPhone = String(c.telefone).replace(/\D/g, "");
+    if (!cleanPhone.startsWith("55")) cleanPhone = "55" + cleanPhone;
+
+    // Tenta primeiro enviar diretamente via THERMOLINK WHATSAPP
+    try {
+        let pdfAttachment = null;
+        if (window.CaldasEngine && analise && window.CaldasEngine.gerarFichaPDFBase64) {
+            pdfAttachment = window.CaldasEngine.gerarFichaPDFBase64(analise, {
+                ceramicaNome: ceramica.nome,
+                fornoNome: "Forno 01",
+                cidade: ceramica.cidade || "Brasil"
+            });
+        }
+        await enviarMensagemWhatsappGateway(cleanPhone, textoRelatorio, null, pdfAttachment);
+        mostrarToastFeedback(`Ficha de Queima entregue com sucesso via THERMOLINK WHATSAPP para ${c.nome}!`, "success");
+    } catch (errGateway) {
+        // Fallback: abre no WhatsApp Web caso o servidor esteja desconectado
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(textoRelatorio)}`, "_blank");
+        mostrarToastFeedback(`THERMOLINK WHATSAPP desconectado. WhatsApp aberto para ${c.nome}.`, "info");
+    }
+}
+// ==============================================================================
+// INTEGRAÇÃO: RELATÓRIOS INTELIGENTES DE CALDAS COM CONTATOS POR CERÂMICA
+// ==============================================================================
+
+function atualizarContatosDestinoRelatorioCaldas(ceramicaId) {
+    const sel = $("caldaSelectContatoDestino");
+    const badgesContainer = $("caldaContatosBadgesContainer");
+    if (!sel) return;
+
+    if (!ceramicaId) {
+        const selCer = $("aiSelectCeramica");
+        ceramicaId = selCer?.value || adminState.aiReportState?.activeCeramicaId;
+    }
+
+    const contatos = (waAdminContatos || []).filter(c => c.ceramica_id === ceramicaId);
+    const contatosAtivos = contatos.filter(c => c.receber_relatorio);
+
+    if (!contatos || contatos.length === 0) {
+        sel.innerHTML = `<option value="">Nenhum contato cadastrado para esta cerâmica</option>`;
+        if (badgesContainer) {
+            badgesContainer.innerHTML = `
+                <span class="tag-pill" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; font-size: 11px;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Sem contatos vinculados
+                </span>
+            `;
+        }
+        return;
+    }
+
+    let optionsHtml = '';
+    if (contatosAtivos.length > 1) {
+        optionsHtml += `<option value="todos">👥 Todos os Contatos Ativos (${contatosAtivos.length} contatos cadastrados)</option>`;
+    }
+
+    contatos.forEach(c => {
+        const isAtivo = c.receber_relatorio;
+        const statusTxt = isAtivo ? '✓ Ativo' : '(Envio Pausado)';
+        optionsHtml += `
+            <option value="${escapeHtml(c.id)}" ${isAtivo && contatosAtivos.length === 1 ? 'selected' : ''}>
+                👤 ${escapeHtml(c.nome)} • ${escapeHtml(c.cargo || 'Gestor')} (+${escapeHtml(c.telefone)}) ${statusTxt}
+            </option>
+        `;
+    });
+
+    sel.innerHTML = optionsHtml;
+
+    if (badgesContainer) {
+        badgesContainer.innerHTML = contatos.map(c => {
+            const isAtivo = c.receber_relatorio;
+            const bg = isAtivo ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.1)';
+            const border = isAtivo ? 'rgba(16, 185, 129, 0.35)' : 'rgba(255,255,255,0.1)';
+            const color = isAtivo ? '#34d399' : '#94a3b8';
+            return `
+                <span class="tag-pill" style="background:${bg}; border:1px solid ${border}; color:${color}; font-size:11px; padding:3px 8px;" title="${escapeHtml(c.cargo || '')} - Telefone: ${escapeHtml(c.telefone)}">
+                    <i class="fa-brands fa-whatsapp"></i> ${escapeHtml(c.nome)}
+                </span>
+            `;
+        }).join('');
+    }
+
+    atualizarContatoSelecionadoPreview();
+}
+
+function atualizarContatoSelecionadoPreview() {
+    const sel = $("caldaSelectContatoDestino");
+    if (!sel) return;
+    const contatoId = sel.value;
+
+    const analise = adminState.aiReportState?.analiseCaldasAtual;
+    const resultado = adminState.aiReportState?.analiseAtual;
+    const activeMod = adminState.aiReportState?.activeFornoPdf12h || 1;
+    if (!analise || !resultado) return;
+
+    let responsavelNome = resultado.ceramica?.responsavel || "Gestor";
+
+    if (contatoId && contatoId !== "todos") {
+        const c = (waAdminContatos || []).find(x => x.id === contatoId);
+        if (c) {
+            responsavelNome = `${c.nome}${c.cargo ? ` (${c.cargo})` : ''}`;
+        }
+    } else if (contatoId === "todos") {
+        responsavelNome = "Gestores e Equipe da Cerâmica";
+    }
+
+    renderizarPreviaWhatsappCaldas(analise, { num: String(activeMod).padStart(2, '0') }, {
+        nome: resultado.ceramica?.nome,
+        responsavel: responsavelNome
+    });
+}
+
+function abrirModalNovoContatoParaCeramicaAtiva() {
+    const selCer = $("aiSelectCeramica");
+    const ceramicaId = selCer?.value || adminState.aiReportState?.activeCeramicaId;
+    abrirModalNovoContatoWhatsapp(ceramicaId, 'proprietario');
+}
+
+// Substituição robusta de enviarRelatorioCaldasWhatsapp integrada com os contatos
+var oldEnviarFunc = 'function enviarRelatorioCaldasWhatsapp() {';

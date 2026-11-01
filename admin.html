@@ -510,6 +510,19 @@
 
                     <!-- BARRA DE FERRAMENTAS, FILTROS DE PERÍODO & BUSCA -->
                     <div class="activity-toolbar">
+                        <!-- Modo de Exibição (Por Cerâmica vs Feed de Todos os Acessos) -->
+                        <div class="filter-group-segmented">
+                            <span class="filter-group-label"><i class="fa-solid fa-layer-group"></i> Modo:</span>
+                            <div class="filter-pills">
+                                <button type="button" class="filter-pill active" id="btnUaViewUsuarios" onclick="trocarModoVisualizacaoAtividade('usuarios', this)">
+                                    <i class="fa-solid fa-users"></i> Por Cerâmica
+                                </button>
+                                <button type="button" class="filter-pill" id="btnUaViewFeed" onclick="trocarModoVisualizacaoAtividade('feed', this)">
+                                    <i class="fa-solid fa-list-check"></i> Todos os Acessos (Feed)
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Filtros por Período -->
                         <div class="filter-group-segmented">
                             <span class="filter-group-label"><i class="fa-regular fa-calendar"></i> Período:</span>
@@ -517,11 +530,12 @@
                                 <button class="filter-pill" id="btnPeriodToday" onclick="filtrarPeriodoAtividade('today', this)">Hoje</button>
                                 <button class="filter-pill active" id="btnPeriod7d" onclick="filtrarPeriodoAtividade('7d', this)">7 Dias</button>
                                 <button class="filter-pill" id="btnPeriod30d" onclick="filtrarPeriodoAtividade('30d', this)">30 Dias</button>
+                                <button class="filter-pill" id="btnPeriodAll" onclick="filtrarPeriodoAtividade('all', this)">Todos</button>
                                 <button class="filter-pill" id="btnPeriodCustom" onclick="filtrarPeriodoAtividade('custom', this)">Personalizado</button>
                             </div>
                         </div>
 
-                        <!-- Inputs de data personalizada (revelados quando 'Personalizado' está ativo) -->
+                        <!-- Inputs de data personalizada -->
                         <div class="custom-date-inputs hidden" id="boxCustomDates">
                             <input type="date" id="activityStartDate" title="Data Inicial">
                             <span>até</span>
@@ -533,8 +547,8 @@
                         <div class="sort-group">
                             <span class="filter-group-label"><i class="fa-solid fa-arrow-down-wide-short"></i> Ordenar:</span>
                             <select id="activitySortSelect" class="admin-select" onchange="alterarOrdenacaoAtividade(this.value)">
-                                <option value="lastAccessDesc">Último Acesso (Mais recente)</option>
-                                <option value="lastAccessAsc">Último Acesso (Mais antigo)</option>
+                                <option value="lastAccessDesc">Mais Recente Primeiro</option>
+                                <option value="lastAccessAsc">Mais Antigo Primeiro</option>
                                 <option value="accessCountDesc">Quantidade de Acessos (Maior)</option>
                                 <option value="accessCountAsc">Quantidade de Acessos (Menor)</option>
                                 <option value="nameAsc">Nome do Usuário (A-Z)</option>
@@ -544,14 +558,14 @@
                         <!-- Busca Textual -->
                         <div class="search-input-group search-flex-grow">
                             <i class="fa-solid fa-magnifying-glass"></i>
-                            <input type="text" id="activitySearchInput" placeholder="Buscar por usuário, cerâmica, IP ou dispositivo..." oninput="filtrarTabelaAtividade(this.value)">
+                            <input type="text" id="activitySearchInput" placeholder="Buscar por cerâmica, usuário, IP ou dispositivo..." oninput="filtrarTabelaAtividade(this.value)">
                         </div>
                     </div>
 
                     <!-- TABELA DE USUÁRIOS & ACESSOS -->
-                    <div class="admin-table-wrapper">
+                    <div class="admin-table-wrapper" style="overflow-x: auto;">
                         <table class="admin-table">
-                            <thead>
+                            <thead id="userActivityTableHead">
                                 <tr>
                                     <th>Usuário / Cerâmica</th>
                                     <th>Status de Conexão</th>
@@ -571,7 +585,6 @@
                 </div>
 
             </section>
-
 
             <!-- ========================================================
                  SEÇÃO 6: WHATSAPP & RELATÓRIOS INTELIGENTES COM IA
@@ -800,77 +813,7 @@
                             </div>
                         </div>
 
-                        <!-- CONFIGURAÇÃO DA CHAVE DO GOOGLE GEMINI AI -->
-                        <div style="background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 12px; padding: 18px; margin-top: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-                            <div style="flex: 1; min-width: 280px;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <i class="fa-solid fa-brain" style="color: #38bdf8; font-size: 16px;"></i>
-                                    <b style="color: white; font-size: 14px;">Google Gemini AI • Análise Inteligente de Queima</b>
-                                    <span class="tag-pill tag-pill-blue" style="font-size: 10px;">Gemini Pro</span>
-                                </div>
-                                <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">
-                                    Conexão direta com a IA do Google para processar a telemetria real das últimas 12h de cada cerâmica e gerar o resumo executivo no WhatsApp.
-                                </p>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 480px;">
-                                <input type="password" id="waAdminInputGeminiKey" placeholder="Cole sua API Key do Google Gemini..." style="flex: 1; background: #07121f; border: 1px solid var(--border-color); border-radius: 8px; color: white; padding: 8px 12px; font-size: 13px; font-family: monospace;">
-                                <button type="button" class="btn-primary-admin" onclick="salvarConfigWhatsappAdmin()" style="padding: 8px 16px; font-size: 13px; white-space: nowrap; background: linear-gradient(135deg, #0284c7, #0369a1);">
-                                    <i class="fa-solid fa-key"></i> Salvar Chave
-                                </button>
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- CARD: MONITOR AUTOMÁTICO DE DESCONEXÃO (> 30 MIN) -->
-                    <div class="panel-box" style="margin-bottom: 24px; border: 1px solid rgba(245, 158, 11, 0.35); background: linear-gradient(135deg, rgba(14, 32, 52, 0.85), rgba(245, 158, 11, 0.06));">
-                        <div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <h3 style="color: #fbbf24;"><i class="fa-solid fa-triangle-exclamation text-orange"></i> Monitor Automático de Desconexão (> 30 Minutos)</h3>
-                                    <span class="tag-pill tag-pill-orange"><i class="fa-solid fa-bolt"></i> 100% Automático</span>
-                                </div>
-                                <p style="color: #cbd5e1; font-size: 13px; margin-top: 4px;">
-                                    Se os aparelhos Alutal de uma cerâmica ficarem mais de 30 minutos sem comunicação (queda de energia, Wi-Fi fora do ar ou anomalia), o sistema envia automaticamente um aviso resumido no WhatsApp para os números cadastrados daquela cerâmica.
-                                </p>
-                            </div>
-                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                                <button type="button" class="btn-primary-admin" onclick="abrirModalPreviewAlertaDesconexao()" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.45);">
-                                    <i class="fa-brands fa-whatsapp"></i> Ver Modelo do Alerta
-                                </button>
-                            </div>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px;">
-                            <div style="background: rgba(0,0,0,0.3); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 12px;">
-                                <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(16, 185, 129, 0.2); color: #34d399; display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                                    <i class="fa-solid fa-heart-pulse"></i>
-                                </div>
-                                <div>
-                                    <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Status do Monitor</span>
-                                    <div style="font-size: 13px; font-weight: 800; color: #34d399;" id="waStatusMonitorOffline">Ativo no Servidor (Checagem contínua)</div>
-                                </div>
-                            </div>
-
-                            <div style="background: rgba(0,0,0,0.3); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 12px;">
-                                <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(245, 158, 11, 0.2); color: #fbbf24; display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                                    <i class="fa-solid fa-stopwatch"></i>
-                                </div>
-                                <div>
-                                    <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Gatilho de Disparo</span>
-                                    <div style="font-size: 13px; font-weight: 800; color: #ffffff;">Sem sinal &gt; 30 minutos</div>
-                                </div>
-                            </div>
-
-                            <div style="background: rgba(0,0,0,0.3); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 12px;">
-                                <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                                    <i class="fa-solid fa-bullhorn"></i>
-                                </div>
-                                <div>
-                                    <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Destinatários</span>
-                                    <div style="font-size: 13px; font-weight: 800; color: #ffffff;">Exclusivo da cerâmica sem sinal</div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- CONTATOS AGRUPADOS POR CERÂMICA -->
@@ -910,328 +853,368 @@
                 <!-- SUB-ABA 3: RELATÓRIOS & IA (INTEGRADO, AUTOMÁTICO E DESCOMPLICADO) -->
                 <div id="waSubSecRelatorios" class="wa-subtab-pane hidden">
                     
-                    <!-- PAINEL DE CONTROLE E VISUALIZAÇÃO DO RELATÓRIO AUTOMÁTICO -->
-                    <div class="panel-box" style="margin-bottom: 20px;">
-                        <div class="panel-header" style="flex-wrap: wrap; gap: 14px;">
+                    <!-- PAINEL PRINCIPAL: RELATÓRIOS INTELIGENTES DE QUEIMA & IDENTIFICAÇÃO AUTOMÁTICA DE CALDAS -->
+                    <div class="panel-box">
+                        <div class="panel-header" style="flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; margin-bottom: 16px;">
                             <div>
                                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                                    <h3><i class="fa-solid fa-wand-magic-sparkles text-orange"></i> Acompanhamento & Diagnóstico de Relatórios com IA</h3>
-                                    <span class="tag-pill tag-pill-orange" title="Motor Analítico Neural de Fornos Cerâmicos"><i class="fa-solid fa-brain-circuit"></i> IA Integrada ao WhatsApp</span>
+                                    <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: #ffffff;">
+                                        <i class="fa-solid fa-fire-burner" style="color: #f97316; margin-right: 6px;"></i>
+                                        Relatórios Inteligentes de Queima • Identificação de Caldas
+                                    </h3>
+                                    <span class="tag-pill tag-pill-orange" style="font-size: 10px; font-weight: 800; text-transform: uppercase;">
+                                        <i class="fa-solid fa-lock"></i> Exclusivo Administrador
+                                    </span>
                                 </div>
-                                <p>Monitore como o algoritmo de IA analisa a telemetria, identifica anomalias e gera os relatórios automáticos para cada cerâmica</p>
+                                <p style="margin: 5px 0 0; font-size: 13px; color: #94a3b8;">
+                                    Processamento de séries temporais de temperatura: identifica automaticamente as caldas de lenha (vales térmicos), picos de queima, calcula intervalos reais e gera a ficha operacional pronta para o WhatsApp.
+                                </p>
                             </div>
-                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                                <button type="button" class="btn-primary-admin" onclick="abrirModalPreviewWhatsappIA()" style="background: linear-gradient(135deg, #10b981, #059669);">
-                                    <i class="fa-brands fa-whatsapp"></i>
-                                    <span>Prévia no Celular</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- BARRA DE SELEÇÃO DE CLIENTE E PARÂMETROS -->
-                        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-                            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <label style="font-size: 13px; font-weight: 700; color: #cbd5e1;"><i class="fa-solid fa-industry" style="color: var(--orange); margin-right: 4px;"></i> Cerâmica:</label>
-                                    <select id="aiSelectCeramica" class="select-admin" onchange="trocarCeramicaRelatorioIA()" style="background: #07121f; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; min-width: 220px;">
-                                        <!-- Preenchido dinamicamente com as cerâmicas -->
-                                    </select>
-                                </div>
-
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <label style="font-size: 13px; font-weight: 700; color: #cbd5e1;"><i class="fa-solid fa-clock-rotate-left" style="color: var(--cyan); margin-right: 4px;"></i> Janela de Análise:</label>
-                                    <select id="aiSelectJanela" class="select-admin" onchange="executarAnaliseIA(false)" style="background: #07121f; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;">
-                                        <option value="12" selected>Últimas 12 Horas (Madrugada 18:00 às 06:00)</option>
-                                        <option value="24">Últimas 24 Horas (Ciclo Diário)</option>
-                                        <option value="48">Últimas 48 Horas (Ciclo Completo)</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <span class="tag-pill" id="aiStatusUltimaAnalise" style="font-size: 12px; color: #94a3b8;">
-                                    <i class="fa-solid fa-circle-check text-green" style="margin-right: 4px;"></i> Atualizado agora
-                                </span>
-                                <button type="button" class="btn-icon-subtle" onclick="executarAnaliseIA(true)" title="Recarregar dados da IA" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #94a3b8; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">
-                                    <i class="fa-solid fa-rotate" id="aiRefreshIcon"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- CARDS DE KPIS ESSENCIAIS DO ALGORITMO DE IA -->
-                    <div class="kpi-grid" style="margin-bottom: 24px;">
-                        <!-- 1. Score Térmico Geral -->
-                        <div class="kpi-card ai-kpi-card">
-                            <div class="kpi-icon-box" style="background: rgba(249, 115, 22, 0.15); color: #f97316;">
-                                <i class="fa-solid fa-chart-line"></i>
-                            </div>
-                            <div class="kpi-body">
-                                <span class="kpi-label">Índice de Qualidade Térmica (TQS)</span>
-                                <div class="kpi-value text-green" id="aiKpiScore">--</div>
-                                <div class="kpi-trend trend-green" id="aiKpiScoreTrend">
-                                    <span class="live-dot-green"></span>
-                                    <span id="aiKpiScoreLabel">Calculando índice...</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 2. Gradiente Térmico Topo x Base -->
-                        <div class="kpi-card ai-kpi-card">
-                            <div class="kpi-icon-box" style="background: rgba(14, 165, 233, 0.15); color: #0ea5e9;">
-                                <i class="fa-solid fa-arrows-split-up-and-left"></i>
-                            </div>
-                            <div class="kpi-body">
-                                <span class="kpi-label">Gradiente Médio (C1 x C2)</span>
-                                <div class="kpi-value text-blue" id="aiKpiGradiente">--</div>
-                                <div class="kpi-trend trend-neutral" id="aiKpiGradienteTrend">
-                                    <span id="aiKpiGradienteLabel">Equilíbrio topo x base</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 3. Eficiência de Biomassa & Elevação -->
-                        <div class="kpi-card ai-kpi-card">
-                            <div class="kpi-icon-box" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
-                                <i class="fa-solid fa-fire-burner"></i>
-                            </div>
-                            <div class="kpi-body">
-                                <span class="kpi-label">Eficiência Energética (Lenha)</span>
-                                <div class="kpi-value" id="aiKpiEficiencia">--</div>
-                                <div class="kpi-trend trend-green" id="aiKpiEficienciaTrend">
-                                    <span id="aiKpiEficienciaLabel">Rendimento estável</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 4. Anomalias & Risco -->
-                        <div class="kpi-card ai-kpi-card">
-                            <div class="kpi-icon-box" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e;">
-                                <i class="fa-solid fa-triangle-exclamation"></i>
-                            </div>
-                            <div class="kpi-body">
-                                <span class="kpi-label">Anomalias Detectadas</span>
-                                <div class="kpi-value" id="aiKpiAnomalias">0</div>
-                                <div class="kpi-trend trend-neutral" id="aiKpiAnomaliasTrend">
-                                    <span id="aiKpiAnomaliasLabel">Nenhum risco detectado</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- DIAGNÓSTICO DETALHADO FORNO A FORNO -->
-                    <div class="panel-box" style="margin-bottom: 24px;">
-                        <div class="panel-header">
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <h3>Diagnóstico Detalhado por Forno (IA)</h3>
-                                    <span class="tag-pill tag-pill-cyan" id="aiCeramicaAtivaBadge">Cerâmica</span>
-                                </div>
-                                <p>Análise de fase de queima, estabilidade térmica, desvio de canais e recomendações operacionais</p>
-                            </div>
-                        </div>
-
-                        <div id="aiFornosContainer" class="ai-fornos-grid">
-                            <div style="text-align: center; padding: 40px; color: var(--text-muted);">
-                                <i class="fa-solid fa-spinner fa-spin" style="font-size: 28px; color: var(--orange); margin-bottom: 10px;"></i>
-                                <p>Executando algoritmo de inteligência artificial nos fornos...</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- CARD: GRÁFICO DA CURVA TÉRMICA DAS ÚLTIMAS 12 HORAS (ANEXO DE WHATSAPP) -->
-                    <div class="panel-box" id="aiChartPreviewCard" style="margin-bottom: 24px; background: #07101e; border: 1px solid #1a2f4c;">
-                        <div class="panel-header" style="flex-wrap: wrap; gap: 10px;">
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <h3 style="color: #f97316;"><i class="fa-solid fa-chart-line"></i> Curva Térmica da Queima (12h Madrugada)</h3>
-                                    <span class="tag-pill tag-pill-orange">Anexo Imagem WhatsApp</span>
-                                </div>
-                                <p>Gráfico de alta resolução gerado automaticamente e anexado ao WhatsApp dos clientes às 06:00</p>
-                            </div>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <a id="aiChartLink" href="#" target="_blank" class="btn-secondary-admin" style="display: none; padding: 6px 12px; font-size: 12px; text-decoration: none;">
-                                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Abrir Imagem HD
-                                </a>
-                            </div>
-                        </div>
-
-                        <div style="background: #091322; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); text-align: center; min-height: 220px; display: flex; align-items: center; justify-content: center;">
-                            <img id="aiChartPreviewImg" src="" alt="Gráfico da Queima 12h" style="max-width: 100%; height: auto; display: none; margin: 0 auto; border-radius: 8px;">
-                            <div id="aiChartLoading" style="padding: 40px; color: #94a3b8;">
-                                <i class="fa-solid fa-spinner fa-spin text-orange" style="font-size: 24px; margin-bottom: 8px;"></i>
-                                <p style="font-size: 13px;">Processando leituras e renderizando curvas dos fornos em queima...</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- ESTRUTURA DO RELATÓRIO AUTOMÁTICO PARA WHATSAPP + PDF DAS ÚLTIMAS 12 HORAS -->
-                    <div class="panel-box">
-                        <div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
-                            <div>
-                                <h3><i class="fa-brands fa-whatsapp text-green"></i> Relatório Automático Montado pela IA</h3>
-                                <p>Modelo exato gerado para os disparos automáticos diários aos gestores no WhatsApp (com PDF das Últimas 12 Horas)</p>
-                            </div>
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                <button type="button" class="btn-primary-admin" onclick="gerarEBaixarPDFRelatorio12h()" style="background: linear-gradient(135deg, #f97316, #ea580c); border: 1px solid rgba(249,115,22,0.4);">
-                                    <i class="fa-solid fa-file-pdf"></i>
-                                    <span>Baixar PDF (Últimas 12h)</span>
-                                </button>
-                                <button type="button" class="btn-primary-admin" onclick="copiarRelatorioIATexto()" style="background: #1e293b; border: 1px solid rgba(255,255,255,0.15);">
-                                    <i class="fa-solid fa-copy"></i>
-                                    <span>Copiar Texto</span>
-                                </button>
-                                <button type="button" class="btn-primary-admin" onclick="abrirModalPreviewWhatsappIA()" style="background: linear-gradient(135deg, #10b981, #059669);">
-                                    <i class="fa-brands fa-whatsapp"></i>
-                                    <span>Ver Prévia no Celular</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- =========================================================================
-                             DOCUMENTO / PDF DAS ÚLTIMAS 12 HORAS (BASEADO NO HORÁRIO DE ENVIO DIÁRIO)
-                        ========================================================================== -->
-                        <div id="aiPdf12hContainer" style="background: #071220; border: 1px solid rgba(249, 115, 22, 0.28); border-radius: 14px; padding: 18px; margin-bottom: 18px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);">
                             
-                            <!-- Cabeçalho do Registro Detalhado de Leituras Coletadas (12h) -->
-                            <div style="display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 16px;">
+                            <!-- Ações Rápidas de Exportação -->
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <button type="button" class="btn-primary-admin" onclick="baixarFichaPDFCaldas()" style="background: linear-gradient(135deg, #f97316, #ea580c); border: 1px solid rgba(249,115,22,0.4); font-size: 12.5px;">
+                                    <i class="fa-solid fa-file-pdf"></i>
+                                    <span>Baixar Ficha PDF (A4)</span>
+                                </button>
+                                <button type="button" class="btn-primary-admin" onclick="copiarTextoCaldasWhatsapp()" style="background: #1e293b; border: 1px solid rgba(255,255,255,0.15); font-size: 12.5px;">
+                                    <i class="fa-solid fa-copy"></i>
+                                    <span>Copiar WhatsApp</span>
+                                </button>
+                                <button type="button" class="btn-primary-admin" onclick="enviarRelatorioCaldasWhatsapp()" style="background: linear-gradient(135deg, #10b981, #059669); font-size: 12.5px;">
+                                    <i class="fa-brands fa-whatsapp"></i>
+                                    <span>Enviar via THERMOLINK WHATSAPP</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- BARRA DE FILTROS & CONTROLE OPERACIONAL -->
+                        <div style="background: #071220; border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; align-items: flex-end;">
+                                <!-- Seletor de Cerâmica -->
                                 <div>
-                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                        <h4 style="margin: 0; font-size: 15px; font-weight: 800; color: #ffffff;">
-                                            <i class="fa-solid fa-file-pdf" style="color: #f97316; margin-right: 6px;"></i>
-                                            Registro Detalhado de Leituras Coletadas (PDF Últimas 12 Horas)
-                                        </h4>
-                                        <span id="aiPdf12hWindowBadge" class="tag-pill tag-pill-orange" style="font-size: 11px;">
-                                            <i class="fa-regular fa-clock"></i> Fechamento 06:00 (18:00 às 06:00)
-                                        </span>
-                                    </div>
-                                    <p id="aiPdf12hCounterText" style="margin: 4px 0 0; font-size: 12px; color: #94a3b8;">
-                                        Calculando leituras coletadas do forno nas últimas 12 horas...
-                                    </p>
+                                    <label style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
+                                        <i class="fa-solid fa-industry" style="color: #f97316; margin-right: 4px;"></i> Cerâmica:
+                                    </label>
+                                    <select id="aiSelectCeramica" class="select-admin" onchange="trocarCeramicaRelatorioIA()" style="width: 100%; background: #0b1728; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;">
+                                        <!-- Preenchido dinamicamente -->
+                                    </select>
+                                    <input type="hidden" id="aiSelectJanela" value="12">
                                 </div>
 
-                                <!-- Seletor de Forno para o PDF de 12h + Botão PDF -->
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <div id="aiPdf12hFornoPills" class="filter-pills" style="display: flex; gap: 6px; flex-wrap: wrap;">
-                                        <!-- Preenchido dinamicamente com os fornos da cerâmica -->
-                                    </div>
-                                    <button type="button" class="btn-primary-admin" onclick="gerarEBaixarPDFRelatorio12h()" style="padding: 6px 12px; font-size: 12px; background: rgba(249, 115, 22, 0.16); color: #fdba74; border: 1px solid rgba(249, 115, 22, 0.4);">
-                                        <i class="fa-solid fa-download"></i> Salvar PDF 12h
+                                <!-- Seletor de Canal Térmico -->
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
+                                        <i class="fa-solid fa-temperature-half" style="color: #38bdf8; margin-right: 4px;"></i> Canal Analisado:
+                                    </label>
+                                    <select id="caldaSelectCanal" class="select-admin" onchange="trocarCanalAnaliseCaldas()" style="width: 100%; background: #0b1728; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;">
+                                        <option value="canal_1" selected>Canal 1 (Superior / Principal)</option>
+                                        <option value="canal_2">Canal 2 (Inferior / Base)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Seletor de Período -->
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
+                                        <i class="fa-regular fa-clock" style="color: #10b981; margin-right: 4px;"></i> Janela de Tempo:
+                                    </label>
+                                    <select id="caldaSelectPeriodo" class="select-admin" onchange="trocarPeriodoAnaliseCaldas()" style="width: 100%; background: #0b1728; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;">
+                                        <option value="12" selected>Últimas 12 Horas (Fechamento)</option>
+                                        <option value="24">Últimas 24 Horas (Completo)</option>
+                                        <option value="hoje">Hoje (Desde as 00:00)</option>
+                                        <option value="ontem">Ontem (Dia Completo)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Botão de Ação: ANALISAR QUEIMA -->
+                                <div>
+                                    <button type="button" id="btnAnalisarQueimaAdmin" class="btn-primary-admin" onclick="executarAnaliseInteligenteCaldas(true)" style="width: 100%; height: 40px; background: linear-gradient(135deg, #f97316, #ea580c); font-weight: 800; font-size: 13px; border-radius: 8px; box-shadow: 0 4px 14px rgba(249,115,22,0.35); display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                        <i class="fa-solid fa-brain" id="btnAnalisarQueimaIcon"></i>
+                                        <span>ANALISAR QUEIMA</span>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Cabeçalho do Registro do Forno nas 12 Horas -->
-                            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px;">
-                                <div>
-                                    <span id="aiPdf12hTag" style="display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase; color: #f97316; background: rgba(249, 115, 22, 0.14); border: 1px solid rgba(249, 115, 22, 0.3); padding: 3px 9px; border-radius: 999px; margin-bottom: 4px;">
-                                        REGISTRO 12 HORAS • MÓDULO 01
+                            <!-- Seletor de Fornos (Pills) -->
+                            <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <span style="font-size: 12px; font-weight: 700; color: #94a3b8;">
+                                        <i class="fa-solid fa-fire text-orange"></i> Forno em Análise:
                                     </span>
-                                    <h4 id="aiPdf12hTitle" style="margin: 0; font-size: 16px; font-weight: 800; color: #ffffff;">
-                                        Forno 01 — --/--/---- (18:00 às 06:00)
-                                    </h4>
+                                    <div id="aiPdf12hFornoPills" class="filter-pills" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                        <!-- Preenchido dinamicamente com os fornos -->
+                                    </div>
                                 </div>
-                                <span id="aiPdf12hStatusBadge" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; color: #34d399; background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.32); padding: 5px 12px; border-radius: 999px;">
-                                    <i class="fa-solid fa-circle-check"></i> Queima Ativa / Alta Temp.
+                                <span id="aiPdf12hCounterText" style="font-size: 11.5px; color: #94a3b8;">
+                                    Aguardando seleção do forno...
                                 </span>
                             </div>
 
-                            <!-- 3 Cards dos Principais Valores das 12 Horas com Horários Exatos -->
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px;">
-                                <div style="background: linear-gradient(145deg, rgba(249, 115, 22, 0.14), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(249, 115, 22, 0.35); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px;">
-                                    <span style="font-size: 11px; font-weight: 700; color: #fdba74; text-transform: uppercase;"><i class="fa-solid fa-arrow-trend-up"></i> Pico Máximo (C1)</span>
-                                    <strong id="aiPdf12hMaxVal" style="font-size: 22px; font-weight: 800; color: #fb923c; font-family: 'JetBrains Mono', monospace;">-- °C</strong>
-                                    <span id="aiPdf12hMaxTime" style="font-size: 11px; font-weight: 700; color: #fed7aa;">às --:--</span>
+                            <!-- INTEGRAÇÃO COM CONTATOS POR CERÂMICA -->
+                            <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(11, 23, 40, 0.6); border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <i class="fa-solid fa-address-book" style="color: #25d366; font-size: 15px;"></i>
+                                        <label style="font-size: 12px; font-weight: 700; color: #ffffff;">Destinatários do Relatório (Contatos da Cerâmica):</label>
+                                    </div>
+                                    <select id="caldaSelectContatoDestino" class="select-admin" onchange="atualizarContatoSelecionadoPreview()" style="background: #071220; border: 1px solid rgba(37, 211, 102, 0.4); color: white; padding: 6px 12px; border-radius: 6px; font-size: 12.5px; font-weight: 600; min-width: 270px;">
+                                        <!-- Preenchido dinamicamente com os contatos de Contatos por Cerâmica -->
+                                    </select>
+                                    <div id="caldaContatosBadgesContainer" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                        <!-- Badges dos contatos ativos da cerâmica -->
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <button type="button" class="btn-primary-admin" onclick="abrirModalNovoContatoParaCeramicaAtiva()" style="padding: 6px 12px; font-size: 11.5px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);">
+                                        <i class="fa-solid fa-user-plus"></i> + Novo Contato nesta Cerâmica
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CONTAINER DOS RESULTADOS DA ANÁLISE -->
+                        <div id="aiPdf12hContainer">
+
+                            <!-- 4 CARDS DE MÉTRICAS OPERACIONAIS DA QUEIMA -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 16px;">
+                                <!-- Card 1: Total de Caldas -->
+                                <div style="background: linear-gradient(145deg, rgba(249, 115, 22, 0.16), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(249, 115, 22, 0.35); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                    <span style="font-size: 11px; font-weight: 700; color: #fdba74; text-transform: uppercase;">
+                                        <i class="fa-solid fa-fire-burner"></i> Caldas Identificadas
+                                    </span>
+                                    <div style="display: flex; align-items: baseline; gap: 8px;">
+                                        <strong id="caldaStatTotal" style="font-size: 26px; font-weight: 800; color: #fb923c; font-family: 'JetBrains Mono', monospace;">--</strong>
+                                        <span id="caldaStatConfiancaBadge" class="tag-pill" style="font-size: 10px; padding: 2px 7px; background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3);">Alta Confiança</span>
+                                    </div>
+                                    <span id="caldaStatCaldasSubtext" style="font-size: 11px; color: #fed7aa;">Alimentações térmicas detectadas</span>
                                 </div>
 
-                                <div style="background: linear-gradient(145deg, rgba(56, 189, 248, 0.14), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px;">
-                                    <span style="font-size: 11px; font-weight: 700; color: #7dd3fc; text-transform: uppercase;"><i class="fa-solid fa-gauge-high"></i> Média Térmica</span>
-                                    <strong id="aiPdf12hAvgVal" style="font-size: 22px; font-weight: 800; color: #38bdf8; font-family: 'JetBrains Mono', monospace;">-- °C</strong>
-                                    <span id="aiPdf12hAvgTime" style="font-size: 11px; font-weight: 700; color: #bae6fd;">às --:--</span>
+                                <!-- Card 2: Intervalo Médio -->
+                                <div style="background: linear-gradient(145deg, rgba(56, 189, 248, 0.16), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                    <span style="font-size: 11px; font-weight: 700; color: #7dd3fc; text-transform: uppercase;">
+                                        <i class="fa-solid fa-stopwatch"></i> Intervalo Médio
+                                    </span>
+                                    <strong id="caldaStatIntervaloMedio" style="font-size: 26px; font-weight: 800; color: #38bdf8; font-family: 'JetBrains Mono', monospace;">--</strong>
+                                    <span id="caldaStatIntervaloSubtext" style="font-size: 11px; color: #bae6fd;">Tempo médio entre caldas</span>
                                 </div>
 
-                                <div style="background: linear-gradient(145deg, rgba(16, 185, 129, 0.14), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px;">
-                                    <span style="font-size: 11px; font-weight: 700; color: #6ee7b7; text-transform: uppercase;"><i class="fa-solid fa-arrow-trend-down"></i> Pico Mínimo (C1)</span>
-                                    <strong id="aiPdf12hMinVal" style="font-size: 22px; font-weight: 800; color: #34d399; font-family: 'JetBrains Mono', monospace;">-- °C</strong>
-                                    <span id="aiPdf12hMinTime" style="font-size: 11px; font-weight: 700; color: #a7f3d0;">às --:--</span>
+                                <!-- Card 3: Pico Máximo -->
+                                <div style="background: linear-gradient(145deg, rgba(239, 68, 68, 0.16), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                    <span style="font-size: 11px; font-weight: 700; color: #fca5a5; text-transform: uppercase;">
+                                        <i class="fa-solid fa-arrow-trend-up"></i> Pico Máximo da Queima
+                                    </span>
+                                    <strong id="caldaStatPicoMax" style="font-size: 26px; font-weight: 800; color: #ef4444; font-family: 'JetBrains Mono', monospace;">-- °C</strong>
+                                    <span id="caldaStatPicoHora" style="font-size: 11px; color: #fecaca;">às --:--</span>
+                                </div>
+
+                                <!-- Card 4: Duração e Leituras -->
+                                <div style="background: linear-gradient(145deg, rgba(16, 185, 129, 0.16), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                    <span style="font-size: 11px; font-weight: 700; color: #6ee7b7; text-transform: uppercase;">
+                                        <i class="fa-solid fa-clock-rotate-left"></i> Duração Analisada
+                                    </span>
+                                    <strong id="caldaStatDuracao" style="font-size: 26px; font-weight: 800; color: #34d399; font-family: 'JetBrains Mono', monospace;">--</strong>
+                                    <span id="caldaStatLeiturasCount" style="font-size: 11px; color: #a7f3d0;">-- leituras coletadas</span>
                                 </div>
                             </div>
 
-                            <!-- Gráfico das Últimas 12 Horas (Temperatura × Horário do Dia) -->
-                            <div style="background: rgba(9, 18, 32, 0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px; margin-bottom: 14px;">
-                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-                                    <span style="font-size: 13px; color: #e2e8f0;">
-                                        <i class="fa-solid fa-chart-line" style="color: #f97316; margin-right: 5px;"></i>
-                                        <b>Gráfico do Dia Selecionado — Últimas 12 Horas</b> (Temperatura × Horário do Dia)
-                                    </span>
-                                    <span id="aiPdf12hChartReadout" style="font-size: 11.5px; font-family: 'JetBrains Mono', monospace; background: rgba(249, 115, 22, 0.12); border: 1px solid rgba(249, 115, 22, 0.3); color: #f8fafc; padding: 4px 10px; border-radius: 999px;">
-                                        Passe o mouse na curva para inspecionar horário
+                            <!-- GRÁFICO INTERATIVO DE TEMPERATURA COM MARCADORES DE CALDAS (VALES) E PICOS -->
+                            <div style="background: rgba(9, 18, 32, 0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; margin-bottom: 18px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                                        <span style="font-size: 13.5px; font-weight: 700; color: #ffffff;">
+                                            <i class="fa-solid fa-chart-line" style="color: #f97316; margin-right: 6px;"></i>
+                                            Curva Térmica &amp; Identificação Visual dos Ciclos de Queima
+                                        </span>
+                                        <div style="display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: #94a3b8;">
+                                            <span style="display: inline-flex; align-items: center; gap: 5px;">
+                                                <span style="width: 10px; height: 10px; background: #f97316; border-radius: 50%; display: inline-block;"></span>
+                                                <b>Caldas (Mínimos Locais)</b>
+                                            </span>
+                                            <span style="display: inline-flex; align-items: center; gap: 5px;">
+                                                <span style="width: 10px; height: 10px; background: #ef4444; border-radius: 50%; display: inline-block;"></span>
+                                                <b>Picos Térmicos (Máximos)</b>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span id="aiPdf12hChartReadout" style="font-size: 11.5px; font-family: 'JetBrains Mono', monospace; background: rgba(249, 115, 22, 0.12); border: 1px solid rgba(249, 115, 22, 0.3); color: #f8fafc; padding: 4px 12px; border-radius: 999px;">
+                                        Passe o mouse na curva para inspecionar pontos
                                     </span>
                                 </div>
-                                <div style="height: 230px; position: relative; width: 100%;">
+                                <div style="height: 250px; position: relative; width: 100%;">
                                     <canvas id="aiPdf12hChartCanvas"></canvas>
                                 </div>
                             </div>
 
-                            <!-- Lista Resumida de Leituras das Últimas 12 Horas (4 Colunas: Data & Horário | Módulo | Canal 1 | Canal 2) -->
-                            <div style="background: rgba(9, 18, 32, 0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px;">
-                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-                                    <span style="font-size: 13px; color: #e2e8f0;">
-                                        <i class="fa-solid fa-list-check" style="color: #f97316; margin-right: 5px;"></i>
-                                        <b>Lista Resumida de Leituras do Dia (Últimas 12 Horas)</b>
-                                    </span>
-                                    <span id="aiPdf12hSummaryCount" style="font-size: 11px; font-weight: 700; color: #fdba74; background: rgba(249, 115, 22, 0.14); border: 1px solid rgba(249, 115, 22, 0.3); padding: 3px 10px; border-radius: 999px;">
-                                        -- leituras nas 12h
-                                    </span>
+                            <!-- TABELA DE CALDAS IDENTIFICADAS (FICHA DIGITAL OPERACIONAL) -->
+                            <div style="background: rgba(9, 18, 32, 0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; margin-bottom: 18px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                                    <div>
+                                        <h4 style="margin: 0; font-size: 14.5px; font-weight: 800; color: #ffffff; display: flex; align-items: center; gap: 6px;">
+                                            <i class="fa-solid fa-table-list" style="color: #f97316;"></i>
+                                            Tabela de Caldas Identificadas (Ficha de Controle de Queima)
+                                        </h4>
+                                        <p style="margin: 3px 0 0; font-size: 12px; color: #94a3b8;">
+                                            Cada registro corresponde a um ciclo de queima confirmado pelo algoritmo com base na telemetria real.
+                                        </p>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        <button type="button" class="btn-primary-admin" onclick="abrirModalAdicionarCaldaManual()" style="background: rgba(249,115,22,0.15); color: #fdba74; border: 1px solid rgba(249,115,22,0.4); font-size: 11.5px; padding: 5px 10px;">
+                                            <i class="fa-solid fa-plus"></i> Adicionar Calda Manual
+                                        </button>
+                                        <button type="button" class="btn-primary-admin" onclick="restaurarDeteccaoAutomaticaCaldas()" style="background: rgba(148,163,184,0.15); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.15); font-size: 11.5px; padding: 5px 10px;">
+                                            <i class="fa-solid fa-rotate-left"></i> Restaurar Detecção
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div class="admin-table-wrapper" style="max-height: 310px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;">
-                                    <table class="admin-table" style="margin: 0;">
+                                <div class="admin-table-wrapper" style="overflow-x: auto; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;">
+                                    <table class="admin-table" style="margin: 0; width: 100%; text-align: left; font-size: 12.5px;">
                                         <thead>
                                             <tr>
-                                                <th>Data &amp; Horário</th>
-                                                <th>Módulo</th>
-                                                <th>Canal 1 (Sup.)</th>
-                                                <th>Canal 2 (Inf.)</th>
+                                                <th style="width: 70px;">Calda</th>
+                                                <th>Horário Calda</th>
+                                                <th>Data</th>
+                                                <th>Temp. Mínimo</th>
+                                                <th>Horário Pico</th>
+                                                <th>Temp. Máxima</th>
+                                                <th>Intervalo entre Caldas</th>
+                                                <th>Subida / Descida</th>
+                                                <th>Confiança</th>
+                                                <th style="text-align: center; width: 130px;">Ações (Revisão)</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="aiPdf12hTableBody">
+                                        <tbody id="caldaTabelaCaldasBody">
                                             <tr>
-                                                <td colspan="4" style="text-align: center; padding: 20px; color: #94a3b8;">Carregando leituras das últimas 12 horas...</td>
+                                                <td colspan="10" style="text-align: center; padding: 24px; color: #94a3b8;">
+                                                    <i class="fa-solid fa-spinner fa-spin" style="margin-right: 6px;"></i> Carregando dados e calculando caldas...
+                                                </td>
                                             </tr>
                                         </tbody>
                                     </table>
                                 </div>
-
-                                <div id="aiPdf12hPaginationBar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: 12px; color: #94a3b8;"></div>
                             </div>
-                        </div>
 
-                        <div style="position: relative;">
-                            <textarea id="aiRelatorioTextoArea" rows="12" style="width: 100%; background: #050a12; border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #e2e8f0; line-height: 1.6; resize: vertical;" placeholder="O relatório enriquecido pela IA será gerado aqui..." readonly></textarea>
-                        </div>
+                            <!-- CARD DE PRÉVIA E PREPARAÇÃO PARA ENVIO NO WHATSAPP -->
+                            <div style="background: #0b141a; border: 1px solid rgba(37, 211, 102, 0.25); border-radius: 14px; padding: 18px; margin-bottom: 18px; background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 0); background-size: 18px 18px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <i class="fa-brands fa-whatsapp" style="font-size: 20px; color: #25d366;"></i>
+                                        <div>
+                                            <h4 style="margin: 0; font-size: 15px; font-weight: 800; color: #ffffff;">
+                                                Prévia da Mensagem Formatada para WhatsApp
+                                            </h4>
+                                            <span style="font-size: 11.5px; color: #8696a0;">
+                                                Texto gerado automaticamente no padrão Medeiros Automação / ThermoLink
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        <button type="button" class="btn-primary-admin" onclick="copiarTextoCaldasWhatsapp()" style="background: #1e293b; border: 1px solid rgba(255,255,255,0.2); font-size: 12px; padding: 6px 12px;">
+                                            <i class="fa-solid fa-copy"></i> Copiar Texto
+                                        </button>
+                                        <button type="button" class="btn-primary-admin" onclick="enviarRelatorioCaldasWhatsapp()" style="background: linear-gradient(135deg, #10b981, #059669); font-size: 12px; padding: 6px 14px;" title="Abre o WhatsApp com o número do contato selecionado">
+                                            <i class="fa-brands fa-whatsapp"></i> Enviar via THERMOLINK WHATSAPP
+                                        </button>
+                                        <button type="button" class="btn-primary-admin" onclick="dispararRelatorioCaldasGatewayTodos()" style="background: linear-gradient(135deg, #0284c7, #0369a1); font-size: 12px; padding: 6px 14px;" title="Dispara via Gateway para todos os contatos com recebimento ativo desta cerâmica">
+                                            <i class="fa-solid fa-paper-plane"></i> Disparar Todos via THERMOLINK WHATSAPP
+                                        </button>
+                                    </div>
+                                </div>
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 10px;">
-                            <span style="font-size: 12px; color: var(--text-muted);">
-                                <i class="fa-solid fa-circle-info"></i> O texto e o pequeno PDF das últimas 12h (baseado no horário configurado) são gerados e enviados automaticamente.
-                            </span>
-                            <div style="display: flex; gap: 8px;">
-                                <button type="button" class="btn-admin-cancel" onclick="gerarTextoRelatorioIA(true)">
-                                    <i class="fa-solid fa-rotate-left"></i> Recarregar Texto da IA
-                                </button>
+                                <div class="wa-message-bubble" id="waMockupTextoRelatorioCaldas" style="background: #005c4b; color: #e9edef; padding: 14px 18px; border-radius: 12px 12px 2px 12px; font-size: 12.5px; line-height: 1.65; max-height: 380px; overflow-y: auto; white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,0.35);">
+                                    Carregando relatório formatado...
+                                </div>
+                                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: #8696a0;">
+                                    <span>ThermoLink • Medeiros Automação</span> <i class="fa-solid fa-check-double" style="color: #53bdeb;"></i>
+                                </div>
                             </div>
+
+                            <!-- AUDITORIA DETALHADA: TODAS AS LEITURAS BRUTAS DO PERÍODO -->
+                            <details style="background: rgba(9, 18, 32, 0.7); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px;">
+                                <summary style="cursor: pointer; font-size: 12.5px; font-weight: 700; color: #94a3b8; display: flex; align-items: center; justify-content: space-between;">
+                                    <span><i class="fa-solid fa-database" style="color: #38bdf8; margin-right: 6px;"></i> Auditoria Completa: Histórico Detalhado de Leituras Coletadas</span>
+                                    <span id="aiPdf12hSummaryCount" style="font-size: 11px; color: #fdba74;">-- leituras</span>
+                                </summary>
+                                <div style="margin-top: 12px;">
+                                    <div class="admin-table-wrapper" style="max-height: 250px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px;">
+                                        <table class="admin-table" style="margin: 0; font-size: 11.5px;">
+                                            <thead>
+                                                <tr>
+                                                    <th>Data &amp; Horário</th>
+                                                    <th>Módulo</th>
+                                                    <th>Canal 1 (Sup.)</th>
+                                                    <th>Canal 2 (Inf.)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="aiPdf12hTableBody">
+                                                <tr>
+                                                    <td colspan="4" style="text-align: center; padding: 14px; color: #94a3b8;">Carregando leituras do histórico...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div id="aiPdf12hPaginationBar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 11px; color: #94a3b8;"></div>
+                                </div>
+                            </details>
+
                         </div>
+
+                        <!-- Textarea oculto para cópia e envio de mensagem WhatsApp em background -->
+                        <textarea id="aiRelatorioTextoArea" style="display: none;"></textarea>
                     </div>
 
                 </div>
 
             </section>
 
-
-
         </div>
 
-        <!-- BARRA DE NAVEGAÇÃO INFERIOR EXCLUSIVA PARA CELULAR -->
+        <!-- MODAL ADMINISTRATIVO DE EDIÇÃO / ADIÇÃO MANUAL DE CALDA -->
+        <div id="modalEditarCaldaAdmin" class="modal-admin hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px);">
+            <div style="background: #0b1728; border: 1px solid rgba(249,115,22,0.3); border-radius: 14px; max-width: 480px; width: 92%; padding: 22px; box-shadow: 0 16px 40px rgba(0,0,0,0.5);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: #ffffff;" id="modalCaldaTitulo">
+                        <i class="fa-solid fa-fire-burner text-orange"></i> Ajustar Calda
+                    </h3>
+                    <button type="button" onclick="fecharModalCaldaAdmin()" style="background: none; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <input type="hidden" id="modalCaldaIndex">
+
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 5px;">Data da Calda (DD/MM/AAAA):</label>
+                        <input type="date" id="modalCaldaData" class="select-admin" style="width: 100%; background: #071220; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 6px;">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 5px;">Horário Estimado (HH:mm):</label>
+                            <input type="time" id="modalCaldaHora" class="select-admin" style="width: 100%; background: #071220; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 6px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 5px;">Temp. Mínimo (°C):</label>
+                            <input type="number" id="modalCaldaTemp" class="select-admin" style="width: 100%; background: #071220; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 6px;" placeholder="Ex: 680">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 5px;">Observações da Revisão Administrativa:</label>
+                        <input type="text" id="modalCaldaObs" class="select-admin" style="width: 100%; background: #071220; border: 1px solid var(--border-color); color: white; padding: 8px 12px; border-radius: 6px;" placeholder="Ex: Informado pelo queimador via rádio">
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px;">
+                    <button type="button" class="btn-admin-cancel" onclick="fecharModalCaldaAdmin()">Cancelar</button>
+                    <button type="button" class="btn-primary-admin" onclick="salvarAjusteCaldaAdmin()" style="background: linear-gradient(135deg, #f97316, #ea580c);">
+                        <i class="fa-solid fa-check"></i> Salvar Calda
+                    </button>
+                </div>
+            </div>
+        </div>
+<!-- BARRA DE NAVEGAÇÃO INFERIOR EXCLUSIVA PARA CELULAR -->
         <nav class="admin-mobile-nav" id="adminMobileNav">
             <button class="mobile-nav-item active" data-secao="dashboard" onclick="trocarSecaoAdmin('dashboard')">
                 <i class="fa-solid fa-chart-pie"></i>
@@ -1794,6 +1777,7 @@
 </div>
 
 <!-- Scripts do Painel Master -->
+<script src="admin-caldas-engine.js"></script>
 <script src="admin.js"></script>
 
 </body>
